@@ -15,7 +15,8 @@
     "test": "vitest run --passWithNoTests",
     "migrate:up": "tsx src/migrate.ts",
     "seed:sample": "tsx src/seed-sample.ts",
-    "smoke:ingest": "tsx src/ingest-smoke.ts"
+    "smoke:ingest": "tsx src/ingest-smoke.ts",
+    "smoke:sync": "tsx src/sync-smoke.ts"
   },
   "dependencies": {
     "@pr-tracker/core": "workspace:*",

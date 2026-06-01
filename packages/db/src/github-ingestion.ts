@@ -1,6 +1,10 @@
 import type { Transaction } from "@mikro-orm/core";
 import type { MikroORM } from "@mikro-orm/postgresql";
-import type { NormalizedWebhookEvent } from "@pr-tracker/github";
+import type {
+  GitHubPullRequestSnapshot,
+  GitHubReviewSnapshot,
+  NormalizedWebhookEvent
+} from "@pr-tracker/github";
 import { deterministicUuid } from "./ids";
 
 interface GitHubPullRequestPayload {
@@ -30,15 +34,12 @@ interface GitHubPullRequestPayload {
 }
 
 interface GitHubReviewPayload extends GitHubPullRequestPayload {
-  review?: {
-    id?: number;
-    node_id?: string;
-    state?: string;
-    body?: string | null;
-    submitted_at?: string;
-    commit_id?: string;
-    user?: { login?: string };
-  };
+  review?: GitHubReviewSnapshot;
+}
+
+export interface UpsertPullRequestSnapshotResult {
+  pullRequestId: string;
+  isFreshEnough: boolean;
 }
 
 export async function ingestWebhookEvent(
@@ -71,10 +72,11 @@ async function ingestPullRequestEvent(
     return;
   }
 
-  const result = await upsertPullRequestFromPayload(orm, payload, ctx);
-  if (result.isFreshEnough) {
-    await replaceRequestedReviewers(orm, result.pullRequestId, pullRequest, ctx);
-  }
+  const result = await upsertPullRequestSnapshot(
+    orm,
+    pullRequestPayloadToSnapshot(payload),
+    ctx
+  );
 
   await recordActivityFromWebhook(orm, event, result.pullRequestId, {
     actorLogin: payload.sender?.login ?? pullRequest.user?.login ?? "unknown",
@@ -95,58 +97,15 @@ async function ingestPullRequestReviewEvent(
     return;
   }
 
-  const result = await upsertPullRequestFromPayload(orm, payload, ctx);
-  if (result.isFreshEnough) {
-    await replaceRequestedReviewers(orm, result.pullRequestId, pullRequest, ctx);
-  }
-
-  const reviewNodeId = requiredGithubNodeId(
-    review.node_id,
-    review.id,
-    "pull_request_review"
-  );
-  const submittedAt =
-    review.submitted_at ?? pullRequest.updated_at ?? event.receivedAt;
-  const reviewerLogin = review.user?.login ?? "unknown";
-  const decision = mapReviewState(review.state);
-
-  await orm.em.getConnection().execute(
-    `
-      insert into review_events (
-        id,
-        pull_request_id,
-        github_node_id,
-        reviewer_login,
-        decision,
-        commit_sha,
-        body,
-        submitted_at,
-        raw_payload
-      )
-      values (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
-      on conflict (github_node_id)
-      do update set
-        reviewer_login = excluded.reviewer_login,
-        decision = excluded.decision,
-        commit_sha = excluded.commit_sha,
-        body = excluded.body,
-        submitted_at = excluded.submitted_at,
-        raw_payload = excluded.raw_payload
-    `,
-    [
-      deterministicUuid(`review:${reviewNodeId}`),
-      result.pullRequestId,
-      reviewNodeId,
-      reviewerLogin,
-      decision,
-      review.commit_id ?? null,
-      review.body ?? null,
-      submittedAt,
-      JSON.stringify(review)
-    ],
-    undefined,
+  const result = await upsertPullRequestSnapshot(
+    orm,
+    pullRequestPayloadToSnapshot(payload),
     ctx
   );
+
+  const reviewerLogin = review.user?.login ?? "unknown";
+  const decision = mapReviewState(review.state);
+  await upsertReviewSnapshot(orm, result.pullRequestId, review, ctx);
 
   await recordActivityFromWebhook(orm, event, result.pullRequestId, {
     actorLogin: reviewerLogin,
@@ -154,24 +113,27 @@ async function ingestPullRequestReviewEvent(
   }, ctx);
 }
 
-async function upsertPullRequestFromPayload(
+export async function upsertPullRequestSnapshot(
   orm: MikroORM,
-  payload: GitHubPullRequestPayload,
+  snapshot: GitHubPullRequestSnapshot,
   ctx?: Transaction
-): Promise<{ pullRequestId: string; isFreshEnough: boolean }> {
-  const pullRequest = payload.pull_request;
-  const repository = payload.repository;
-
-  if (!pullRequest) {
-    throw new Error("Missing pull_request payload.");
-  }
+): Promise<UpsertPullRequestSnapshotResult> {
+  const pullRequest = snapshot.pull_request;
+  const repository = snapshot.repository;
 
   const githubNodeId = requiredGithubNodeId(
     pullRequest.node_id,
     pullRequest.id,
     "pull_request"
   );
-  const installationId = await upsertInstallation(orm, payload, ctx);
+  const installationId = await upsertInstallation(
+    orm,
+    {
+      githubInstallationId: snapshot.installationId,
+      accountLogin: snapshot.repository.owner?.login
+    },
+    ctx
+  );
   const pullRequestId = deterministicUuid(`pull-request:${githubNodeId}`);
   const now = new Date().toISOString();
   const incomingUpdatedAt = pullRequest.updated_at ?? now;
@@ -224,7 +186,7 @@ async function upsertPullRequestFromPayload(
       pullRequest.merged ? "merged" : normalizePullRequestState(pullRequest.state),
       pullRequest.draft ?? false,
       pullRequest.head?.sha ?? "",
-      JSON.stringify(payload),
+      JSON.stringify(snapshot),
       pullRequest.created_at ?? now,
       incomingUpdatedAt
     ],
@@ -232,24 +194,87 @@ async function upsertPullRequestFromPayload(
     ctx
   );
 
+  if (isFreshEnough) {
+    await replaceRequestedReviewers(
+      orm,
+      pullRequestId,
+      pullRequest.requested_reviewers ?? [],
+      ctx
+    );
+  }
+
   return { pullRequestId, isFreshEnough };
+}
+
+export async function upsertReviewSnapshot(
+  orm: MikroORM,
+  pullRequestId: string,
+  review: GitHubReviewSnapshot,
+  ctx?: Transaction
+): Promise<void> {
+  const reviewNodeId = requiredGithubNodeId(
+    review.node_id,
+    review.id,
+    "pull_request_review"
+  );
+  const submittedAt = review.submitted_at ?? new Date().toISOString();
+  const reviewerLogin = review.user?.login ?? "unknown";
+  const decision = mapReviewState(review.state);
+
+  await orm.em.getConnection().execute(
+    `
+      insert into review_events (
+        id,
+        pull_request_id,
+        github_node_id,
+        reviewer_login,
+        decision,
+        commit_sha,
+        body,
+        submitted_at,
+        raw_payload
+      )
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
+      on conflict (github_node_id)
+      do update set
+        reviewer_login = excluded.reviewer_login,
+        decision = excluded.decision,
+        commit_sha = excluded.commit_sha,
+        body = excluded.body,
+        submitted_at = excluded.submitted_at,
+        raw_payload = excluded.raw_payload
+    `,
+    [
+      deterministicUuid(`review:${reviewNodeId}`),
+      pullRequestId,
+      reviewNodeId,
+      reviewerLogin,
+      decision,
+      review.commit_id ?? null,
+      review.body ?? null,
+      submittedAt,
+      JSON.stringify(review)
+    ],
+    undefined,
+    ctx
+  );
 }
 
 async function upsertInstallation(
   orm: MikroORM,
-  payload: GitHubPullRequestPayload,
+  input: {
+    githubInstallationId: number | undefined;
+    accountLogin?: string;
+  },
   ctx?: Transaction
 ): Promise<string> {
-  const githubInstallationId = payload.installation?.id;
+  const githubInstallationId = input.githubInstallationId;
   if (!githubInstallationId || githubInstallationId <= 0) {
-    throw new Error("Missing installation.id in GitHub webhook payload.");
+    throw new Error("Missing installation.id in GitHub payload.");
   }
 
   const installationId = deterministicUuid(`installation:${githubInstallationId}`);
-  const accountLogin =
-    payload.installation?.account?.login ??
-    payload.repository?.owner?.login ??
-    "unknown";
+  const accountLogin = input.accountLogin ?? "unknown";
   const now = new Date().toISOString();
 
   await orm.em.getConnection().execute(
@@ -276,7 +301,7 @@ async function upsertInstallation(
 async function replaceRequestedReviewers(
   orm: MikroORM,
   pullRequestId: string,
-  pullRequest: NonNullable<GitHubPullRequestPayload["pull_request"]>,
+  reviewers: Array<{ login?: string }>,
   ctx?: Transaction
 ): Promise<void> {
   const connection = orm.em.getConnection();
@@ -287,7 +312,7 @@ async function replaceRequestedReviewers(
     ctx
   );
 
-  for (const reviewer of pullRequest.requested_reviewers ?? []) {
+  for (const reviewer of reviewers) {
     if (!reviewer.login) {
       continue;
     }
@@ -381,6 +406,39 @@ function mapReviewState(state: string | undefined): string {
   return "commented";
 }
 
+function pullRequestPayloadToSnapshot(
+  payload: GitHubPullRequestPayload
+): GitHubPullRequestSnapshot {
+  const pullRequest = payload.pull_request;
+  if (!pullRequest) {
+    throw new Error("Missing pull_request payload.");
+  }
+
+  return {
+    installationId: payload.installation?.id,
+    repository: {
+      full_name: payload.repository?.full_name ?? "unknown/unknown",
+      html_url: payload.repository?.html_url,
+      owner: payload.repository?.owner
+    },
+    pull_request: {
+      id: pullRequest.id,
+      node_id: pullRequest.node_id,
+      number: pullRequest.number ?? 0,
+      title: pullRequest.title ?? "Untitled pull request",
+      html_url: pullRequest.html_url ?? payload.repository?.html_url,
+      state: pullRequest.state,
+      draft: pullRequest.draft,
+      created_at: pullRequest.created_at,
+      updated_at: pullRequest.updated_at,
+      user: pullRequest.user,
+      head: pullRequest.head,
+      merged: pullRequest.merged,
+      requested_reviewers: pullRequest.requested_reviewers
+    }
+  };
+}
+
 interface CurrentPullRequestRow {
   updated_at: Date | string;
 }
@@ -392,7 +450,7 @@ async function isFreshEnoughPullRequestPayload(
   ctx?: Transaction
 ): Promise<boolean> {
   const rows = await orm.em.getConnection().execute<CurrentPullRequestRow[]>(
-    `select updated_at from pull_requests where github_node_id = ?`,
+    `select updated_at from pull_requests where github_node_id = ? for update`,
     [githubNodeId],
     "all",
     ctx

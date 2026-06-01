@@ -1,23 +1,45 @@
-import { getGithubAppEnv } from "@pr-tracker/github";
-import { buildSampleInbox } from "@pr-tracker/reviewer-workflow";
+import { createOrm, syncOpenPullRequestsFromGithub } from "@pr-tracker/db";
+import {
+  createGithubApp,
+  createGithubPullRequestSource,
+  getGithubAppAuthEnv,
+  getGithubInstallationId
+} from "@pr-tracker/github";
 
-const githubEnv = getGithubAppEnv(process.env);
-const inbox = buildSampleInbox(new Date().toISOString());
+const githubEnv = getGithubAppAuthEnv(process.env);
 
-console.log(
-  JSON.stringify(
-    {
-      worker: "pr-tracker-worker",
-      mode: githubEnv ? "github-app-configured" : "sample-data",
-      activePullRequests: inbox.items.length,
-      sections: Object.fromEntries(
-        Object.entries(inbox.sections).map(([section, items]) => [
-          section,
-          items.length
-        ])
+if (!githubEnv) {
+  throw new Error("GitHub App auth is required for worker sync.");
+}
+
+if (process.env.PR_TRACKER_USE_DATABASE !== "true") {
+  throw new Error("PR_TRACKER_USE_DATABASE=true is required for worker sync.");
+}
+
+{
+  const orm = await createOrm();
+
+  try {
+    const result = await syncOpenPullRequestsFromGithub(
+      orm,
+      createGithubPullRequestSource({
+        app: createGithubApp(githubEnv),
+        installationId: getGithubInstallationId(process.env)
+      })
+    );
+
+    console.log(
+      JSON.stringify(
+        {
+          worker: "pr-tracker-worker",
+          mode: "github-app-sync",
+          ...result
+        },
+        null,
+        2
       )
-    },
-    null,
-    2
-  )
-);
+    );
+  } finally {
+    await orm.close(true);
+  }
+}

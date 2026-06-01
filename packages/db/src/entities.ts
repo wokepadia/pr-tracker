@@ -78,6 +78,19 @@ export interface WebhookDeliveryRecord {
   rawPayload: unknown;
 }
 
+export interface SyncRunRecord {
+  id: string;
+  source: string;
+  status: string;
+  scannedPullRequests: number;
+  ingestedPullRequests: number;
+  ingestedReviews: number;
+  ignoredPullRequests: number;
+  error?: string;
+  startedAt: Date;
+  finishedAt?: Date;
+}
+
 export interface LocalPullRequestStateRecord {
   id: string;
   pullRequestId: string;
@@ -223,6 +236,28 @@ export const WebhookDeliveryEntity = new EntitySchema<WebhookDeliveryRecord>({
   ]
 });
 
+export const SyncRunEntity = new EntitySchema<SyncRunRecord>({
+  name: "SyncRun",
+  tableName: "sync_runs",
+  properties: {
+    id: { type: "uuid", primary: true },
+    source: { type: "text" },
+    status: { type: "text" },
+    scannedPullRequests: { type: "number" },
+    ingestedPullRequests: { type: "number" },
+    ingestedReviews: { type: "number" },
+    ignoredPullRequests: { type: "number" },
+    error: { type: "text", nullable: true },
+    startedAt: { type: "Date" },
+    finishedAt: { type: "Date", nullable: true }
+  },
+  indexes: [
+    { properties: ["source"] },
+    { properties: ["status"] },
+    { properties: ["startedAt"] }
+  ]
+});
+
 export const LocalPullRequestStateEntity =
   new EntitySchema<LocalPullRequestStateRecord>({
     name: "LocalPullRequestState",
@@ -248,5 +283,6 @@ export const entities = [
   ReviewThreadEntity,
   ActivityEventEntity,
   WebhookDeliveryEntity,
+  SyncRunEntity,
   LocalPullRequestStateEntity
 ];

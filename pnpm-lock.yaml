@@ -106,6 +106,9 @@ importers:
       '@pr-tracker/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pr-tracker/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@pr-tracker/github':
         specifier: workspace:*
         version: link:../../packages/github

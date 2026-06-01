@@ -64,7 +64,9 @@ interface LocalStateRow {
   last_seen_at: Date | string | null;
 }
 
-export function createDatabaseRepository(): ReviewerInboxRepository {
+export function createDatabaseRepository(
+  viewerLogin = process.env.PR_TRACKER_VIEWER_LOGIN ?? "viewer"
+): ReviewerInboxRepository {
   let ormPromise: ReturnType<typeof createOrm> | undefined;
   const getOrm = () => {
     ormPromise ??= createOrm();
@@ -74,9 +76,12 @@ export function createDatabaseRepository(): ReviewerInboxRepository {
   return {
     async getReviewerInbox(now) {
       const pullRequests = await loadPullRequests(await getOrm());
-      const actors = buildActors(pullRequests);
-      const viewer = ensureActor(actors, "viewer");
-      const lastSeenAtByPullRequestId = await loadLastSeen(await getOrm());
+      const actors = buildActors(pullRequests, [viewerLogin]);
+      const viewer = ensureActor(actors, viewerLogin);
+      const lastSeenAtByPullRequestId = await loadLastSeen(
+        await getOrm(),
+        viewerLogin
+      );
 
       return buildReviewerInbox({
         viewer,
@@ -97,7 +102,7 @@ export function createDatabaseRepository(): ReviewerInboxRepository {
 
       return {
         pullRequest,
-        actors: buildActors(pullRequests)
+        actors: buildActors(pullRequests, [viewerLogin])
       };
     },
 
@@ -124,7 +129,7 @@ export function createDatabaseRepository(): ReviewerInboxRepository {
         [
           randomUUID(),
           input.pullRequestId,
-          "viewer",
+          viewerLogin,
           input.lastSeenAt,
           false,
           false,
@@ -155,9 +160,11 @@ async function loadPullRequests(
       select *
       from pull_requests
       where (?::text is null or id = ?)
+        and (?::text is not null or state = 'open')
       order by updated_at desc
+      limit 250
     `,
-    [id ?? null, id ?? null]
+    [id ?? null, id ?? null, id ?? null]
   );
 
   return Promise.all(
@@ -204,7 +211,8 @@ async function loadPullRequests(
 }
 
 async function loadLastSeen(
-  orm: Awaited<ReturnType<typeof createOrm>>
+  orm: Awaited<ReturnType<typeof createOrm>>,
+  viewerLogin: string
 ): Promise<Record<string, string | undefined>> {
   const rows = await orm.em.getConnection().execute<LocalStateRow[]>(
     `
@@ -212,7 +220,7 @@ async function loadLastSeen(
       from local_pull_request_states
       where viewer_login = ?
     `,
-    ["viewer"]
+    [viewerLogin]
   );
 
   return Object.fromEntries(
@@ -223,8 +231,11 @@ async function loadLastSeen(
   );
 }
 
-function buildActors(pullRequests: PullRequestItem[]): Actor[] {
-  const logins = new Set<string>(["viewer"]);
+function buildActors(
+  pullRequests: PullRequestItem[],
+  extraLogins: string[] = ["viewer"]
+): Actor[] {
+  const logins = new Set<string>(extraLogins);
 
   for (const pullRequest of pullRequests) {
     logins.add(pullRequest.authorId);

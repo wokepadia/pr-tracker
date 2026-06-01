@@ -7,6 +7,7 @@ V1 is intentionally focused on basic plumbing:
 - GitHub-shaped domain primitives.
 - Deterministic reviewer workflow classification.
 - Hono API with GitHub webhook verification scaffold.
+- One-shot GitHub App sync worker for open PR and review backfill.
 - Vite + React + TanStack reviewer inbox UI.
 - MikroORM/PostgreSQL schema and migration.
 - Worker entrypoint for future sync/reconciliation jobs.
@@ -57,12 +58,15 @@ Run checks:
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm db:smoke:ingest
+pnpm db:smoke:sync
 ```
 
-Run the worker once:
+Run the GitHub App sync worker once after setting database and GitHub App
+environment variables:
 
 ```sh
-pnpm --filter @pr-tracker/worker run
+pnpm --filter @pr-tracker/worker sync
 ```
 
 ## Database
@@ -95,9 +99,10 @@ The API serves in-memory sample data by default. To read from Postgres instead, 
 
 ```text
 PR_TRACKER_USE_DATABASE=true
+PR_TRACKER_VIEWER_LOGIN=your-github-login
 ```
 
-The database-backed path currently supports the reviewer inbox, PR detail reads, local seen state, and webhook delivery persistence.
+The database-backed path currently supports the reviewer inbox, PR detail reads, local seen state, webhook delivery persistence, and one-shot GitHub App sync.
 
 ## Web/API URL Configuration
 
@@ -114,9 +119,12 @@ Set these values when wiring a real GitHub App:
 GITHUB_APP_ID=
 GITHUB_PRIVATE_KEY=
 GITHUB_WEBHOOK_SECRET=
+GITHUB_INSTALLATION_ID=
 ```
 
 Without those values, the webhook endpoint accepts local development payloads without signature verification. With those values present, GitHub webhook signatures are verified.
+
+`GITHUB_INSTALLATION_ID` is optional. When omitted, the worker iterates every installation visible to the GitHub App.
 
 ## VPS Deployment Shape
 
