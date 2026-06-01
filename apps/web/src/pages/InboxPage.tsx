@@ -1,4 +1,9 @@
 import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query"
+import {
   useEffect,
   useMemo,
   useState,
@@ -23,14 +28,15 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
 import { Separator } from "@/components/ui/separator"
+import { getReviewerInbox, markPullRequestSeen } from "@/api"
 import { cn } from "@/lib/utils"
-import type { ReviewQueueItem, WorkflowState } from "@/data/review-data"
-import { reviewItems } from "@/data/review-data"
+import {
+  buildInboxView,
+  type ReviewLaneId,
+  type ReviewQueueItemView,
+} from "@/reviewer/view-model"
 
-type LaneId = Extract<
-  WorkflowState,
-  "needs_review" | "changed_since_last_seen" | "waiting_on_author"
->
+type LaneId = ReviewLaneId
 
 type LocalQueueState = "snoozed" | "caught_up"
 
@@ -49,7 +55,7 @@ const lanes: LaneDefinition[] = [
     defaultOpen: true,
   },
   {
-    id: "changed_since_last_seen",
+    id: "updated_since_review",
     label: "Changed since you last looked",
     tone: "changed",
     defaultOpen: true,
@@ -70,29 +76,47 @@ const laneToneClasses: Record<LaneDefinition["tone"], string> = {
 
 const workflowLabels: Record<LaneId, string> = {
   needs_review: "Needs you",
-  changed_since_last_seen: "Changed since",
+  updated_since_review: "Changed since",
   waiting_on_author: "Waiting on author",
 }
 
 export function InboxPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const inboxQuery = useQuery({
+    queryKey: ["reviewer-inbox"],
+    queryFn: getReviewerInbox,
+  })
+  const markSeenMutation = useMutation({
+    mutationFn: markPullRequestSeen,
+    onSuccess: async (_result, pullRequestId) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["reviewer-inbox"] }),
+        queryClient.invalidateQueries({ queryKey: ["pull-request", pullRequestId] }),
+      ])
+    },
+  })
   const [localQueueState, setLocalQueueState] = useState<
     Partial<Record<string, LocalQueueState>>
   >({})
+  const inboxView = useMemo(
+    () => (inboxQuery.data ? buildInboxView(inboxQuery.data) : undefined),
+    [inboxQuery.data]
+  )
   const activeItems = useMemo(
-    () => reviewItems.filter((item) => !localQueueState[item.id]),
-    [localQueueState]
+    () => inboxView?.items.filter((item) => !localQueueState[item.id]) ?? [],
+    [inboxView, localQueueState]
   )
   const laneItems = useMemo(
     () =>
       lanes.reduce(
         (acc, lane) => {
           acc[lane.id] = activeItems.filter(
-            (item) => item.workflowState === lane.id
+            (item) => item.laneId === lane.id
           )
           return acc
         },
-        {} as Record<LaneId, ReviewQueueItem[]>
+        {} as Record<LaneId, ReviewQueueItemView[]>
       ),
     [activeItems]
   )
@@ -107,7 +131,7 @@ export function InboxPage() {
     [laneItems, openLaneIds]
   )
   const [selectedId, setSelectedId] = useState<string>(
-    () => visibleItems[0]?.id ?? reviewItems[0]?.id ?? ""
+    () => visibleItems[0]?.id ?? activeItems[0]?.id ?? ""
   )
   const selectedItem =
     activeItems.find((item) => item.id === selectedId) ?? activeItems[0]
@@ -127,9 +151,12 @@ export function InboxPage() {
     setSelectedId(nextVisible?.id ?? nextActive?.id ?? "")
   }
 
-  function setSelectedQueueState(nextState: LocalQueueState) {
+  async function setSelectedQueueState(nextState: LocalQueueState) {
     if (!selectedItem) return
     const itemId = selectedItem.id
+    if (nextState === "caught_up") {
+      await markSeenMutation.mutateAsync(itemId)
+    }
     setLocalQueueState((current) => ({ ...current, [itemId]: nextState }))
     moveSelectionAfterRemoving(itemId)
   }
@@ -195,28 +222,43 @@ export function InboxPage() {
         return
       }
 
-      setSelectedQueueState(event.key === "s" ? "snoozed" : "caught_up")
+      void setSelectedQueueState(event.key === "s" ? "snoozed" : "caught_up")
     }
 
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [openSelectedDetail, selectedItem, visibleItems])
+  }, [openSelectedDetail, selectedItem, visibleItems, markSeenMutation])
+
+  if (inboxQuery.isLoading) {
+    return <InboxStatusPanel title="Loading review inbox" />
+  }
+
+  if (inboxQuery.isError || !inboxView) {
+    return (
+      <InboxStatusPanel
+        title="Could not load review inbox"
+        detail="The API is not reachable. Start the full app with the API server, then reload."
+      />
+    )
+  }
 
   return (
-    <div className="grid min-h-[760px] grid-cols-[212px_1fr]">
+    <div className="grid min-h-[760px] grid-cols-1 lg:grid-cols-[212px_1fr]">
       <InboxSidebar
         laneItems={laneItems}
+        approvedCount={inboxView.approvedCount}
+        watchingCount={inboxView.watchingCount}
         snoozedCount={
-          reviewItems.filter(
-            (item) => localQueueState[item.id] === "snoozed" || item.snoozedUntil
+          inboxView.items.filter(
+            (item) => localQueueState[item.id] === "snoozed"
           ).length
         }
       />
 
       <section className="flex min-w-0 flex-col bg-[#242420]">
         <InboxHeader />
-        <div className="grid min-h-[697px] grid-cols-[58fr_42fr]">
-          <div className="min-w-0 border-r border-white/10">
+        <div className="grid min-h-[697px] grid-cols-1 xl:grid-cols-[58fr_42fr]">
+          <div className="min-w-0 border-b border-white/10 xl:border-r xl:border-b-0">
             <div className="h-full overflow-y-auto pt-2 pb-7">
               {lanes.map((lane) => (
                 <QueueLane
@@ -244,8 +286,9 @@ export function InboxPage() {
           {selectedItem ? (
             <QuickPeekPanel
               item={selectedItem}
-              onSnooze={() => setSelectedQueueState("snoozed")}
-              onCaughtUp={() => setSelectedQueueState("caught_up")}
+              isMarkingSeen={markSeenMutation.isPending}
+              onSnooze={() => void setSelectedQueueState("snoozed")}
+              onCaughtUp={() => void setSelectedQueueState("caught_up")}
             />
           ) : (
             <EmptyPeekPanel />
@@ -258,16 +301,17 @@ export function InboxPage() {
 
 function InboxSidebar({
   laneItems,
+  approvedCount,
+  watchingCount,
   snoozedCount,
 }: {
-  laneItems: Record<LaneId, ReviewQueueItem[]>
+  laneItems: Record<LaneId, ReviewQueueItemView[]>
+  approvedCount: number
+  watchingCount: number
   snoozedCount: number
 }) {
-  const approvedRecent = reviewItems.filter((item) => item.workflowState === "approved")
-  const watching = reviewItems.filter((item) => item.isPinned || item.isMuted)
-
   return (
-    <aside className="flex flex-col border-r border-white/10 bg-[#191916] px-3 py-4">
+    <aside className="flex flex-col border-b border-white/10 bg-[#191916] px-3 py-4 lg:border-r lg:border-b-0">
       <div className="flex items-center gap-2 px-2 pt-1 pb-4">
         <div className="flex h-4 w-4 items-center justify-center rounded-[3px] bg-[#d0a24c] text-[9px] font-bold text-[#191916]">
           R
@@ -284,24 +328,48 @@ function InboxSidebar({
           count={laneItems.needs_review.length}
         />
         <SidebarItem
-          label={workflowLabels.changed_since_last_seen}
-          count={laneItems.changed_since_last_seen.length}
+          label={workflowLabels.updated_since_review}
+          count={laneItems.updated_since_review.length}
         />
         <SidebarItem
           label={workflowLabels.waiting_on_author}
           count={laneItems.waiting_on_author.length}
         />
-        <SidebarItem label="Approved · recent" count={approvedRecent.length} />
+        <SidebarItem label="Approved · recent" count={approvedCount} />
       </SidebarSection>
       <SidebarSection label="Stashed">
         <SidebarItem label="Snoozed" count={snoozedCount} />
-        <SidebarItem label="Watching" count={watching.length} />
+        <SidebarItem label="Watching" count={watchingCount} />
       </SidebarSection>
-      <div className="mt-auto rounded-md border border-white/10 bg-white/[0.03] p-3 text-[11px] leading-5 text-[#8e8b82]">
+      <div className="mt-4 rounded-md border border-white/10 bg-white/[0.03] p-3 text-[11px] leading-5 text-[#8e8b82] lg:mt-auto">
         Review decisions still happen in GitHub. This surface only tracks where
         your attention belongs.
       </div>
     </aside>
+  )
+}
+
+function InboxStatusPanel({
+  title,
+  detail,
+}: {
+  title: string
+  detail?: string
+}) {
+  return (
+    <div className="grid min-h-[760px] place-items-center bg-[#242420] px-6">
+      <div className="max-w-sm rounded-lg border border-white/10 bg-[#20201d] p-6 text-center">
+        <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-[#d0a24c]">
+          <Inbox className="h-5 w-5" />
+        </div>
+        <h1 className="text-[18px] font-semibold tracking-tight text-[#f0ede4]">
+          {title}
+        </h1>
+        {detail ? (
+          <p className="mt-2 text-sm leading-6 text-[#9f9a91]">{detail}</p>
+        ) : null}
+      </div>
+    </div>
   )
 }
 
@@ -397,7 +465,7 @@ function QueueLane({
 }: {
   lane: LaneDefinition
   isOpen: boolean
-  items: ReviewQueueItem[]
+  items: ReviewQueueItemView[]
   selectedId: string
   onToggle: () => void
   onSelect: (id: string) => void
@@ -450,13 +518,13 @@ function QueueRow({
   selected,
   onSelect,
 }: {
-  item: ReviewQueueItem
+  item: ReviewQueueItemView
   selected: boolean
   onSelect: () => void
 }) {
   const initials = item.authorLogin.slice(0, 2).toUpperCase()
   const reReviewRequested = item.activityEvents.some((event) =>
-    event.action.includes("re-requested your review")
+    event.isNew && event.action.toLowerCase().includes("requested your review")
   )
 
   return (
@@ -548,15 +616,17 @@ function FactChip({
 
 function QuickPeekPanel({
   item,
+  isMarkingSeen,
   onSnooze,
   onCaughtUp,
 }: {
-  item: ReviewQueueItem
+  item: ReviewQueueItemView
+  isMarkingSeen: boolean
   onSnooze: () => void
   onCaughtUp: () => void
 }) {
   const reReviewRequested = item.activityEvents.some((event) =>
-    event.action.includes("re-requested your review")
+    event.isNew && event.action.toLowerCase().includes("requested your review")
   )
   const factRows = [
     {
@@ -571,13 +641,15 @@ function QuickPeekPanel({
     },
     {
       id: "review",
-      label: "author re-requested your review",
+      label: "review requested",
       show: reReviewRequested,
     },
   ].filter((row) => row.show)
+  const hasBodySections =
+    item.totalThreadCount > 0 || item.changedFilesSinceLastSeen.length > 0
 
   return (
-    <aside className="flex min-w-0 flex-col bg-[#20201d]">
+    <aside className="flex min-h-[520px] min-w-0 flex-col bg-[#20201d]">
       <div className="border-b border-white/10 px-5 py-5">
         <div className="flex items-center gap-2 font-mono text-[10.5px] tracking-[0.12em] text-[#8e8b82] uppercase">
           <PanelRight className="h-3.5 w-3.5" />
@@ -607,12 +679,17 @@ function QuickPeekPanel({
             Since your last visit · {item.lastSeenAt}
           </div>
           <ul className="mt-3 space-y-2 text-[13px] leading-5 text-[#ded9ce]">
-            {factRows.map((row) => (
+            {factRows.length > 0 ? factRows.map((row) => (
               <li key={row.id} className="flex gap-2">
                 <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#d0a24c]" />
                 <span>{row.label}</span>
               </li>
-            ))}
+            )) : (
+              <li className="flex gap-2">
+                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-white/30" />
+                <span>No unseen activity since your last visit.</span>
+              </li>
+            )}
           </ul>
         </section>
 
@@ -620,42 +697,84 @@ function QuickPeekPanel({
 
         <section>
           <div className="font-mono text-[11px] tracking-[0.1em] text-[#9f9a91] uppercase">
-            Open threads · {item.unresolvedThreadCount} of {item.totalThreadCount}{" "}
-            unresolved
+            Queue reason
           </div>
-          <div className="mt-3 space-y-2">
-            {item.reviewThreads.map((thread) => (
-              <div
-                key={thread.id}
-                className="grid grid-cols-[30px_1fr] gap-3 rounded-md border border-white/10 bg-white/[0.03] p-3"
-              >
-                <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-white/10 bg-white/[0.04] font-mono text-[10px] text-[#9f9a91]">
-                  {thread.author.slice(0, 2).toUpperCase()}
-                </span>
-                <div className="min-w-0">
-                  <div className="line-clamp-2 text-[12.5px] leading-5 text-[#d8d3c8]">
-                    {thread.excerpt}
-                  </div>
-                  <div
-                    className={cn(
-                      "mt-1.5 font-mono text-[10px] tracking-[0.06em] uppercase",
-                      thread.status === "unresolved"
-                        ? "text-[#d0a24c]"
-                        : "text-[#77736a]"
-                    )}
-                  >
-                    {thread.status}
-                    {thread.authorReplied ? " · author replied" : ""}
-                  </div>
-                </div>
-              </div>
-            ))}
+          <div className="mt-3 rounded-md border border-white/10 bg-white/[0.03] p-3 text-[13px] leading-5 text-[#d8d3c8]">
+            {item.reason}
           </div>
         </section>
 
-        <Separator className="my-5 bg-white/10" />
+        {item.activityEvents.length > 0 ? (
+          <>
+            <Separator className="my-5 bg-white/10" />
+            <section>
+              <div className="font-mono text-[11px] tracking-[0.1em] text-[#9f9a91] uppercase">
+                Latest activity
+              </div>
+              <div className="mt-3 space-y-2">
+                {item.activityEvents.slice(0, 3).map((event) => (
+                  <div
+                    key={event.id}
+                    className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-[12.5px] leading-5 text-[#d8d3c8]"
+                  >
+                    <div>
+                      <b>{event.actor}</b> {event.action}
+                    </div>
+                    <div className="mt-1 font-mono text-[10px] tracking-[0.06em] text-[#77736a] uppercase">
+                      {event.occurredAt}
+                      {event.isNew ? " · new" : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </>
+        ) : null}
 
-        <section>
+        {hasBodySections ? <Separator className="my-5 bg-white/10" /> : null}
+
+        {item.totalThreadCount > 0 ? (
+          <section>
+            <div className="font-mono text-[11px] tracking-[0.1em] text-[#9f9a91] uppercase">
+              Open threads · {item.unresolvedThreadCount} of{" "}
+              {item.totalThreadCount} unresolved
+            </div>
+            <div className="mt-3 space-y-2">
+              {item.reviewThreads.map((thread) => (
+                <div
+                  key={thread.id}
+                  className="grid grid-cols-[30px_1fr] gap-3 rounded-md border border-white/10 bg-white/[0.03] p-3"
+                >
+                  <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-white/10 bg-white/[0.04] font-mono text-[10px] text-[#9f9a91]">
+                    {thread.author.slice(0, 2).toUpperCase()}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="line-clamp-2 text-[12.5px] leading-5 text-[#d8d3c8]">
+                      {thread.excerpt}
+                    </div>
+                    <div
+                      className={cn(
+                        "mt-1.5 font-mono text-[10px] tracking-[0.06em] uppercase",
+                        thread.status === "unresolved"
+                          ? "text-[#d0a24c]"
+                          : "text-[#77736a]"
+                      )}
+                    >
+                      {thread.status}
+                      {thread.authorReplied ? " · author replied" : ""}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {item.totalThreadCount > 0 && item.changedFilesSinceLastSeen.length > 0 ? (
+          <Separator className="my-5 bg-white/10" />
+        ) : null}
+
+        {item.changedFilesSinceLastSeen.length > 0 ? <section>
           <div className="font-mono text-[11px] tracking-[0.1em] text-[#9f9a91] uppercase">
             Files touched since last look · {item.changedFilesSinceLastSeen.length}
           </div>
@@ -672,7 +791,7 @@ function QuickPeekPanel({
               </div>
             ))}
           </div>
-        </section>
+        </section> : null}
       </div>
 
       <div className="mt-auto flex items-center gap-2 border-t border-white/10 px-5 py-4">
@@ -698,10 +817,11 @@ function QuickPeekPanel({
           type="button"
           variant="outline"
           onClick={onCaughtUp}
+          disabled={isMarkingSeen}
           className="h-9 border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
         >
           <Check className="h-4 w-4" />
-          Caught up
+          {isMarkingSeen ? "Saving" : "Caught up"}
         </Button>
         <Button
           asChild

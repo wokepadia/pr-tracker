@@ -1,4 +1,9 @@
 import { Link, useParams } from "@tanstack/react-router"
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query"
 import type { ComponentType, ReactNode } from "react"
 import {
   ArrowLeft,
@@ -11,13 +16,14 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+import { getPullRequest, getReviewerInbox, markPullRequestSeen } from "@/api"
 import { cn } from "@/lib/utils"
-import type {
-  ActivityEvent,
-  ReviewDecision,
-  ReviewQueueItem,
-} from "@/data/review-data"
-import { reviewItems } from "@/data/review-data"
+import {
+  buildInboxView,
+  type ActivityEventView,
+  type ReviewQueueItemView,
+} from "@/reviewer/view-model"
+import type { ReviewDecision } from "@pr-tracker/core"
 
 const reviewDecisionLabels: Record<ReviewDecision, string> = {
   approved: "approved",
@@ -27,16 +33,44 @@ const reviewDecisionLabels: Record<ReviewDecision, string> = {
 
 export function PullRequestPage() {
   const { pullRequestId } = useParams({ from: "/pull-requests/$pullRequestId" })
-  const item = reviewItems.find((reviewItem) => reviewItem.id === pullRequestId)
+  const queryClient = useQueryClient()
+  const inboxQuery = useQuery({
+    queryKey: ["reviewer-inbox"],
+    queryFn: getReviewerInbox,
+  })
+  const detailQuery = useQuery({
+    queryKey: ["pull-request", pullRequestId],
+    queryFn: () => getPullRequest(pullRequestId),
+  })
+  const markSeenMutation = useMutation({
+    mutationFn: markPullRequestSeen,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["reviewer-inbox"] }),
+        queryClient.invalidateQueries({ queryKey: ["pull-request", pullRequestId] }),
+      ])
+    },
+  })
+  const inboxView = inboxQuery.data ? buildInboxView(inboxQuery.data) : undefined
+  const item = inboxView?.items.find((reviewItem) => reviewItem.id === pullRequestId)
 
-  if (!item) {
-    throw new Error(`Unknown pull request: ${pullRequestId}`)
+  if (inboxQuery.isLoading || detailQuery.isLoading) {
+    return <DetailStatusPanel title="Loading pull request" />
+  }
+
+  if (inboxQuery.isError || detailQuery.isError || !item) {
+    return (
+      <DetailStatusPanel
+        title="Could not load pull request"
+        detail="The API did not return this reviewer item."
+      />
+    )
   }
 
   const newEvents = item.activityEvents.filter((event) => event.isNew)
   const oldEvents = item.activityEvents.filter((event) => !event.isNew)
   const reReviewRequested = item.activityEvents.some((event) =>
-    event.action.includes("re-requested your review")
+    event.isNew && event.action.toLowerCase().includes("requested your review")
   )
 
   return (
@@ -47,7 +81,7 @@ export function PullRequestPage() {
         newEventCount={newEvents.length}
         reReviewRequested={reReviewRequested}
       />
-      <div className="grid grid-cols-[62fr_38fr] gap-0 border-t border-white/10">
+      <div className="grid grid-cols-1 gap-0 border-t border-white/10 xl:grid-cols-[62fr_38fr]">
         <main className="min-w-0 px-7 py-6">
           <div className="mb-4 font-mono text-[10.5px] tracking-[0.12em] text-[#8e8b82] uppercase">
             Activity · newest first
@@ -58,15 +92,41 @@ export function PullRequestPage() {
             lastSeenAt={item.lastSeenAt}
           />
         </main>
-        <DetailSideRail item={item} newEventCount={newEvents.length} />
+        <DetailSideRail
+          item={item}
+          newEventCount={newEvents.length}
+          isMarkingSeen={markSeenMutation.isPending}
+          onCaughtUp={() => void markSeenMutation.mutateAsync(item.id)}
+        />
       </div>
     </div>
   )
 }
 
-function DetailHeader({ item }: { item: ReviewQueueItem }) {
+function DetailStatusPanel({
+  title,
+  detail,
+}: {
+  title: string
+  detail?: string
+}) {
   return (
-    <header className="grid grid-cols-[auto_1fr_auto] gap-5 border-b border-white/10 px-7 py-6">
+    <div className="grid min-h-[760px] place-items-center bg-[#242420] px-6">
+      <div className="max-w-sm rounded-lg border border-white/10 bg-[#20201d] p-6 text-center">
+        <h1 className="text-[18px] font-semibold tracking-tight text-[#f0ede4]">
+          {title}
+        </h1>
+        {detail ? (
+          <p className="mt-2 text-sm leading-6 text-[#9f9a91]">{detail}</p>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function DetailHeader({ item }: { item: ReviewQueueItemView }) {
+  return (
+    <header className="grid grid-cols-1 gap-5 border-b border-white/10 px-7 py-6 lg:grid-cols-[auto_1fr_auto]">
       <Button
         asChild
         variant="ghost"
@@ -90,7 +150,7 @@ function DetailHeader({ item }: { item: ReviewQueueItem }) {
         <h1 className="mt-2 text-[28px] font-semibold leading-9 tracking-tight text-[#f0ede4]">
           {item.title}
         </h1>
-        <div className="mt-4 grid max-w-[760px] grid-cols-3 gap-2">
+        <div className="mt-4 grid max-w-[760px] grid-cols-1 gap-2 md:grid-cols-3">
           <DetailFact
             label={item.waitingOn === "you" ? "Waiting on you" : "Waiting on author"}
             value={item.waitingAge}
@@ -108,7 +168,7 @@ function DetailHeader({ item }: { item: ReviewQueueItem }) {
       <div className="flex min-w-[190px] flex-col items-stretch gap-3">
         <div className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 font-mono text-[11px] text-[#d8d3c8]">
           <span className="mr-2 inline-block h-2 w-2 rounded-full bg-[#d0a24c]" />
-          You requested changes
+          {userReviewStanding(item.userLastReviewDecision)}
         </div>
         <Button
           asChild
@@ -155,7 +215,7 @@ function ContextBand({
   newEventCount,
   reReviewRequested,
 }: {
-  item: ReviewQueueItem
+  item: ReviewQueueItemView
   newEventCount: number
   reReviewRequested: boolean
 }) {
@@ -245,8 +305,8 @@ function Timeline({
   oldEvents,
   lastSeenAt,
 }: {
-  newEvents: ActivityEvent[]
-  oldEvents: ActivityEvent[]
+  newEvents: ActivityEventView[]
+  oldEvents: ActivityEventView[]
   lastSeenAt: string
 }) {
   return (
@@ -277,7 +337,7 @@ function TimelineItem({
   event,
   isNew,
 }: {
-  event: ActivityEvent
+  event: ActivityEventView
   isNew?: boolean
 }) {
   return (
@@ -306,21 +366,25 @@ function TimelineItem({
 function DetailSideRail({
   item,
   newEventCount,
+  isMarkingSeen,
+  onCaughtUp,
 }: {
-  item: ReviewQueueItem
+  item: ReviewQueueItemView
   newEventCount: number
+  isMarkingSeen: boolean
+  onCaughtUp: () => void
 }) {
   const totalAdditions = item.changedFilesSinceLastSeen.reduce(
-    (total, file) => total + file.additions,
+    (total, file) => total + (file.additions ?? 0),
     0
   )
   const totalDeletions = item.changedFilesSinceLastSeen.reduce(
-    (total, file) => total + file.deletions,
+    (total, file) => total + (file.deletions ?? 0),
     0
   )
 
   return (
-    <aside className="border-l border-white/10 bg-[#20201d] px-5 py-6">
+    <aside className="border-t border-white/10 bg-[#20201d] px-5 py-6 xl:border-l xl:border-t-0">
       <RailCard title="Catch up">
         <div className="grid gap-2">
           <Button
@@ -335,10 +399,12 @@ function DetailSideRail({
           <Button
             type="button"
             variant="outline"
+            disabled={isMarkingSeen}
+            onClick={onCaughtUp}
             className="h-9 justify-center border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
           >
             <Check className="h-4 w-4" />
-            Mark all caught up
+            {isMarkingSeen ? "Saving" : "Mark all caught up"}
           </Button>
         </div>
       </RailCard>
@@ -346,7 +412,7 @@ function DetailSideRail({
       <RailCard title="Where it stands">
         <RailKeyValue
           label="your review"
-          value={reviewDecisionLabels[item.userLastReviewDecision]}
+          value={reviewDecisionLabel(item.userLastReviewDecision)}
         />
         {item.otherReviewers.map((reviewer) => (
           <RailKeyValue
@@ -366,21 +432,23 @@ function DetailSideRail({
         <RailKeyValue label="size" value={`+${totalAdditions} / -${totalDeletions}`} />
       </RailCard>
 
-      <RailCard title="Changed files">
-        <div className="grid gap-1">
-          {item.changedFilesSinceLastSeen.map((file) => (
-            <div
-              key={file.path}
-              className="flex items-center justify-between gap-3 rounded-[4px] px-1 py-1 font-mono text-[11px] text-[#bdb8ad]"
-            >
-              <span className="truncate">{file.path}</span>
-              <span className="text-[#8e8b82]">
-                +{file.additions} / -{file.deletions}
-              </span>
-            </div>
-          ))}
-        </div>
-      </RailCard>
+      {item.changedFilesSinceLastSeen.length > 0 ? (
+        <RailCard title="Changed files">
+          <div className="grid gap-1">
+            {item.changedFilesSinceLastSeen.map((file) => (
+              <div
+                key={file.path}
+                className="flex items-center justify-between gap-3 rounded-[4px] px-1 py-1 font-mono text-[11px] text-[#bdb8ad]"
+              >
+                <span className="truncate">{file.path}</span>
+                <span className="text-[#8e8b82]">
+                  +{file.additions} / -{file.deletions}
+                </span>
+              </div>
+            ))}
+          </div>
+        </RailCard>
+      ) : null}
 
       <RailCard title="Stay on it">
         <Button
@@ -423,4 +491,15 @@ function RailKeyValue({ label, value }: { label: string; value: string }) {
       <Separator className="bg-white/10 last:hidden" />
     </>
   )
+}
+
+function reviewDecisionLabel(decision: ReviewDecision | "pending"): string {
+  return decision === "pending" ? "pending" : reviewDecisionLabels[decision]
+}
+
+function userReviewStanding(decision: ReviewDecision | "pending"): string {
+  if (decision === "approved") return "You approved"
+  if (decision === "changes_requested") return "You requested changes"
+  if (decision === "commented") return "You commented"
+  return "No review yet"
 }
