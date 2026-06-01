@@ -3,20 +3,33 @@
 ## Required Reading
 
 - Core product workflow: [docs/core-workflow-plan.md](docs/core-workflow-plan.md)
+- Reviewer UI wireframe reference: [docs/wireframe-reference.md](docs/wireframe-reference.md)
 - Development practices: [docs/development-practices.md](docs/development-practices.md)
 - Commit guidelines: [docs/commit-guidelines.md](docs/commit-guidelines.md)
+
+## UI Reference
+
+Treat the root `Review Queue Wireframes (standalone).html` file as the canonical reviewer UI wireframe. Use [docs/wireframe-reference.md](docs/wireframe-reference.md) for how to reference it. Product and UI work should preserve the intent of that wireframe unless the user explicitly changes direction.
 
 ## Domain Model
 
 The underlying domain model must stay independent of the reviewer workflow and independent of any single UI view.
 
-Model GitHub activity as reusable primitives such as actors, items, events, comments, review decisions, labels, assignments, subscriptions, timestamps, and relationships. Reviewer inboxes, issue triage views, authored-item views, future team queues, and other workflows should be derived projections over that shared model rather than separate domain models.
+Model GitHub activity as reusable primitives such as actors, items, events, comments, review decisions, labels, assignments, subscriptions, timestamps, and relationships. Reviewer inboxes and other workflow views should be derived projections over that shared model rather than separate domain models.
 
 Do not bake view-specific states such as "needs my review" directly into the core entities. Keep those as computed classifications owned by workflow/view layers.
 
 ## V1 Product Scope
 
 V1 is basic plumbing for a single-user reviewer inbox. Use deterministic GitHub data ingestion, event storage, and computed workflow classifications. Do not add generated summaries or other LLM-dependent features in V1.
+
+## Implementation Discipline
+
+Build only for the current reviewer-loop use case. Do not add speculative future workflows, compatibility layers, fallbacks, configuration branches, abstractions, or generalized extension points unless the current phase explicitly requires them.
+
+Keep the implementation simple, direct, and balanced: avoid unnecessary optimization, but do not ship obviously inefficient UI paths for the expected reviewer inbox size. Prefer clear data shapes, local deterministic state, and feature-sized changes that can be reviewed independently.
+
+During UI implementation, work in feature checkpoints. For each feature checkpoint, implement the smallest coherent slice, run focused QA against the wireframe/spec, fix bugs, then do a code-review pass before committing. Do not commit half-polished UI.
 
 ## Development Practices Summary
 
