@@ -1,0 +1,25 @@
+{
+  "name": "pr-tracker",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.5.0",
+  "scripts": {
+    "dev": "pnpm build:packages && pnpm --parallel --filter @pr-tracker/api --filter @pr-tracker/web dev",
+    "build:packages": "pnpm --filter @pr-tracker/core --filter @pr-tracker/github --filter @pr-tracker/db --filter @pr-tracker/reviewer-workflow build",
+    "dev:api": "pnpm build:packages && pnpm --filter @pr-tracker/api dev",
+    "dev:web": "pnpm build:packages && pnpm --filter @pr-tracker/web dev",
+    "dev:worker": "pnpm build:packages && pnpm --filter @pr-tracker/worker dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "db:migrate": "pnpm --filter @pr-tracker/db migrate:up",
+    "db:seed:sample": "pnpm --filter @pr-tracker/db seed:sample"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "tsup": "^8.5.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.1"
+  }
+}

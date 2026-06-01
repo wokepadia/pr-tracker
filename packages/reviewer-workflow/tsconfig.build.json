@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "paths": {
+      "@pr-tracker/core": ["packages/core/dist/index.d.ts"]
+    }
+  },
+  "include": ["src/index.ts"]
+}

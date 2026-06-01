@@ -1,0 +1,29 @@
+{
+  "name": "@pr-tracker/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "migrate:up": "tsx src/migrate.ts",
+    "seed:sample": "tsx src/seed-sample.ts"
+  },
+  "dependencies": {
+    "@pr-tracker/core": "workspace:*",
+    "@mikro-orm/core": "^6.4.16",
+    "@mikro-orm/migrations": "^6.4.16",
+    "@mikro-orm/postgresql": "^6.4.16"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.1"
+  }
+}

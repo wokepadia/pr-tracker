@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "baseUrl": ".",
+    "paths": {
+      "@pr-tracker/core": ["packages/core/src/index.ts"],
+      "@pr-tracker/db": ["packages/db/src/index.ts"],
+      "@pr-tracker/github": ["packages/github/src/index.ts"],
+      "@pr-tracker/reviewer-workflow": [
+        "packages/reviewer-workflow/src/index.ts"
+      ]
+    }
+  }
+}
