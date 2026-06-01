@@ -10,12 +10,23 @@ import {
 import { useMemo, useState } from "react";
 import type {
   ClassifiedPullRequest,
+  WorkflowState,
   ReviewerInbox
 } from "@pr-tracker/reviewer-workflow";
 
 const columnHelper = createColumnHelper<ClassifiedPullRequest>();
+const statePriority: Record<WorkflowState, number> = {
+  needs_review: 0,
+  updated_since_review: 1,
+  needs_thread_attention: 2,
+  waiting_on_author: 3,
+  approved: 4,
+  stale: 5,
+  watching: 6,
+  inactive: 7
+};
 
-const stateLabels: Record<string, string> = {
+export const stateLabels: Record<string, string> = {
   needs_review: "Needs review",
   updated_since_review: "Updated",
   waiting_on_author: "Waiting on author",
@@ -26,8 +37,16 @@ const stateLabels: Record<string, string> = {
   inactive: "Inactive"
 };
 
-export function InboxTable({ inbox }: { inbox: ReviewerInbox }) {
+export function InboxTable({
+  inbox,
+  items = inbox.items
+}: {
+  inbox: ReviewerInbox;
+  items?: ClassifiedPullRequest[];
+}) {
   const [sorting, setSorting] = useState<SortingState>([
+    { id: "priority", desc: false },
+    { id: "unseen", desc: true },
     { id: "updatedAt", desc: true }
   ]);
 
@@ -47,6 +66,17 @@ export function InboxTable({ inbox }: { inbox: ReviewerInbox }) {
           </span>
         )
       }),
+      columnHelper.accessor(
+        (row) =>
+          statePriority[row.workflowState] * 1000 -
+          Math.min(row.unseenActivityCount, 999),
+        {
+          id: "priority",
+          header: "Priority",
+          cell: () => null,
+          enableHiding: true
+        }
+      ),
       columnHelper.accessor((row) => row.pullRequest.title, {
         id: "title",
         header: "Pull request",
@@ -63,6 +93,7 @@ export function InboxTable({ inbox }: { inbox: ReviewerInbox }) {
               <span>
                 {item.pullRequest.repository} #{item.pullRequest.number}
               </span>
+              <span>{latestActivityLine(item, actorById)}</span>
             </div>
           );
         }
@@ -95,7 +126,7 @@ export function InboxTable({ inbox }: { inbox: ReviewerInbox }) {
   );
 
   const table = useReactTable({
-    data: inbox.items,
+    data: items,
     columns,
     state: { sorting },
     onSortingChange: setSorting,
@@ -105,40 +136,69 @@ export function InboxTable({ inbox }: { inbox: ReviewerInbox }) {
 
   return (
     <section className="panel table-panel">
-      <table>
-        <thead>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <tr key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
-                <th key={header.id}>
-                  <button
-                    type="button"
-                    onClick={header.column.getToggleSortingHandler()}
-                  >
-                    {flexRender(
-                      header.column.columnDef.header,
-                      header.getContext()
-                    )}
-                    {header.column.getIsSorted() === "asc" ? " ↑" : null}
-                    {header.column.getIsSorted() === "desc" ? " ↓" : null}
-                  </button>
-                </th>
-              ))}
-            </tr>
-          ))}
-        </thead>
-        <tbody>
-          {table.getRowModel().rows.map((row) => (
-            <tr key={row.id}>
-              {row.getVisibleCells().map((cell) => (
-                <td key={cell.id}>
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {items.length === 0 ? (
+        <div className="empty-state">
+          <h2>No pull requests match this view</h2>
+          <p>Change the section, search text, or unseen filter.</p>
+        </div>
+      ) : (
+        <table>
+          <thead>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id}>
+                {headerGroup.headers
+                  .filter((header) => header.id !== "priority")
+                  .map((header) => (
+                    <th key={header.id}>
+                      <button
+                        type="button"
+                        onClick={header.column.getToggleSortingHandler()}
+                      >
+                        {flexRender(
+                          header.column.columnDef.header,
+                          header.getContext()
+                        )}
+                        {header.column.getIsSorted() === "asc" ? " ↑" : null}
+                        {header.column.getIsSorted() === "desc" ? " ↓" : null}
+                      </button>
+                    </th>
+                  ))}
+              </tr>
+            ))}
+          </thead>
+          <tbody>
+            {table.getRowModel().rows.map((row) => (
+              <tr key={row.id}>
+                {row
+                  .getVisibleCells()
+                  .filter((cell) => cell.column.id !== "priority")
+                  .map((cell) => (
+                    <td key={cell.id}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </section>
   );
+}
+
+function latestActivityLine(
+  item: ClassifiedPullRequest,
+  actorById: Map<string, string>
+): string {
+  const latestActivity = [...item.pullRequest.activity].sort(
+    (a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt)
+  )[0];
+
+  if (!latestActivity) {
+    return "No recorded activity";
+  }
+
+  return `${actorById.get(latestActivity.actorId) ?? latestActivity.actorId}: ${
+    latestActivity.title
+  }`;
 }

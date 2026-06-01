@@ -106,6 +106,16 @@ button {
   gap: 10px;
 }
 
+.detail-state {
+  align-items: center;
+  color: #475569;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 14px;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .header-stats span,
 .state-pill {
   border: 1px solid #d7dde8;
@@ -139,6 +149,100 @@ button {
 .table-panel {
   overflow-x: auto;
   padding: 0;
+}
+
+.inbox-controls {
+  display: grid;
+  gap: 16px;
+}
+
+.section-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.section-tabs button {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #d7dde8;
+  border-radius: 8px;
+  color: #334155;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+.section-tabs button.active {
+  background: #111827;
+  border-color: #111827;
+  color: #ffffff;
+}
+
+.section-tabs strong {
+  background: rgb(148 163 184 / 0.18);
+  border-radius: 999px;
+  font-size: 12px;
+  min-width: 24px;
+  padding: 2px 7px;
+  text-align: center;
+}
+
+.filter-row {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.search-field {
+  color: #475569;
+  display: grid;
+  flex: 1 1 280px;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 6px;
+  text-transform: uppercase;
+}
+
+.search-field input {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  color: #172033;
+  font: inherit;
+  font-size: 14px;
+  min-height: 40px;
+  padding: 9px 10px;
+  text-transform: none;
+}
+
+.checkbox-field {
+  align-items: center;
+  color: #334155;
+  display: inline-flex;
+  font-weight: 700;
+  gap: 8px;
+  min-height: 40px;
+}
+
+.checkbox-field input {
+  height: 16px;
+  width: 16px;
+}
+
+.empty-state {
+  padding: 28px;
+}
+
+.empty-state h2 {
+  margin-bottom: 6px;
+}
+
+.empty-state p {
+  color: #64748b;
+  margin: 0;
 }
 
 table {
@@ -258,6 +362,10 @@ th button {
   display: grid;
   gap: 4px;
   padding-left: 12px;
+}
+
+.event-list p {
+  margin: 0;
 }
 
 .button {

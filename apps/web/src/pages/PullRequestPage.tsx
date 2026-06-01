@@ -1,6 +1,7 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getPullRequest, markPullRequestSeen } from "../api";
+import { getPullRequest, getReviewerInbox, markPullRequestSeen } from "../api";
+import { stateLabels } from "../ui/InboxTable";
 
 export function PullRequestPage() {
   const { pullRequestId } = useParams({ from: "/pull-requests/$pullRequestId" });
@@ -8,6 +9,10 @@ export function PullRequestPage() {
   const detailQuery = useQuery({
     queryKey: ["pull-request", pullRequestId],
     queryFn: () => getPullRequest(pullRequestId)
+  });
+  const inboxQuery = useQuery({
+    queryKey: ["reviewer-inbox"],
+    queryFn: getReviewerInbox
   });
   const markSeenMutation = useMutation({
     mutationFn: () => markPullRequestSeen(pullRequestId),
@@ -26,6 +31,9 @@ export function PullRequestPage() {
 
   const { pullRequest, actors } = detailQuery.data;
   const actorById = new Map(actors.map((actor) => [actor.id, actor.login]));
+  const classifiedItem = inboxQuery.data?.items.find(
+    (item) => item.pullRequest.id === pullRequest.id
+  );
 
   return (
     <div className="page-stack">
@@ -39,6 +47,14 @@ export function PullRequestPage() {
             {pullRequest.repository} #{pullRequest.number}
           </p>
           <h1>{pullRequest.title}</h1>
+          {classifiedItem ? (
+            <div className="detail-state">
+              <span className={`state-pill ${classifiedItem.workflowState}`}>
+                {stateLabels[classifiedItem.workflowState]}
+              </span>
+              <span>{classifiedItem.reason}</span>
+            </div>
+          ) : null}
         </div>
         <div className="header-actions">
           <button
@@ -87,44 +103,83 @@ export function PullRequestPage() {
         </div>
 
         <div className="panel">
-          <h2>Unresolved threads</h2>
-          {pullRequest.threads.filter((thread) => !thread.isResolved).length === 0 ? (
-            <p className="muted">No unresolved review threads.</p>
+          <h2>Review decisions</h2>
+          {pullRequest.reviews.length === 0 ? (
+            <p className="muted">No reviews have been recorded yet.</p>
           ) : (
             <ul className="event-list">
-              {pullRequest.threads
-                .filter((thread) => !thread.isResolved)
-                .map((thread) => (
-                  <li key={thread.id}>
-                    <strong>{thread.filePath ?? "Conversation"}</strong>
-                    <span>
-                      {thread.line ? `Line ${thread.line}` : "No line context"} ·{" "}
-                      {thread.participantIds
-                        .map((id) => actorById.get(id) ?? id)
-                        .join(", ")}
-                    </span>
-                  </li>
-                ))}
+              {pullRequest.reviews.map((review) => (
+                <li key={review.id}>
+                  <strong>{reviewDecisionLabel(review.decision)}</strong>
+                  <span>
+                    {actorById.get(review.reviewerId) ?? review.reviewerId} ·{" "}
+                    {new Date(review.submittedAt).toLocaleString()}
+                  </span>
+                  {review.commitSha ? (
+                    <span>Commit {review.commitSha}</span>
+                  ) : null}
+                  {review.body ? <p>{review.body}</p> : null}
+                </li>
+              ))}
             </ul>
           )}
         </div>
       </section>
 
       <section className="panel">
+        <h2>Unresolved threads</h2>
+        {pullRequest.threads.filter((thread) => !thread.isResolved).length === 0 ? (
+          <p className="muted">No unresolved review threads.</p>
+        ) : (
+          <ul className="event-list">
+            {pullRequest.threads
+              .filter((thread) => !thread.isResolved)
+              .map((thread) => (
+                <li key={thread.id}>
+                  <strong>{thread.filePath ?? "Conversation"}</strong>
+                  <span>
+                    {thread.line ? `Line ${thread.line}` : "No line context"} ·{" "}
+                    {thread.participantIds
+                      .map((id) => actorById.get(id) ?? id)
+                      .join(", ")}
+                  </span>
+                </li>
+              ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="panel">
         <h2>Recent activity</h2>
-        <ul className="event-list">
-          {pullRequest.activity.map((event) => (
-            <li key={event.id}>
-              <strong>{event.title}</strong>
-              <span>
-                {actorById.get(event.actorId) ?? event.actorId} ·{" "}
-                {new Date(event.occurredAt).toLocaleString()}
-              </span>
-              {event.body ? <p>{event.body}</p> : null}
-            </li>
-          ))}
-        </ul>
+        {pullRequest.activity.length === 0 ? (
+          <p className="muted">No activity events have been recorded yet.</p>
+        ) : (
+          <ul className="event-list">
+            {pullRequest.activity.map((event) => (
+              <li key={event.id}>
+                <strong>{event.title}</strong>
+                <span>
+                  {actorById.get(event.actorId) ?? event.actorId} ·{" "}
+                  {new Date(event.occurredAt).toLocaleString()}
+                </span>
+                {event.body ? <p>{event.body}</p> : null}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   );
+}
+
+function reviewDecisionLabel(decision: string): string {
+  if (decision === "approved") {
+    return "Approved";
+  }
+
+  if (decision === "changes_requested") {
+    return "Changes requested";
+  }
+
+  return "Commented";
 }
