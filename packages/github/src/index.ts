@@ -114,9 +114,27 @@ export interface GitHubReviewSnapshot {
   user?: { login?: string };
 }
 
-export interface GitHubPullRequestSource {
-  listOpenPullRequests(): Promise<GitHubPullRequestSnapshot[]>;
+export interface GitHubPullRequestLookupInput {
+  installationId?: number;
+  repository: string;
+  number: number;
 }
+
+interface GitHubPullRequestLookupSource {
+  getPullRequest?(
+    input: GitHubPullRequestLookupInput
+  ): Promise<GitHubPullRequestSnapshot | undefined>;
+}
+
+export type GitHubPullRequestSource =
+  | (GitHubPullRequestLookupSource & {
+      listPullRequests(): Promise<GitHubPullRequestSnapshot[]>;
+      listOpenPullRequests?: () => Promise<GitHubPullRequestSnapshot[]>;
+    })
+  | (GitHubPullRequestLookupSource & {
+      listPullRequests?: () => Promise<GitHubPullRequestSnapshot[]>;
+      listOpenPullRequests(): Promise<GitHubPullRequestSnapshot[]>;
+    });
 
 interface RequestingOctokit {
   request<T = unknown>(
@@ -144,6 +162,7 @@ interface GitHubPullRequestFromApi {
   user?: { login?: string };
   head?: { sha?: string };
   merged?: boolean;
+  merged_at?: string | null;
   requested_reviewers?: Array<{ login?: string }>;
 }
 
@@ -160,55 +179,22 @@ interface GitHubReviewFromApi {
 export function createGithubPullRequestSource(input: {
   app: App;
   installationId?: number;
+  closedLookbackDays?: number;
 }): GitHubPullRequestSource {
   return {
+    async listPullRequests() {
+      return listInstallationPullRequests(input, { includeRecentClosed: true });
+    },
     async listOpenPullRequests() {
-      const snapshots: GitHubPullRequestSnapshot[] = [];
-      const installationIds = await listInstallationIds(
-        input.app,
-        input.installationId
-      );
-
-      for (const installationId of installationIds) {
-        for await (const { octokit, repository } of input.app.eachRepository.iterator({
-          installationId
-        })) {
-          const repo = repository as GitHubRepositoryFromApi;
-          const [owner, name] = repo.full_name.split("/");
-
-          if (!owner || !name) {
-            continue;
-          }
-
-          const pullRequests = await listOpenRepoPullRequests(
-            octokit as RequestingOctokit,
-            owner,
-            name
-          );
-
-          for (const pullRequest of pullRequests) {
-            const reviews = await listPullRequestReviews(
-              octokit as RequestingOctokit,
-              owner,
-              name,
-              pullRequest.number
-            );
-
-            snapshots.push({
-              installationId,
-              repository: {
-                full_name: repo.full_name,
-                html_url: repo.html_url,
-                owner: { login: repo.owner?.login ?? owner }
-              },
-              pull_request: pullRequest,
-              reviews
-            });
-          }
-        }
+      return listInstallationPullRequests(input, { includeRecentClosed: false });
+    },
+    async getPullRequest(lookup) {
+      const installationId = lookup.installationId ?? input.installationId;
+      if (!installationId) {
+        return undefined;
       }
 
-      return snapshots;
+      return getInstallationPullRequest(input.app, installationId, lookup);
     }
   };
 }
@@ -221,8 +207,96 @@ export function getGithubInstallationId(
     return undefined;
   }
 
+  if (!/^\d+$/.test(raw)) {
+    return undefined;
+  }
+
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+export function getGithubClosedLookbackDays(
+  env: Record<string, string | undefined>
+): number | undefined {
+  const raw = env.GITHUB_CLOSED_LOOKBACK_DAYS;
+  if (!raw) {
+    return undefined;
+  }
+
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+async function listInstallationPullRequests(
+  input: {
+    app: App;
+    installationId?: number;
+    closedLookbackDays?: number;
+  },
+  options: { includeRecentClosed: boolean }
+): Promise<GitHubPullRequestSnapshot[]> {
+  const snapshots: GitHubPullRequestSnapshot[] = [];
+  const installationIds = await listInstallationIds(
+    input.app,
+    input.installationId
+  );
+  const closedUpdatedSince = new Date(
+    Date.now() - (input.closedLookbackDays ?? 30) * 24 * 60 * 60 * 1000
+  ).toISOString();
+
+  for (const installationId of installationIds) {
+    for await (const { octokit, repository } of input.app.eachRepository.iterator({
+      installationId
+    })) {
+      const repo = repository as GitHubRepositoryFromApi;
+      const [owner, name] = repo.full_name.split("/");
+
+      if (!owner || !name) {
+        continue;
+      }
+
+      const openPullRequests = await listRepoPullRequests(
+        octokit as RequestingOctokit,
+        owner,
+        name,
+        { state: "open" }
+      );
+      const recentlyClosedPullRequests = options.includeRecentClosed
+        ? await listRepoPullRequests(octokit as RequestingOctokit, owner, name, {
+            state: "closed",
+            updatedSince: closedUpdatedSince
+          })
+        : [];
+
+      for (const pullRequest of [
+        ...openPullRequests,
+        ...recentlyClosedPullRequests
+      ]) {
+        const reviews = await listPullRequestReviews(
+          octokit as RequestingOctokit,
+          owner,
+          name,
+          pullRequest.number
+        );
+
+        snapshots.push({
+          installationId,
+          repository: {
+            full_name: repo.full_name,
+            html_url: repo.html_url,
+            owner: { login: repo.owner?.login ?? owner }
+          },
+          pull_request: {
+            ...pullRequest,
+            merged: pullRequest.merged ?? Boolean(pullRequest.merged_at)
+          },
+          reviews
+        });
+      }
+    }
+  }
+
+  return snapshots;
 }
 
 async function listInstallationIds(
@@ -241,12 +315,19 @@ async function listInstallationIds(
   return installationIds;
 }
 
-async function listOpenRepoPullRequests(
+async function listRepoPullRequests(
   octokit: RequestingOctokit,
   owner: string,
-  repo: string
+  repo: string,
+  options: {
+    state: "open" | "closed";
+    updatedSince?: string;
+  }
 ): Promise<GitHubPullRequestFromApi[]> {
   const pullRequests: GitHubPullRequestFromApi[] = [];
+  const updatedSinceTime = options.updatedSince
+    ? Date.parse(options.updatedSince)
+    : undefined;
 
   for (let page = 1; ; page += 1) {
     const response = await octokit.request<GitHubPullRequestFromApi[]>(
@@ -254,18 +335,90 @@ async function listOpenRepoPullRequests(
       {
         owner,
         repo,
-        state: "open",
+        state: options.state,
+        sort: "updated",
+        direction: "desc",
         per_page: 100,
         page
       }
     );
 
-    pullRequests.push(...response.data);
+    for (const pullRequest of response.data) {
+      if (
+        updatedSinceTime !== undefined &&
+        pullRequest.updated_at &&
+        Date.parse(pullRequest.updated_at) < updatedSinceTime
+      ) {
+        return pullRequests;
+      }
+
+      pullRequests.push(pullRequest);
+    }
 
     if (response.data.length < 100) {
       return pullRequests;
     }
   }
+}
+
+async function getInstallationPullRequest(
+  app: App,
+  installationId: number,
+  lookup: GitHubPullRequestLookupInput
+): Promise<GitHubPullRequestSnapshot | undefined> {
+  const [owner, repo] = lookup.repository.split("/");
+  if (!owner || !repo) {
+    return undefined;
+  }
+
+  const octokit = (await app.getInstallationOctokit(
+    installationId
+  )) as RequestingOctokit;
+
+  try {
+    const response = await octokit.request<GitHubPullRequestFromApi>(
+      "GET /repos/{owner}/{repo}/pulls/{pull_number}",
+      {
+        owner,
+        repo,
+        pull_number: lookup.number
+      }
+    );
+    const reviews = await listPullRequestReviews(
+      octokit,
+      owner,
+      repo,
+      response.data.number
+    );
+
+    return {
+      installationId,
+      repository: {
+        full_name: lookup.repository,
+        owner: { login: owner }
+      },
+      pull_request: {
+        ...response.data,
+        merged: response.data.merged ?? Boolean(response.data.merged_at)
+      },
+      reviews
+    };
+  } catch (error) {
+    if (isGithubNotFoundError(error)) {
+      return undefined;
+    }
+
+    throw error;
+  }
+}
+
+function isGithubNotFoundError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    (error as { status?: unknown }).status === 404
+  );
 }
 
 async function listPullRequestReviews(

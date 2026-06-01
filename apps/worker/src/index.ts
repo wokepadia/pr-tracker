@@ -1,7 +1,8 @@
-import { createOrm, syncOpenPullRequestsFromGithub } from "@pr-tracker/db";
+import { createOrm, syncPullRequestsFromGithub } from "@pr-tracker/db";
 import {
   createGithubApp,
   createGithubPullRequestSource,
+  getGithubClosedLookbackDays,
   getGithubAppAuthEnv,
   getGithubInstallationId
 } from "@pr-tracker/github";
@@ -20,11 +21,12 @@ if (process.env.PR_TRACKER_USE_DATABASE !== "true") {
   const orm = await createOrm();
 
   try {
-    const result = await syncOpenPullRequestsFromGithub(
+    const result = await syncPullRequestsFromGithub(
       orm,
       createGithubPullRequestSource({
         app: createGithubApp(githubEnv),
-        installationId: getGithubInstallationId(process.env)
+        installationId: getGithubInstallationId(process.env),
+        closedLookbackDays: getGithubClosedLookbackDays(process.env)
       })
     );
 

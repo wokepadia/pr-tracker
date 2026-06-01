@@ -7,7 +7,7 @@ V1 is intentionally focused on basic plumbing:
 - GitHub-shaped domain primitives.
 - Deterministic reviewer workflow classification.
 - Hono API with GitHub webhook verification scaffold.
-- One-shot GitHub App sync worker for open PR and review backfill.
+- One-shot GitHub App sync worker for PR state and review backfill.
 - Vite + React + TanStack reviewer inbox UI.
 - MikroORM/PostgreSQL schema and migration.
 - Worker entrypoint for future sync/reconciliation jobs.
@@ -120,11 +120,13 @@ GITHUB_APP_ID=
 GITHUB_PRIVATE_KEY=
 GITHUB_WEBHOOK_SECRET=
 GITHUB_INSTALLATION_ID=
+GITHUB_CLOSED_LOOKBACK_DAYS=30
 ```
 
 Without those values, the webhook endpoint accepts local development payloads without signature verification. With those values present, GitHub webhook signatures are verified.
 
 `GITHUB_INSTALLATION_ID` is optional. When omitted, the worker iterates every installation visible to the GitHub App.
+The worker always syncs open PRs, reconciles recently updated closed or merged PRs, and checks any locally known open PRs that did not appear in the list response. `GITHUB_CLOSED_LOOKBACK_DAYS` must be a positive integer; unset, zero, negative, or invalid values use the default 30-day closed/merged lookback window.
 
 ## VPS Deployment Shape
 

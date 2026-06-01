@@ -1,16 +1,49 @@
 import { createOrm } from "./client";
 import { seedSampleData } from "./sample-data";
-import { syncOpenPullRequestsFromGithub } from "./github-sync";
+import { syncPullRequestsFromGithub } from "./github-sync";
+import { upsertPullRequestSnapshot } from "./github-ingestion";
 
 const orm = await createOrm();
+const runId = Date.now();
+const openNumber = 900_000 + (runId % 10_000);
+const closedNumber = openNumber + 1;
+const mergedNumber = openNumber + 2;
+const staleOpenNumber = openNumber + 3;
+const openNodeId = `PR_sync_${runId}_open`;
+const closedNodeId = `PR_sync_${runId}_closed`;
+const mergedNodeId = `PR_sync_${runId}_merged`;
+const staleOpenNodeId = `PR_sync_${runId}_stale_open`;
+const reviewNodeId = `PRR_sync_${runId}`;
 
 try {
   await seedSampleData(orm);
+  await upsertPullRequestSnapshot(orm, {
+    installationId: 44,
+    repository: {
+      full_name: "acme/api",
+      html_url: "https://github.com/acme/api",
+      owner: { login: "acme" }
+    },
+    pull_request: {
+      id: staleOpenNumber,
+      node_id: staleOpenNodeId,
+      number: staleOpenNumber,
+      title: "Known open PR should be reconciled",
+      html_url: `https://github.com/acme/api/pull/${staleOpenNumber}`,
+      state: "open",
+      draft: false,
+      created_at: "2026-05-01T13:00:00.000Z",
+      updated_at: "2026-05-01T14:00:00.000Z",
+      user: { login: "ari" },
+      head: { sha: "sync-sha-known-open" },
+      requested_reviewers: [{ login: "viewer" }]
+    }
+  });
 
-  const result = await syncOpenPullRequestsFromGithub(
+  const result = await syncPullRequestsFromGithub(
     orm,
     {
-      async listOpenPullRequests() {
+      async listPullRequests() {
         return [
           {
             installationId: 44,
@@ -20,11 +53,11 @@ try {
               owner: { login: "acme" }
             },
             pull_request: {
-              id: 321,
-              node_id: "PR_sync_321",
-              number: 321,
+              id: openNumber,
+              node_id: openNodeId,
+              number: openNumber,
               title: "Backfill reviewer inbox from GitHub App",
-              html_url: "https://github.com/acme/api/pull/321",
+              html_url: `https://github.com/acme/api/pull/${openNumber}`,
               state: "open",
               draft: false,
               created_at: "2026-06-01T14:00:00.000Z",
@@ -35,8 +68,8 @@ try {
             },
             reviews: [
               {
-                id: 9001,
-                node_id: "PRR_sync_9001",
+                id: runId,
+                node_id: reviewNodeId,
                 state: "commented",
                 body: "Taking a look.",
                 submitted_at: "2026-06-01T14:04:00.000Z",
@@ -44,8 +77,88 @@ try {
                 user: { login: "viewer" }
               }
             ]
+          },
+          {
+            installationId: 44,
+            repository: {
+              full_name: "acme/api",
+              html_url: "https://github.com/acme/api",
+              owner: { login: "acme" }
+            },
+            pull_request: {
+              id: closedNumber,
+              node_id: closedNodeId,
+              number: closedNumber,
+              title: "Closed PR should not stay active",
+              html_url: `https://github.com/acme/api/pull/${closedNumber}`,
+              state: "closed",
+              draft: false,
+              created_at: "2026-06-01T13:00:00.000Z",
+              updated_at: "2026-06-01T14:07:00.000Z",
+              user: { login: "ari" },
+              head: { sha: "sync-sha-closed" },
+              requested_reviewers: [{ login: "viewer" }]
+            }
+          },
+          {
+            installationId: 44,
+            repository: {
+              full_name: "acme/api",
+              html_url: "https://github.com/acme/api",
+              owner: { login: "acme" }
+            },
+            pull_request: {
+              id: mergedNumber,
+              node_id: mergedNodeId,
+              number: mergedNumber,
+              title: "Merged PR should not stay active",
+              html_url: `https://github.com/acme/api/pull/${mergedNumber}`,
+              state: "closed",
+              merged: true,
+              draft: false,
+              created_at: "2026-06-01T13:00:00.000Z",
+              updated_at: "2026-06-01T14:08:00.000Z",
+              user: { login: "ari" },
+              head: { sha: "sync-sha-merged" },
+              requested_reviewers: [{ login: "viewer" }]
+            }
           }
         ];
+      },
+      async getPullRequest(input) {
+        if (input.repository !== "acme/api" || input.number !== staleOpenNumber) {
+          return undefined;
+        }
+
+        if (input.installationId !== 44) {
+          throw new Error(
+            `Unexpected pull request reconciliation input ${JSON.stringify(input)}.`
+          );
+        }
+
+        return {
+          installationId: 44,
+          repository: {
+            full_name: "acme/api",
+            html_url: "https://github.com/acme/api",
+            owner: { login: "acme" }
+          },
+          pull_request: {
+            id: staleOpenNumber,
+            node_id: staleOpenNodeId,
+            number: staleOpenNumber,
+            title: "Known open PR should be reconciled",
+            html_url: `https://github.com/acme/api/pull/${staleOpenNumber}`,
+            state: "closed",
+            merged: true,
+            draft: false,
+            created_at: "2026-05-01T13:00:00.000Z",
+            updated_at: "2026-06-01T14:09:00.000Z",
+            user: { login: "ari" },
+            head: { sha: "sync-sha-known-merged" },
+            requested_reviewers: [{ login: "viewer" }]
+          }
+        };
       }
     }
   );
@@ -56,6 +169,9 @@ try {
       reviewer_count: string;
       review_count: string;
       activity_count: string;
+      closed_state: string;
+      merged_state: string;
+      reconciled_state: string;
     }>
   >(
     `
@@ -63,11 +179,14 @@ try {
         pr.title,
         (select count(*) from pull_request_reviewers rr where rr.pull_request_id = pr.id) as reviewer_count,
         (select count(*) from review_events re where re.pull_request_id = pr.id) as review_count,
-        (select count(*) from activity_events ae where ae.pull_request_id = pr.id) as activity_count
+        (select count(*) from activity_events ae where ae.pull_request_id = pr.id) as activity_count,
+        (select state from pull_requests closed_pr where closed_pr.github_node_id = ?) as closed_state,
+        (select state from pull_requests merged_pr where merged_pr.github_node_id = ?) as merged_state,
+        (select state from pull_requests reconciled_pr where reconciled_pr.github_node_id = ?) as reconciled_state
       from pull_requests pr
       where pr.github_node_id = ?
     `,
-    ["PR_sync_321"]
+    [closedNodeId, mergedNodeId, staleOpenNodeId, openNodeId]
   );
   const syncRunRows = await orm.em.getConnection().execute<
     Array<{
@@ -98,6 +217,9 @@ try {
         reviewerCount: Number(row.reviewer_count),
         reviewCount: Number(row.review_count),
         activityCount: Number(row.activity_count),
+        closedState: row.closed_state,
+        mergedState: row.merged_state,
+        reconciledState: row.reconciled_state,
         latestSyncRun: syncRunRows[0]
       },
       null,
@@ -105,8 +227,8 @@ try {
     )
   );
 
-  if (result.scannedPullRequests !== 1 || result.ingestedPullRequests !== 1) {
-    throw new Error(`Expected one ingested pull request, got ${JSON.stringify(result)}.`);
+  if (result.scannedPullRequests !== 4 || result.ingestedPullRequests !== 4) {
+    throw new Error(`Expected four ingested pull requests, got ${JSON.stringify(result)}.`);
   }
 
   if (result.ingestedReviews !== 1) {
@@ -125,21 +247,35 @@ try {
     throw new Error(`Expected sync not to fabricate activity events, got ${row.activity_count}.`);
   }
 
+  if (row.closed_state !== "closed") {
+    throw new Error(`Expected closed PR state to sync, got ${row.closed_state}.`);
+  }
+
+  if (row.merged_state !== "merged") {
+    throw new Error(`Expected merged PR state to sync, got ${row.merged_state}.`);
+  }
+
+  if (row.reconciled_state !== "merged") {
+    throw new Error(
+      `Expected known open PR to reconcile as merged, got ${row.reconciled_state}.`
+    );
+  }
+
   const syncRun = syncRunRows[0];
   if (!syncRun || syncRun.status !== "succeeded") {
     throw new Error("Expected sync run bookkeeping to record success.");
   }
 
   if (
-    syncRun.scanned_pull_requests !== 1 ||
-    syncRun.ingested_pull_requests !== 1 ||
+    syncRun.scanned_pull_requests !== 4 ||
+    syncRun.ingested_pull_requests !== 4 ||
     syncRun.ingested_reviews !== 1
   ) {
     throw new Error(`Unexpected sync run counts: ${JSON.stringify(syncRun)}.`);
   }
 
-  await syncOpenPullRequestsFromGithub(orm, {
-    async listOpenPullRequests() {
+  await syncPullRequestsFromGithub(orm, {
+    async listPullRequests() {
       const inProgressRows = await orm.em.getConnection().execute<
         Array<{ status: string; finished_at: Date | string | null }>
       >(

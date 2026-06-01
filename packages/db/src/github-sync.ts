@@ -1,10 +1,19 @@
 import { randomUUID } from "node:crypto";
 import type { MikroORM } from "@mikro-orm/postgresql";
-import type { GitHubPullRequestSource } from "@pr-tracker/github";
+import type {
+  GitHubPullRequestSnapshot,
+  GitHubPullRequestSource
+} from "@pr-tracker/github";
 import {
   upsertPullRequestSnapshot,
   upsertReviewSnapshot
 } from "./github-ingestion";
+
+interface KnownOpenPullRequest {
+  installation_id: number | null;
+  repository: string;
+  number: number;
+}
 
 export interface GitHubPullRequestSyncResult {
   scannedPullRequests: number;
@@ -13,7 +22,7 @@ export interface GitHubPullRequestSyncResult {
   ignoredPullRequests: number;
 }
 
-export async function syncOpenPullRequestsFromGithub(
+export async function syncPullRequestsFromGithub(
   orm: MikroORM,
   source: GitHubPullRequestSource,
   options: { sourceName?: string } = {}
@@ -29,10 +38,16 @@ export async function syncOpenPullRequestsFromGithub(
   };
 
   try {
-    const snapshots = await source.listOpenPullRequests();
-    result.scannedPullRequests = snapshots.length;
+    const snapshots = await listPullRequestSnapshots(source);
+    const reconciledSnapshots = await listKnownOpenPullRequestSnapshots(
+      orm,
+      source,
+      snapshots
+    );
+    const snapshotsToIngest = [...snapshots, ...reconciledSnapshots];
+    result.scannedPullRequests = snapshotsToIngest.length;
 
-    for (const snapshot of snapshots) {
+    for (const snapshot of snapshotsToIngest) {
       await orm.em.getConnection().transactional(async (trx) => {
         const upsertResult = await upsertPullRequestSnapshot(orm, snapshot, trx);
         if (upsertResult.isFreshEnough) {
@@ -71,6 +86,90 @@ export async function syncOpenPullRequestsFromGithub(
 
     throw error;
   }
+}
+
+export const syncOpenPullRequestsFromGithub = syncPullRequestsFromGithub;
+
+async function listPullRequestSnapshots(
+  source: GitHubPullRequestSource
+): Promise<GitHubPullRequestSnapshot[]> {
+  if (source.listPullRequests) {
+    return source.listPullRequests();
+  }
+
+  if (source.listOpenPullRequests) {
+    return source.listOpenPullRequests();
+  }
+
+  throw new Error("GitHub pull request source does not provide a list method.");
+}
+
+async function listKnownOpenPullRequestSnapshots(
+  orm: MikroORM,
+  source: GitHubPullRequestSource,
+  listedSnapshots: GitHubPullRequestSnapshot[]
+): Promise<GitHubPullRequestSnapshot[]> {
+  if (!source.getPullRequest) {
+    return [];
+  }
+
+  const listedPullRequestKeys = new Set(
+    listedSnapshots
+      .map((snapshot) =>
+        pullRequestKey(snapshot.repository.full_name, snapshot.pull_request.number)
+      )
+      .filter((key) => key !== undefined)
+  );
+  const knownOpenPullRequests = await listKnownOpenPullRequests(orm);
+  const snapshots: GitHubPullRequestSnapshot[] = [];
+
+  for (const pullRequest of knownOpenPullRequests) {
+    const key = pullRequestKey(pullRequest.repository, pullRequest.number);
+    if (!key || listedPullRequestKeys.has(key)) {
+      continue;
+    }
+
+    const snapshot = await source.getPullRequest({
+      installationId: pullRequest.installation_id ?? undefined,
+      repository: pullRequest.repository,
+      number: pullRequest.number
+    });
+
+    if (snapshot) {
+      snapshots.push(snapshot);
+      listedPullRequestKeys.add(key);
+    }
+  }
+
+  return snapshots;
+}
+
+async function listKnownOpenPullRequests(
+  orm: MikroORM
+): Promise<KnownOpenPullRequest[]> {
+  return orm.em.getConnection().execute<KnownOpenPullRequest[]>(
+    `
+      select
+        gi.github_installation_id as installation_id,
+        pr.repository,
+        pr.number
+      from pull_requests pr
+      left join github_installations gi on gi.id = pr.installation_id
+      where pr.state = 'open'
+      order by pr.updated_at desc
+    `
+  );
+}
+
+function pullRequestKey(
+  repository: string | undefined,
+  number: number | undefined
+): string | undefined {
+  if (!repository || number === undefined) {
+    return undefined;
+  }
+
+  return `${repository}#${number}`;
 }
 
 async function startSyncRun(
