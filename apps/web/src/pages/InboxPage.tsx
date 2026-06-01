@@ -1,79 +1,627 @@
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react"
+import { Link } from "@tanstack/react-router"
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Clock3,
+  ExternalLink,
+  Eye,
+  GitCommitHorizontal,
+  GitPullRequest,
+  Inbox,
+  MessageSquareText,
+  PanelRight,
+} from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Card } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Kbd } from "@/components/ui/kbd"
 import { Separator } from "@/components/ui/separator"
+import { cn } from "@/lib/utils"
+import type { ReviewQueueItem, WorkflowState } from "@/data/review-data"
 import { reviewItems } from "@/data/review-data"
 
+type LaneId = Extract<
+  WorkflowState,
+  "needs_review" | "changed_since_last_seen" | "waiting_on_author"
+>
+
+interface LaneDefinition {
+  id: LaneId
+  label: string
+  tone: "hot" | "changed" | "quiet"
+  defaultOpen: boolean
+}
+
+const lanes: LaneDefinition[] = [
+  {
+    id: "needs_review",
+    label: "Needs your review",
+    tone: "hot",
+    defaultOpen: true,
+  },
+  {
+    id: "changed_since_last_seen",
+    label: "Changed since you last looked",
+    tone: "changed",
+    defaultOpen: true,
+  },
+  {
+    id: "waiting_on_author",
+    label: "Waiting on author",
+    tone: "quiet",
+    defaultOpen: false,
+  },
+]
+
+const laneToneClasses: Record<LaneDefinition["tone"], string> = {
+  hot: "bg-[#d0a24c]",
+  changed: "bg-[#9c8a60]",
+  quiet: "bg-white/20",
+}
+
+const workflowLabels: Record<LaneId, string> = {
+  needs_review: "Needs you",
+  changed_since_last_seen: "Changed since",
+  waiting_on_author: "Waiting on author",
+}
+
 export function InboxPage() {
+  const laneItems = useMemo(
+    () =>
+      lanes.reduce(
+        (acc, lane) => {
+          acc[lane.id] = reviewItems.filter(
+            (item) => item.workflowState === lane.id
+          )
+          return acc
+        },
+        {} as Record<LaneId, ReviewQueueItem[]>
+      ),
+    []
+  )
+  const [openLaneIds, setOpenLaneIds] = useState<Set<LaneId>>(
+    () => new Set(lanes.filter((lane) => lane.defaultOpen).map((lane) => lane.id))
+  )
+  const visibleItems = useMemo(
+    () =>
+      lanes.flatMap((lane) =>
+        openLaneIds.has(lane.id) ? laneItems[lane.id] : []
+      ),
+    [laneItems, openLaneIds]
+  )
+  const [selectedId, setSelectedId] = useState<string>(
+    () => visibleItems[0]?.id ?? reviewItems[0]?.id ?? ""
+  )
+  const selectedItem =
+    reviewItems.find((item) => item.id === selectedId) ?? reviewItems[0]
+
+  if (!selectedItem) {
+    throw new Error("Review inbox requires deterministic review items")
+  }
+
+  useEffect(() => {
+    if (!visibleItems.some((item) => item.id === selectedId)) {
+      setSelectedId(visibleItems[0]?.id ?? reviewItems[0]?.id ?? "")
+    }
+  }, [selectedId, visibleItems])
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented) return
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      if (event.key !== "j" && event.key !== "k") return
+
+      event.preventDefault()
+      setSelectedId((currentId) => {
+        const currentIndex = visibleItems.findIndex((item) => item.id === currentId)
+        if (currentIndex < 0) return visibleItems[0]?.id ?? currentId
+        const direction = event.key === "j" ? 1 : -1
+        const nextIndex = Math.min(
+          visibleItems.length - 1,
+          Math.max(0, currentIndex + direction)
+        )
+        return visibleItems[nextIndex]?.id ?? currentId
+      })
+    }
+
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [visibleItems])
+
   return (
     <div className="grid min-h-[760px] grid-cols-[212px_1fr]">
-      <aside className="border-r border-white/10 bg-[#191916] px-3 py-5">
-        <div className="px-8 py-1 text-xs font-semibold tracking-wide text-[#ddd9ce]">
-          Review Q
-        </div>
-        <Separator className="my-5 bg-white/10" />
-        <div className="space-y-2 text-sm text-[#a5a299]">
-          <div className="rounded-md bg-white/[0.06] px-4 py-2 text-[#f0ede4]">
-            Needs you <span className="float-right text-[#d0a24c]">7</span>
-          </div>
-          <div className="px-4 py-2">
-            Changed since <span className="float-right">4</span>
-          </div>
-          <div className="px-4 py-2">
-            Waiting on author <span className="float-right">12</span>
-          </div>
-          <div className="px-4 py-2">
-            Approved · recent <span className="float-right">9</span>
-          </div>
-        </div>
-      </aside>
+      <InboxSidebar laneItems={laneItems} />
 
-      <section className="bg-[#242420]">
-        <div className="flex h-[62px] items-center border-b border-white/10 px-5">
-          <h1 className="text-lg font-medium tracking-tight">Review Inbox</h1>
-          <span className="ml-4 text-xs text-[#8e8b82]">· synced 2m ago</span>
-          <Badge variant="outline" className="ml-auto border-white/10 text-[#c9c5ba]">
-            group: action
-          </Badge>
-        </div>
+      <section className="flex min-w-0 flex-col bg-[#242420]">
+        <InboxHeader />
         <div className="grid min-h-[697px] grid-cols-[58fr_42fr]">
-          <div className="border-r border-white/10 p-5">
-            <Card className="border-white/10 bg-[#1e1e1b] p-5 text-[#dcd8ce]">
-              <div className="text-xs tracking-[0.16em] text-[#8e8b82] uppercase">
-                Foundation checkpoint
-              </div>
-              <p className="mt-3 max-w-xl text-sm leading-6 text-[#bdb8ad]">
-                The Rhea shell, shadcn primitives, routing, and deterministic mock
-                review data are in place. The next checkpoint replaces this panel
-                with the exact Inbox C lanes and quick peek behavior.
-              </p>
-              <div className="mt-5 grid gap-2">
-                {reviewItems.slice(0, 3).map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-sm"
-                  >
-                    <span className="font-mono text-xs text-[#9e9a90]">
-                      {item.repository} / #{item.number}
-                    </span>
-                    <div className="mt-1 truncate text-[#ede9df]">{item.title}</div>
-                  </div>
-                ))}
-              </div>
-            </Card>
+          <div className="min-w-0 border-r border-white/10">
+            <div className="h-full overflow-y-auto pt-2 pb-7">
+              {lanes.map((lane) => (
+                <QueueLane
+                  key={lane.id}
+                  lane={lane}
+                  isOpen={openLaneIds.has(lane.id)}
+                  items={laneItems[lane.id]}
+                  selectedId={selectedItem.id}
+                  onToggle={() => {
+                    setOpenLaneIds((current) => {
+                      const next = new Set(current)
+                      if (next.has(lane.id)) {
+                        next.delete(lane.id)
+                      } else {
+                        next.add(lane.id)
+                      }
+                      return next
+                    })
+                  }}
+                  onSelect={setSelectedId}
+                />
+              ))}
+            </div>
           </div>
-          <div className="p-5">
-            <Card className="flex h-full flex-col border-white/10 bg-[#20201d] p-5 text-[#dcd8ce]">
-              <div className="text-xs tracking-[0.16em] text-[#8e8b82] uppercase">
-                Quick peek slot
-              </div>
-              <p className="mt-3 text-sm leading-6 text-[#bdb8ad]">
-                This stays fixed on the right side of the inbox and will show
-                deterministic catch-up facts for the selected PR.
-              </p>
-            </Card>
-          </div>
+          <QuickPeekPanel item={selectedItem} />
         </div>
       </section>
     </div>
+  )
+}
+
+function InboxSidebar({
+  laneItems,
+}: {
+  laneItems: Record<LaneId, ReviewQueueItem[]>
+}) {
+  const approvedRecent = reviewItems.filter((item) => item.workflowState === "approved")
+  const snoozed = reviewItems.filter((item) => item.snoozedUntil)
+  const watching = reviewItems.filter((item) => item.isPinned || item.isMuted)
+
+  return (
+    <aside className="flex flex-col border-r border-white/10 bg-[#191916] px-3 py-4">
+      <div className="flex items-center gap-2 px-2 pt-1 pb-4">
+        <div className="flex h-4 w-4 items-center justify-center rounded-[3px] bg-[#d0a24c] text-[9px] font-bold text-[#191916]">
+          R
+        </div>
+        <div className="font-mono text-[11px] tracking-[0.14em] text-[#f0ede4] uppercase">
+          Review Q
+        </div>
+      </div>
+      <SidebarSection label="Review buckets">
+        <SidebarItem
+          active
+          attention
+          label={workflowLabels.needs_review}
+          count={laneItems.needs_review.length}
+        />
+        <SidebarItem
+          label={workflowLabels.changed_since_last_seen}
+          count={laneItems.changed_since_last_seen.length}
+        />
+        <SidebarItem
+          label={workflowLabels.waiting_on_author}
+          count={laneItems.waiting_on_author.length}
+        />
+        <SidebarItem label="Approved · recent" count={approvedRecent.length} />
+      </SidebarSection>
+      <SidebarSection label="Stashed">
+        <SidebarItem label="Snoozed" count={snoozed.length} />
+        <SidebarItem label="Watching" count={watching.length} />
+      </SidebarSection>
+      <div className="mt-auto rounded-md border border-white/10 bg-white/[0.03] p-3 text-[11px] leading-5 text-[#8e8b82]">
+        Review decisions still happen in GitHub. This surface only tracks where
+        your attention belongs.
+      </div>
+    </aside>
+  )
+}
+
+function SidebarSection({
+  label,
+  children,
+}: {
+  label: string
+  children: ReactNode
+}) {
+  return (
+    <div className="mb-5">
+      <div className="px-2 pb-2 pt-3 font-mono text-[9.5px] tracking-[0.14em] text-[#77736a] uppercase">
+        {label}
+      </div>
+      <div className="space-y-1">{children}</div>
+    </div>
+  )
+}
+
+function SidebarItem({
+  label,
+  count,
+  active,
+  attention,
+}: {
+  label: string
+  count: number
+  active?: boolean
+  attention?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "grid w-full grid-cols-[7px_1fr_auto] items-center gap-2 rounded-md px-2 py-2 text-left text-[13px] text-[#a5a299]",
+        active && "bg-white/[0.07] text-[#f0ede4]",
+        !active && "hover:bg-white/[0.04]"
+      )}
+    >
+      <span
+        className={cn(
+          "h-[7px] w-[7px] rounded-full bg-white/20",
+          attention && "bg-[#d0a24c]"
+        )}
+      />
+      <span className={cn(attention && "font-medium text-[#f0ede4]")}>{label}</span>
+      <span
+        className={cn(
+          "font-mono text-[11px] text-[#77736a]",
+          attention &&
+            "rounded-full bg-[#d0a24c] px-2 py-[1px] font-semibold text-[#191916]"
+        )}
+      >
+        {count}
+      </span>
+    </button>
+  )
+}
+
+function InboxHeader() {
+  return (
+    <div className="flex h-[62px] items-center border-b border-white/10 px-5">
+      <h1 className="text-[17px] font-semibold tracking-tight">Review Inbox</h1>
+      <span className="ml-4 font-mono text-[11px] text-[#8e8b82]">
+        · synced 2m ago
+      </span>
+      <Button
+        variant="outline"
+        size="sm"
+        className="ml-auto h-8 border-white/10 bg-transparent font-mono text-[11px] text-[#c9c5ba] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+      >
+        group: action
+        <ChevronDown className="h-3.5 w-3.5" />
+      </Button>
+      <div className="ml-3 hidden items-center gap-1.5 font-mono text-[10px] tracking-[0.08em] text-[#8e8b82] uppercase lg:flex">
+        <Kbd>j</Kbd>
+        <span>/</span>
+        <Kbd>k</Kbd>
+        <span>to move</span>
+      </div>
+    </div>
+  )
+}
+
+function QueueLane({
+  lane,
+  isOpen,
+  items,
+  selectedId,
+  onToggle,
+  onSelect,
+}: {
+  lane: LaneDefinition
+  isOpen: boolean
+  items: ReviewQueueItem[]
+  selectedId: string
+  onToggle: () => void
+  onSelect: (id: string) => void
+}) {
+  return (
+    <section className="border-b border-white/10 last:border-b-0">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={isOpen}
+        className="flex w-full items-center gap-3 px-5 py-3 text-left"
+      >
+        <span className={cn("h-5 w-1 rounded-full", laneToneClasses[lane.tone])} />
+        {isOpen ? (
+          <ChevronDown className="h-3.5 w-3.5 text-[#77736a]" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 text-[#77736a]" />
+        )}
+        <span className="font-mono text-[11px] tracking-[0.12em] text-[#b7b2a7] uppercase">
+          {lane.label}
+        </span>
+        <Badge
+          variant="outline"
+          className={cn(
+            "h-5 rounded-full border-white/10 bg-transparent px-2 font-mono text-[11px] text-[#8e8b82]",
+            lane.tone === "hot" && "border-[#d0a24c] bg-[#d0a24c] text-[#191916]"
+          )}
+        >
+          {items.length}
+        </Badge>
+      </button>
+      {isOpen && (
+        <div>
+          {items.map((item) => (
+            <QueueRow
+              key={item.id}
+              item={item}
+              selected={item.id === selectedId}
+              onSelect={() => onSelect(item.id)}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function QueueRow({
+  item,
+  selected,
+  onSelect,
+}: {
+  item: ReviewQueueItem
+  selected: boolean
+  onSelect: () => void
+}) {
+  const initials = item.authorLogin.slice(0, 2).toUpperCase()
+  const reReviewRequested = item.activityEvents.some((event) =>
+    event.action.includes("re-requested your review")
+  )
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={cn(
+        "relative grid w-full grid-cols-[26px_1fr_auto] items-center gap-3 border-t border-white/10 px-5 py-3 text-left transition-colors hover:bg-white/[0.04]",
+        selected && "bg-white/[0.07] shadow-[inset_3px_0_0_#d0a24c]"
+      )}
+    >
+      <span
+        className={cn(
+          "absolute inset-y-0 left-0 w-[3px]",
+          item.waitingOn === "you" && "bg-[#d0a24c]",
+          item.waitingOn === "author" && "bg-white/20",
+          selected && "bg-[#d0a24c]"
+        )}
+      />
+      <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-white/10 bg-white/[0.05] font-mono text-[10px] text-[#9f9a91]">
+        {initials}
+      </span>
+      <span className="min-w-0">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-[13.5px] font-medium text-[#eeeae0]">
+            {item.title}
+          </span>
+          <span
+            className={cn(
+              "rounded-full border border-white/10 px-2 py-[1px] font-mono text-[9.5px] tracking-[0.06em] text-[#8e8b82] uppercase",
+              item.waitingOn === "you" &&
+                "border-[#d0a24c]/70 bg-[#d0a24c]/15 text-[#d0a24c]"
+            )}
+          >
+            {item.waitingOn === "you" ? "you" : "author"}
+          </span>
+        </span>
+        <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] text-[#8e8b82]">
+          <span className="text-[#bbb6ab]">
+            {item.repository} / #{item.number}
+          </span>
+          <span className="text-white/20">·</span>
+          <span>{item.authorLogin}</span>
+          <FactChip icon={GitCommitHorizontal} text={`+${item.newCommitCount}`} active={item.newCommitCount > 0} />
+          <FactChip icon={MessageSquareText} text={`${item.newReplyCount}`} active={item.newReplyCount > 0} />
+          <FactChip icon={Inbox} text={`${item.unresolvedThreadCount}/${item.totalThreadCount}`} active={item.unresolvedThreadCount > 0} />
+          {reReviewRequested && <FactChip icon={Eye} text="re-review" active />}
+        </span>
+      </span>
+      <span className="flex min-w-[74px] flex-col items-end gap-1 font-mono">
+        <span
+          className={cn(
+            "text-[12px] text-[#bdb8ad]",
+            item.waitingOn === "you" && "font-semibold text-[#d0a24c]"
+          )}
+        >
+          {item.waitingAge}
+        </span>
+        <span className="text-[9.5px] tracking-[0.08em] text-[#77736a] uppercase">
+          {item.waitingOn === "you" ? "waiting on you" : "on author"}
+        </span>
+      </span>
+    </button>
+  )
+}
+
+function FactChip({
+  icon: Icon,
+  text,
+  active,
+}: {
+  icon: ComponentType<{ className?: string }>
+  text: string
+  active?: boolean
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-[4px] border border-white/10 bg-[#1d1d1a] px-1.5 py-[1px] text-[10.5px] text-[#8e8b82]",
+        active && "border-[#d0a24c]/50 bg-[#d0a24c]/12 text-[#d0a24c]"
+      )}
+    >
+      <Icon className="h-3 w-3" />
+      {text}
+    </span>
+  )
+}
+
+function QuickPeekPanel({ item }: { item: ReviewQueueItem }) {
+  const reReviewRequested = item.activityEvents.some((event) =>
+    event.action.includes("re-requested your review")
+  )
+  const factRows = [
+    {
+      id: "commits",
+      label: `+${item.newCommitCount} new commits`,
+      show: item.newCommitCount > 0,
+    },
+    {
+      id: "replies",
+      label: `${item.newReplyCount} new replies on threads you opened`,
+      show: item.newReplyCount > 0,
+    },
+    {
+      id: "review",
+      label: "author re-requested your review",
+      show: reReviewRequested,
+    },
+  ].filter((row) => row.show)
+
+  return (
+    <aside className="flex min-w-0 flex-col bg-[#20201d]">
+      <div className="border-b border-white/10 px-5 py-5">
+        <div className="flex items-center gap-2 font-mono text-[10.5px] tracking-[0.12em] text-[#8e8b82] uppercase">
+          <PanelRight className="h-3.5 w-3.5" />
+          Quick peek · no need to open
+        </div>
+        <h2 className="mt-3 text-[20px] font-semibold leading-7 tracking-tight text-[#f0ede4]">
+          {item.title}
+        </h2>
+        <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[11px] text-[#8e8b82]">
+          <span>
+            {item.repository} / #{item.number}
+          </span>
+          <span className="text-white/20">·</span>
+          <span>{item.authorLogin}</span>
+          <span className="text-white/20">·</span>
+          <span className={cn(item.waitingOn === "you" && "text-[#d0a24c]")}>
+            {item.waitingOn === "you" ? "waiting on you" : "waiting on author"}{" "}
+            {item.waitingAge}
+          </span>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+        <section className="rounded-md border border-[#d0a24c]/30 bg-[#d0a24c]/10 p-4">
+          <div className="flex items-center gap-2 font-mono text-[11px] tracking-[0.1em] text-[#d0a24c] uppercase">
+            <Clock3 className="h-3.5 w-3.5" />
+            Since your last visit · {item.lastSeenAt}
+          </div>
+          <ul className="mt-3 space-y-2 text-[13px] leading-5 text-[#ded9ce]">
+            {factRows.map((row) => (
+              <li key={row.id} className="flex gap-2">
+                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#d0a24c]" />
+                <span>{row.label}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <Separator className="my-5 bg-white/10" />
+
+        <section>
+          <div className="font-mono text-[11px] tracking-[0.1em] text-[#9f9a91] uppercase">
+            Open threads · {item.unresolvedThreadCount} of {item.totalThreadCount}{" "}
+            unresolved
+          </div>
+          <div className="mt-3 space-y-2">
+            {item.reviewThreads.map((thread) => (
+              <div
+                key={thread.id}
+                className="grid grid-cols-[30px_1fr] gap-3 rounded-md border border-white/10 bg-white/[0.03] p-3"
+              >
+                <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-white/10 bg-white/[0.04] font-mono text-[10px] text-[#9f9a91]">
+                  {thread.author.slice(0, 2).toUpperCase()}
+                </span>
+                <div className="min-w-0">
+                  <div className="line-clamp-2 text-[12.5px] leading-5 text-[#d8d3c8]">
+                    {thread.excerpt}
+                  </div>
+                  <div
+                    className={cn(
+                      "mt-1.5 font-mono text-[10px] tracking-[0.06em] uppercase",
+                      thread.status === "unresolved"
+                        ? "text-[#d0a24c]"
+                        : "text-[#77736a]"
+                    )}
+                  >
+                    {thread.status}
+                    {thread.authorReplied ? " · author replied" : ""}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <Separator className="my-5 bg-white/10" />
+
+        <section>
+          <div className="font-mono text-[11px] tracking-[0.1em] text-[#9f9a91] uppercase">
+            Files touched since last look · {item.changedFilesSinceLastSeen.length}
+          </div>
+          <div className="mt-3 space-y-1">
+            {item.changedFilesSinceLastSeen.map((file) => (
+              <div
+                key={file.path}
+                className="flex items-center justify-between gap-4 rounded-[4px] px-2 py-1.5 font-mono text-[11px] text-[#bdb8ad] hover:bg-white/[0.03]"
+              >
+                <span className="truncate">{file.path}</span>
+                <span className="text-[#8e8b82]">
+                  +{file.additions} / -{file.deletions}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <div className="mt-auto flex items-center gap-2 border-t border-white/10 px-5 py-4">
+        <Button
+          asChild
+          className="h-9 flex-1 bg-[#d0a24c] text-[#191916] hover:bg-[#e0b45f]"
+        >
+          <a href={item.url} target="_blank" rel="noreferrer">
+            Open in GitHub to review
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-9 border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+        >
+          <Clock3 className="h-4 w-4" />
+          Snooze
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-9 border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+        >
+          <Check className="h-4 w-4" />
+          Caught up
+        </Button>
+        <Button
+          asChild
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 text-[#9f9a91] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+        >
+          <Link to="/pull-requests/$pullRequestId" params={{ pullRequestId: item.id }}>
+            <span className="sr-only">Open PR detail</span>
+            <GitPullRequest className="h-4 w-4" />
+          </Link>
+        </Button>
+      </div>
+    </aside>
   )
 }
