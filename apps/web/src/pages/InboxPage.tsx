@@ -5,7 +5,7 @@ import {
   type ComponentType,
   type ReactNode,
 } from "react"
-import { Link } from "@tanstack/react-router"
+import { Link, useNavigate } from "@tanstack/react-router"
 import {
   Check,
   ChevronDown,
@@ -31,6 +31,8 @@ type LaneId = Extract<
   WorkflowState,
   "needs_review" | "changed_since_last_seen" | "waiting_on_author"
 >
+
+type LocalQueueState = "snoozed" | "caught_up"
 
 interface LaneDefinition {
   id: LaneId
@@ -73,18 +75,26 @@ const workflowLabels: Record<LaneId, string> = {
 }
 
 export function InboxPage() {
+  const navigate = useNavigate()
+  const [localQueueState, setLocalQueueState] = useState<
+    Partial<Record<string, LocalQueueState>>
+  >({})
+  const activeItems = useMemo(
+    () => reviewItems.filter((item) => !localQueueState[item.id]),
+    [localQueueState]
+  )
   const laneItems = useMemo(
     () =>
       lanes.reduce(
         (acc, lane) => {
-          acc[lane.id] = reviewItems.filter(
+          acc[lane.id] = activeItems.filter(
             (item) => item.workflowState === lane.id
           )
           return acc
         },
         {} as Record<LaneId, ReviewQueueItem[]>
       ),
-    []
+    [activeItems]
   )
   const [openLaneIds, setOpenLaneIds] = useState<Set<LaneId>>(
     () => new Set(lanes.filter((lane) => lane.defaultOpen).map((lane) => lane.id))
@@ -100,44 +110,108 @@ export function InboxPage() {
     () => visibleItems[0]?.id ?? reviewItems[0]?.id ?? ""
   )
   const selectedItem =
-    reviewItems.find((item) => item.id === selectedId) ?? reviewItems[0]
-
-  if (!selectedItem) {
-    throw new Error("Review inbox requires deterministic review items")
-  }
+    activeItems.find((item) => item.id === selectedId) ?? activeItems[0]
 
   useEffect(() => {
     if (!visibleItems.some((item) => item.id === selectedId)) {
-      setSelectedId(visibleItems[0]?.id ?? reviewItems[0]?.id ?? "")
+      setSelectedId(visibleItems[0]?.id ?? activeItems[0]?.id ?? "")
     }
-  }, [selectedId, visibleItems])
+  }, [activeItems, selectedId, visibleItems])
+
+  function moveSelectionAfterRemoving(itemId: string) {
+    const currentIndex = visibleItems.findIndex((item) => item.id === itemId)
+    const remainingVisible = visibleItems.filter((item) => item.id !== itemId)
+    const nextVisible =
+      remainingVisible[Math.min(currentIndex, remainingVisible.length - 1)]
+    const nextActive = activeItems.find((item) => item.id !== itemId)
+    setSelectedId(nextVisible?.id ?? nextActive?.id ?? "")
+  }
+
+  function setSelectedQueueState(nextState: LocalQueueState) {
+    if (!selectedItem) return
+    const itemId = selectedItem.id
+    setLocalQueueState((current) => ({ ...current, [itemId]: nextState }))
+    moveSelectionAfterRemoving(itemId)
+  }
+
+  function openSelectedDetail() {
+    if (!selectedItem) return
+    void navigate({
+      to: "/pull-requests/$pullRequestId",
+      params: { pullRequestId: selectedItem.id },
+    })
+  }
+
+  function openSelectedGitHub() {
+    if (!selectedItem) return
+    window.open(selectedItem.url, "_blank", "noreferrer")
+  }
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented) return
       if (event.metaKey || event.ctrlKey || event.altKey) return
-      if (event.key !== "j" && event.key !== "k") return
+      if (!["j", "k", "Enter", "e", "s", "c"].includes(event.key)) return
+      const activeElement = document.activeElement
+      const activeTag = activeElement?.tagName
+      const isEditingText =
+        activeTag === "INPUT" ||
+        activeTag === "TEXTAREA" ||
+        activeTag === "SELECT" ||
+        activeElement?.getAttribute("contenteditable") === "true"
+      if (isEditingText) return
+      if (
+        event.key === "Enter" &&
+        (activeTag === "BUTTON" || activeTag === "A")
+      ) {
+        return
+      }
 
       event.preventDefault()
-      setSelectedId((currentId) => {
-        const currentIndex = visibleItems.findIndex((item) => item.id === currentId)
-        if (currentIndex < 0) return visibleItems[0]?.id ?? currentId
-        const direction = event.key === "j" ? 1 : -1
-        const nextIndex = Math.min(
-          visibleItems.length - 1,
-          Math.max(0, currentIndex + direction)
-        )
-        return visibleItems[nextIndex]?.id ?? currentId
-      })
+
+      if (event.key === "j" || event.key === "k") {
+        setSelectedId((currentId) => {
+          const currentIndex = visibleItems.findIndex(
+            (item) => item.id === currentId
+          )
+          if (currentIndex < 0) return visibleItems[0]?.id ?? currentId
+          const direction = event.key === "j" ? 1 : -1
+          const nextIndex = Math.min(
+            visibleItems.length - 1,
+            Math.max(0, currentIndex + direction)
+          )
+          return visibleItems[nextIndex]?.id ?? currentId
+        })
+        return
+      }
+
+      if (event.key === "Enter") {
+        openSelectedDetail()
+        return
+      }
+
+      if (event.key === "e") {
+        openSelectedGitHub()
+        return
+      }
+
+      setSelectedQueueState(event.key === "s" ? "snoozed" : "caught_up")
     }
 
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [visibleItems])
+  }, [openSelectedDetail, selectedItem, visibleItems])
 
   return (
     <div className="grid min-h-[760px] grid-cols-[212px_1fr]">
-      <InboxSidebar laneItems={laneItems} />
+      <InboxSidebar
+        laneItems={laneItems}
+        snoozedCount={
+          reviewItems.filter(
+            (item) => localQueueState[item.id] === "snoozed" || item.snoozedUntil
+          ).length
+        }
+      />
 
       <section className="flex min-w-0 flex-col bg-[#242420]">
         <InboxHeader />
@@ -150,7 +224,7 @@ export function InboxPage() {
                   lane={lane}
                   isOpen={openLaneIds.has(lane.id)}
                   items={laneItems[lane.id]}
-                  selectedId={selectedItem.id}
+                  selectedId={selectedItem?.id ?? ""}
                   onToggle={() => {
                     setOpenLaneIds((current) => {
                       const next = new Set(current)
@@ -167,7 +241,15 @@ export function InboxPage() {
               ))}
             </div>
           </div>
-          <QuickPeekPanel item={selectedItem} />
+          {selectedItem ? (
+            <QuickPeekPanel
+              item={selectedItem}
+              onSnooze={() => setSelectedQueueState("snoozed")}
+              onCaughtUp={() => setSelectedQueueState("caught_up")}
+            />
+          ) : (
+            <EmptyPeekPanel />
+          )}
         </div>
       </section>
     </div>
@@ -176,11 +258,12 @@ export function InboxPage() {
 
 function InboxSidebar({
   laneItems,
+  snoozedCount,
 }: {
   laneItems: Record<LaneId, ReviewQueueItem[]>
+  snoozedCount: number
 }) {
   const approvedRecent = reviewItems.filter((item) => item.workflowState === "approved")
-  const snoozed = reviewItems.filter((item) => item.snoozedUntil)
   const watching = reviewItems.filter((item) => item.isPinned || item.isMuted)
 
   return (
@@ -211,7 +294,7 @@ function InboxSidebar({
         <SidebarItem label="Approved · recent" count={approvedRecent.length} />
       </SidebarSection>
       <SidebarSection label="Stashed">
-        <SidebarItem label="Snoozed" count={snoozed.length} />
+        <SidebarItem label="Snoozed" count={snoozedCount} />
         <SidebarItem label="Watching" count={watching.length} />
       </SidebarSection>
       <div className="mt-auto rounded-md border border-white/10 bg-white/[0.03] p-3 text-[11px] leading-5 text-[#8e8b82]">
@@ -463,7 +546,15 @@ function FactChip({
   )
 }
 
-function QuickPeekPanel({ item }: { item: ReviewQueueItem }) {
+function QuickPeekPanel({
+  item,
+  onSnooze,
+  onCaughtUp,
+}: {
+  item: ReviewQueueItem
+  onSnooze: () => void
+  onCaughtUp: () => void
+}) {
   const reReviewRequested = item.activityEvents.some((event) =>
     event.action.includes("re-requested your review")
   )
@@ -597,6 +688,7 @@ function QuickPeekPanel({ item }: { item: ReviewQueueItem }) {
         <Button
           type="button"
           variant="outline"
+          onClick={onSnooze}
           className="h-9 border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
         >
           <Clock3 className="h-4 w-4" />
@@ -605,6 +697,7 @@ function QuickPeekPanel({ item }: { item: ReviewQueueItem }) {
         <Button
           type="button"
           variant="outline"
+          onClick={onCaughtUp}
           className="h-9 border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
         >
           <Check className="h-4 w-4" />
@@ -622,6 +715,22 @@ function QuickPeekPanel({ item }: { item: ReviewQueueItem }) {
           </Link>
         </Button>
       </div>
+    </aside>
+  )
+}
+
+function EmptyPeekPanel() {
+  return (
+    <aside className="flex min-w-0 flex-col items-center justify-center bg-[#20201d] px-8 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-[#d0a24c]">
+        <Check className="h-5 w-5" />
+      </div>
+      <h2 className="mt-5 text-[18px] font-semibold tracking-tight text-[#f0ede4]">
+        No active review items
+      </h2>
+      <p className="mt-2 max-w-[300px] text-sm leading-6 text-[#9f9a91]">
+        Everything in this local queue has been snoozed or marked caught up.
+      </p>
     </aside>
   )
 }
