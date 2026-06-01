@@ -1,5 +1,9 @@
 import type { NormalizedWebhookEvent } from "@pr-tracker/github";
-import { createOrm, recordWebhookDelivery } from "@pr-tracker/db";
+import {
+  createOrm,
+  ingestWebhookEvent,
+  recordWebhookDelivery
+} from "@pr-tracker/db";
 
 export interface WebhookSink {
   record(event: NormalizedWebhookEvent): Promise<string>;
@@ -28,7 +32,10 @@ export function createWebhookSink(): WebhookSink {
       ormPromise ??= createOrm();
       const orm = await ormPromise;
 
-      await recordWebhookDelivery(orm, event);
+      await orm.em.getConnection().transactional(async (trx) => {
+        await recordWebhookDelivery(orm, event, trx);
+        await ingestWebhookEvent(orm, event, trx);
+      });
       return "database";
     }
   };

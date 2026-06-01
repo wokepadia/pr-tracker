@@ -13,7 +13,8 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "db:migrate": "pnpm --filter @pr-tracker/db migrate:up",
-    "db:seed:sample": "pnpm --filter @pr-tracker/db seed:sample"
+    "db:seed:sample": "pnpm --filter @pr-tracker/db seed:sample",
+    "db:smoke:ingest": "pnpm --filter @pr-tracker/db smoke:ingest"
   },
   "devDependencies": {
     "@types/node": "^22.15.29",

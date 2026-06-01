@@ -1,10 +1,10 @@
-import { createHash } from "node:crypto";
 import type { MikroORM } from "@mikro-orm/postgresql";
 import {
   sampleActors,
   sampleLastSeenAtByPullRequestId,
   samplePullRequests
 } from "@pr-tracker/core";
+import { deterministicUuid } from "./ids";
 
 const sampleInstallationId = "00000000-0000-4000-8000-000000000001";
 
@@ -243,15 +243,4 @@ export async function seedSampleData(orm: MikroORM): Promise<void> {
   }
 
   void sampleActors;
-}
-
-function deterministicUuid(input: string): string {
-  const hash = createHash("sha1").update(input).digest("hex");
-  return [
-    hash.slice(0, 8),
-    hash.slice(8, 12),
-    `5${hash.slice(13, 16)}`,
-    `${((Number.parseInt(hash.slice(16, 18), 16) & 0x3f) | 0x80).toString(16)}${hash.slice(18, 20)}`,
-    hash.slice(20, 32)
-  ].join("-");
 }

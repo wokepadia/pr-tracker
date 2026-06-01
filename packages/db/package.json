@@ -14,10 +14,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "migrate:up": "tsx src/migrate.ts",
-    "seed:sample": "tsx src/seed-sample.ts"
+    "seed:sample": "tsx src/seed-sample.ts",
+    "smoke:ingest": "tsx src/ingest-smoke.ts"
   },
   "dependencies": {
     "@pr-tracker/core": "workspace:*",
+    "@pr-tracker/github": "workspace:*",
     "@mikro-orm/core": "^6.4.16",
     "@mikro-orm/migrations": "^6.4.16",
     "@mikro-orm/postgresql": "^6.4.16"

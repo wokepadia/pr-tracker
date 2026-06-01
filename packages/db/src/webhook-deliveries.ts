@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { Transaction } from "@mikro-orm/core";
 import type { MikroORM } from "@mikro-orm/postgresql";
 
 export interface PersistableWebhookDelivery {
@@ -12,7 +13,8 @@ export interface PersistableWebhookDelivery {
 
 export async function recordWebhookDelivery(
   orm: MikroORM,
-  delivery: PersistableWebhookDelivery
+  delivery: PersistableWebhookDelivery,
+  ctx?: Transaction
 ): Promise<"inserted_or_existing"> {
   await orm.em.getConnection().execute(
     `
@@ -36,7 +38,9 @@ export async function recordWebhookDelivery(
       delivery.installationId ?? null,
       delivery.receivedAt,
       JSON.stringify(delivery.rawPayload)
-    ]
+    ],
+    undefined,
+    ctx
   );
 
   return "inserted_or_existing";

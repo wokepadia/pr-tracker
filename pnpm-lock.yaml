@@ -146,6 +146,9 @@ importers:
       '@pr-tracker/core':
         specifier: workspace:*
         version: link:../core
+      '@pr-tracker/github':
+        specifier: workspace:*
+        version: link:../github
     devDependencies:
       typescript:
         specifier: ^5.8.3

@@ -31,6 +31,7 @@ export interface PullRequestActivity {
   type:
     | "comment"
     | "commit"
+    | "pull_request"
     | "review"
     | "review_request"
     | "thread_resolved"
