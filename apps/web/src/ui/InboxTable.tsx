@@ -39,10 +39,16 @@ export const stateLabels: Record<string, string> = {
 
 export function InboxTable({
   inbox,
-  items = inbox.items
+  items = inbox.items,
+  markingSeenId,
+  isMarkingSeen = false,
+  onMarkSeen
 }: {
   inbox: ReviewerInbox;
   items?: ClassifiedPullRequest[];
+  markingSeenId?: string;
+  isMarkingSeen?: boolean;
+  onMarkSeen?: (pullRequestId: string) => void;
 }) {
   const [sorting, setSorting] = useState<SortingState>([
     { id: "priority", desc: false },
@@ -120,15 +126,53 @@ export function InboxTable({
         id: "updatedAt",
         header: "Updated",
         cell: (info) => new Date(info.getValue()).toLocaleString()
+      }),
+      columnHelper.display({
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        cell: (info) => {
+          const item = info.row.original;
+          const isRowMarkingSeen = markingSeenId === item.pullRequest.id;
+
+          return (
+            <div className="row-actions">
+              <button
+                type="button"
+                className="inline-button"
+                disabled={
+                  !onMarkSeen ||
+                  isMarkingSeen ||
+                  isRowMarkingSeen ||
+                  item.unseenActivityCount === 0
+                }
+                onClick={() => onMarkSeen?.(item.pullRequest.id)}
+              >
+                {isRowMarkingSeen ? "Marking" : "Seen"}
+              </button>
+              <a
+                className="inline-button"
+                href={item.pullRequest.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                GitHub
+              </a>
+            </div>
+          );
+        }
       })
     ],
-    [actorById]
+    [actorById, isMarkingSeen, markingSeenId, onMarkSeen]
   );
 
   const table = useReactTable({
     data: items,
     columns,
-    state: { sorting },
+    state: {
+      columnVisibility: { priority: false },
+      sorting
+    },
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel()
@@ -146,10 +190,9 @@ export function InboxTable({
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
-                {headerGroup.headers
-                  .filter((header) => header.id !== "priority")
-                  .map((header) => (
-                    <th key={header.id}>
+                {headerGroup.headers.map((header) => (
+                  <th key={header.id}>
+                    {header.column.getCanSort() ? (
                       <button
                         type="button"
                         onClick={header.column.getToggleSortingHandler()}
@@ -161,22 +204,25 @@ export function InboxTable({
                         {header.column.getIsSorted() === "asc" ? " ↑" : null}
                         {header.column.getIsSorted() === "desc" ? " ↓" : null}
                       </button>
-                    </th>
-                  ))}
+                    ) : (
+                      flexRender(
+                        header.column.columnDef.header,
+                        header.getContext()
+                      )
+                    )}
+                  </th>
+                ))}
               </tr>
             ))}
           </thead>
           <tbody>
             {table.getRowModel().rows.map((row) => (
               <tr key={row.id}>
-                {row
-                  .getVisibleCells()
-                  .filter((cell) => cell.column.id !== "priority")
-                  .map((cell) => (
-                    <td key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
+                {row.getVisibleCells().map((cell) => (
+                  <td key={cell.id}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>

@@ -232,6 +232,32 @@ button {
   width: 16px;
 }
 
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.inline-button {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  color: #334155;
+  cursor: pointer;
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 8px 9px;
+  white-space: nowrap;
+}
+
+.inline-button:disabled {
+  color: #94a3b8;
+  cursor: default;
+}
+
 .empty-state {
   padding: 28px;
 }

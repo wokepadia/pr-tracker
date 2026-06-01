@@ -1,12 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import type { ReviewerInbox, WorkflowState } from "@pr-tracker/reviewer-workflow";
 import { InboxTable, stateLabels } from "../ui/InboxTable";
-import { getReviewerInbox } from "../api";
+import { getReviewerInbox, markPullRequestSeen } from "../api";
 
 const sectionOrder: Array<WorkflowState | "all" | "actionable"> = [
-  "all",
   "actionable",
+  "all",
   "needs_review",
   "updated_since_review",
   "waiting_on_author",
@@ -44,10 +44,20 @@ export function InboxPage() {
 }
 
 function LoadedInbox({ inbox }: { inbox: ReviewerInbox }) {
+  const queryClient = useQueryClient();
   const [activeSection, setActiveSection] =
     useState<(typeof sectionOrder)[number]>("actionable");
   const [query, setQuery] = useState("");
   const [onlyUnseen, setOnlyUnseen] = useState(false);
+  const markSeenMutation = useMutation({
+    mutationFn: markPullRequestSeen,
+    onSuccess: async (_result, pullRequestId) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["reviewer-inbox"] }),
+        queryClient.invalidateQueries({ queryKey: ["pull-request", pullRequestId] })
+      ]);
+    }
+  });
   const actorById = useMemo(
     () => new Map(inbox.actors.map((actor) => [actor.id, actor.login])),
     [inbox.actors]
@@ -151,7 +161,15 @@ function LoadedInbox({ inbox }: { inbox: ReviewerInbox }) {
         </div>
       </section>
 
-      <InboxTable inbox={inbox} items={visibleItems} />
+      <InboxTable
+        inbox={inbox}
+        items={visibleItems}
+        markingSeenId={
+          markSeenMutation.isPending ? markSeenMutation.variables : undefined
+        }
+        isMarkingSeen={markSeenMutation.isPending}
+        onMarkSeen={(pullRequestId) => markSeenMutation.mutate(pullRequestId)}
+      />
     </div>
   );
 }
