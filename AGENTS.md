@@ -29,6 +29,8 @@ Build only for the current reviewer-loop use case. Do not add speculative future
 
 Keep the implementation simple, direct, and balanced: avoid unnecessary optimization, but do not ship obviously inefficient UI paths for the expected reviewer inbox size. Prefer clear data shapes, local deterministic state, and feature-sized changes that can be reviewed independently.
 
+You may install packages when they directly simplify the current implementation. Prefer a proven package over building complex behavior by hand. Keep dependencies intentional: do not add packages for speculative future needs, and remove generated scaffolds or unused dependencies once they have served their purpose.
+
 During UI implementation, work in feature checkpoints. For each feature checkpoint, implement the smallest coherent slice, run focused QA against the wireframe/spec, fix bugs, then do a code-review pass before committing. Do not commit half-polished UI.
 
 ## Development Practices Summary

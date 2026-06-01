@@ -1,8 +1,16 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "baseUrl": ".",
     "jsx": "react-jsx",
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "@/*": ["src/*"],
+      "@pr-tracker/core": ["../../packages/core/src/index.ts"],
+      "@pr-tracker/reviewer-workflow": [
+        "../../packages/reviewer-workflow/src/index.ts"
+      ]
+    }
   },
   "include": ["src", "vite.config.ts"]
 }

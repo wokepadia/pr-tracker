@@ -1,38 +1,22 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  Link,
-  Outlet,
   RouterProvider,
   createRootRoute,
   createRoute,
   createRouter
 } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { AppFrame } from "./app/AppFrame";
+import { TooltipProvider } from "./components/ui/tooltip";
 import { InboxPage } from "./pages/InboxPage";
 import { PullRequestPage } from "./pages/PullRequestPage";
-import "./styles.css";
+import "./index.css";
 
 const queryClient = new QueryClient();
 
 const rootRoute = createRootRoute({
-  component: () => (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <Link to="/" className="brand">
-          PR Tracker
-        </Link>
-        <nav className="nav">
-          <Link to="/" activeProps={{ className: "active" }}>
-            Review inbox
-          </Link>
-        </nav>
-      </aside>
-      <main className="main">
-        <Outlet />
-      </main>
-    </div>
-  )
+  component: AppFrame
 });
 
 const inboxRoute = createRoute({
@@ -60,7 +44,9 @@ declare module "@tanstack/react-router" {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <TooltipProvider>
+        <RouterProvider router={router} />
+      </TooltipProvider>
     </QueryClientProvider>
   </StrictMode>
 );

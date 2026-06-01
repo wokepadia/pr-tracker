@@ -1,175 +1,79 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
-import type { ReviewerInbox, WorkflowState } from "@pr-tracker/reviewer-workflow";
-import { InboxTable, stateLabels } from "../ui/InboxTable";
-import { getReviewerInbox, markPullRequestSeen } from "../api";
-
-const sectionOrder: Array<WorkflowState | "all" | "actionable"> = [
-  "actionable",
-  "all",
-  "needs_review",
-  "updated_since_review",
-  "waiting_on_author",
-  "needs_thread_attention",
-  "approved",
-  "stale",
-  "watching"
-];
-
-const actionableStates = new Set<WorkflowState>([
-  "needs_review",
-  "updated_since_review",
-  "needs_thread_attention"
-]);
+import { Badge } from "@/components/ui/badge"
+import { Card } from "@/components/ui/card"
+import { Separator } from "@/components/ui/separator"
+import { reviewItems } from "@/data/review-data"
 
 export function InboxPage() {
-  const inboxQuery = useQuery({
-    queryKey: ["reviewer-inbox"],
-    queryFn: getReviewerInbox
-  });
-
-  if (inboxQuery.isLoading) {
-    return <div className="panel">Loading reviewer inbox...</div>;
-  }
-
-  if (inboxQuery.isError || !inboxQuery.data) {
-    return (
-      <div className="panel error">
-        Could not load reviewer inbox. Check that the API is running.
-      </div>
-    );
-  }
-
-  return <LoadedInbox inbox={inboxQuery.data} />;
-}
-
-function LoadedInbox({ inbox }: { inbox: ReviewerInbox }) {
-  const queryClient = useQueryClient();
-  const [activeSection, setActiveSection] =
-    useState<(typeof sectionOrder)[number]>("actionable");
-  const [query, setQuery] = useState("");
-  const [onlyUnseen, setOnlyUnseen] = useState(false);
-  const markSeenMutation = useMutation({
-    mutationFn: markPullRequestSeen,
-    onSuccess: async (_result, pullRequestId) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["reviewer-inbox"] }),
-        queryClient.invalidateQueries({ queryKey: ["pull-request", pullRequestId] })
-      ]);
-    }
-  });
-  const actorById = useMemo(
-    () => new Map(inbox.actors.map((actor) => [actor.id, actor.login])),
-    [inbox.actors]
-  );
-  const normalizedQuery = query.trim().toLowerCase();
-  const visibleItems = useMemo(
-    () =>
-      inbox.items.filter((item) => {
-        const matchesSection =
-          activeSection === "all" ||
-          (activeSection === "actionable"
-            ? actionableStates.has(item.workflowState)
-            : item.workflowState === activeSection);
-        const matchesUnseen = !onlyUnseen || item.unseenActivityCount > 0;
-        const searchable = [
-          item.pullRequest.title,
-          item.pullRequest.repository,
-          String(item.pullRequest.number),
-          item.reason,
-          actorById.get(item.pullRequest.authorId) ?? item.pullRequest.authorId
-        ]
-          .join(" ")
-          .toLowerCase();
-        const matchesQuery =
-          normalizedQuery.length === 0 || searchable.includes(normalizedQuery);
-
-        return matchesSection && matchesUnseen && matchesQuery;
-      }),
-    [activeSection, actorById, inbox.items, normalizedQuery, onlyUnseen]
-  );
-  const actionableCount = inbox.items.filter((item) =>
-    actionableStates.has(item.workflowState)
-  ).length;
-  const unseenCount = inbox.items.reduce(
-    (total, item) => total + item.unseenActivityCount,
-    0
-  );
-
   return (
-    <div className="page-stack">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">Single-user reviewer loop</p>
-          <h1>Review inbox</h1>
+    <div className="grid min-h-[760px] grid-cols-[212px_1fr]">
+      <aside className="border-r border-white/10 bg-[#191916] px-3 py-5">
+        <div className="px-8 py-1 text-xs font-semibold tracking-wide text-[#ddd9ce]">
+          Review Q
         </div>
-        <div className="header-stats">
-          <span>{inbox.items.length} active PRs</span>
-          <span>{actionableCount} actionable</span>
-          <span>{unseenCount} unseen events</span>
+        <Separator className="my-5 bg-white/10" />
+        <div className="space-y-2 text-sm text-[#a5a299]">
+          <div className="rounded-md bg-white/[0.06] px-4 py-2 text-[#f0ede4]">
+            Needs you <span className="float-right text-[#d0a24c]">7</span>
+          </div>
+          <div className="px-4 py-2">
+            Changed since <span className="float-right">4</span>
+          </div>
+          <div className="px-4 py-2">
+            Waiting on author <span className="float-right">12</span>
+          </div>
+          <div className="px-4 py-2">
+            Approved · recent <span className="float-right">9</span>
+          </div>
         </div>
-      </header>
+      </aside>
 
-      <section className="panel inbox-controls" aria-label="Inbox filters">
-        <div className="section-tabs">
-          {sectionOrder.map((section) => {
-            const count =
-              section === "all"
-                ? inbox.items.length
-                : section === "actionable"
-                  ? actionableCount
-                  : inbox.sections[section].length;
-            const label =
-              section === "all"
-                ? "All"
-                : section === "actionable"
-                  ? "Actionable"
-                  : stateLabels[section];
-
-            return (
-              <button
-                key={section}
-                type="button"
-                className={activeSection === section ? "active" : undefined}
-                onClick={() => setActiveSection(section)}
-              >
-                <span>{label}</span>
-                <strong>{count}</strong>
-              </button>
-            );
-          })}
+      <section className="bg-[#242420]">
+        <div className="flex h-[62px] items-center border-b border-white/10 px-5">
+          <h1 className="text-lg font-medium tracking-tight">Review Inbox</h1>
+          <span className="ml-4 text-xs text-[#8e8b82]">· synced 2m ago</span>
+          <Badge variant="outline" className="ml-auto border-white/10 text-[#c9c5ba]">
+            group: action
+          </Badge>
         </div>
-
-        <div className="filter-row">
-          <label className="search-field">
-            <span>Search</span>
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Repository, PR, author, reason"
-            />
-          </label>
-
-          <label className="checkbox-field">
-            <input
-              type="checkbox"
-              checked={onlyUnseen}
-              onChange={(event) => setOnlyUnseen(event.target.checked)}
-            />
-            <span>Only unseen</span>
-          </label>
+        <div className="grid min-h-[697px] grid-cols-[58fr_42fr]">
+          <div className="border-r border-white/10 p-5">
+            <Card className="border-white/10 bg-[#1e1e1b] p-5 text-[#dcd8ce]">
+              <div className="text-xs tracking-[0.16em] text-[#8e8b82] uppercase">
+                Foundation checkpoint
+              </div>
+              <p className="mt-3 max-w-xl text-sm leading-6 text-[#bdb8ad]">
+                The Rhea shell, shadcn primitives, routing, and deterministic mock
+                review data are in place. The next checkpoint replaces this panel
+                with the exact Inbox C lanes and quick peek behavior.
+              </p>
+              <div className="mt-5 grid gap-2">
+                {reviewItems.slice(0, 3).map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-sm"
+                  >
+                    <span className="font-mono text-xs text-[#9e9a90]">
+                      {item.repository} / #{item.number}
+                    </span>
+                    <div className="mt-1 truncate text-[#ede9df]">{item.title}</div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+          <div className="p-5">
+            <Card className="flex h-full flex-col border-white/10 bg-[#20201d] p-5 text-[#dcd8ce]">
+              <div className="text-xs tracking-[0.16em] text-[#8e8b82] uppercase">
+                Quick peek slot
+              </div>
+              <p className="mt-3 text-sm leading-6 text-[#bdb8ad]">
+                This stays fixed on the right side of the inbox and will show
+                deterministic catch-up facts for the selected PR.
+              </p>
+            </Card>
+          </div>
         </div>
       </section>
-
-      <InboxTable
-        inbox={inbox}
-        items={visibleItems}
-        markingSeenId={
-          markSeenMutation.isPending ? markSeenMutation.variables : undefined
-        }
-        isMarkingSeen={markSeenMutation.isPending}
-        onMarkSeen={(pullRequestId) => markSeenMutation.mutate(pullRequestId)}
-      />
     </div>
-  );
+  )
 }

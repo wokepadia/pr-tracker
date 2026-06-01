@@ -1,185 +1,32 @@
-import { Link, useParams } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getPullRequest, getReviewerInbox, markPullRequestSeen } from "../api";
-import { stateLabels } from "../ui/InboxTable";
+import { useParams, Link } from "@tanstack/react-router"
+import { Button } from "@/components/ui/button"
+import { Card } from "@/components/ui/card"
 
 export function PullRequestPage() {
-  const { pullRequestId } = useParams({ from: "/pull-requests/$pullRequestId" });
-  const queryClient = useQueryClient();
-  const detailQuery = useQuery({
-    queryKey: ["pull-request", pullRequestId],
-    queryFn: () => getPullRequest(pullRequestId)
-  });
-  const inboxQuery = useQuery({
-    queryKey: ["reviewer-inbox"],
-    queryFn: getReviewerInbox
-  });
-  const markSeenMutation = useMutation({
-    mutationFn: () => markPullRequestSeen(pullRequestId),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["reviewer-inbox"] });
-    }
-  });
-
-  if (detailQuery.isLoading) {
-    return <div className="panel">Loading pull request...</div>;
-  }
-
-  if (detailQuery.isError || !detailQuery.data) {
-    return <div className="panel error">Could not load pull request.</div>;
-  }
-
-  const { pullRequest, actors } = detailQuery.data;
-  const actorById = new Map(actors.map((actor) => [actor.id, actor.login]));
-  const classifiedItem = inboxQuery.data?.items.find(
-    (item) => item.pullRequest.id === pullRequest.id
-  );
+  const { pullRequestId } = useParams({ from: "/pull-requests/$pullRequestId" })
 
   return (
-    <div className="page-stack">
-      <Link to="/" className="back-link">
-        Back to inbox
-      </Link>
-
-      <header className="page-header">
+    <div className="min-h-[760px] bg-[#242420] p-7">
+      <div className="mb-6 flex items-center gap-4">
+        <Button variant="ghost" size="sm" asChild>
+          <Link to="/">← Inbox</Link>
+        </Button>
         <div>
-          <p className="eyebrow">
-            {pullRequest.repository} #{pullRequest.number}
-          </p>
-          <h1>{pullRequest.title}</h1>
-          {classifiedItem ? (
-            <div className="detail-state">
-              <span className={`state-pill ${classifiedItem.workflowState}`}>
-                {stateLabels[classifiedItem.workflowState]}
-              </span>
-              <span>{classifiedItem.reason}</span>
-            </div>
-          ) : null}
+          <div className="font-mono text-xs text-[#8e8b82]">
+            selected PR · {pullRequestId}
+          </div>
+          <h1 className="mt-1 text-2xl font-medium tracking-tight">
+            PR detail foundation
+          </h1>
         </div>
-        <div className="header-actions">
-          <button
-            className="secondary-button"
-            type="button"
-            onClick={() => markSeenMutation.mutate()}
-            disabled={markSeenMutation.isPending}
-          >
-            {markSeenMutation.isPending ? "Marking..." : "Mark seen"}
-          </button>
-          <a className="button" href={pullRequest.url} target="_blank" rel="noreferrer">
-            Open in GitHub
-          </a>
-        </div>
-      </header>
-
-      {markSeenMutation.isSuccess ? (
-        <div className="panel success">Marked seen for this reviewer session.</div>
-      ) : null}
-
-      <section className="grid two">
-        <div className="panel">
-          <h2>Review state</h2>
-          <dl className="definition-list">
-            <div>
-              <dt>Author</dt>
-              <dd>{actorById.get(pullRequest.authorId) ?? pullRequest.authorId}</dd>
-            </div>
-            <div>
-              <dt>Draft</dt>
-              <dd>{pullRequest.isDraft ? "Yes" : "No"}</dd>
-            </div>
-            <div>
-              <dt>Requested reviewers</dt>
-              <dd>
-                {pullRequest.requestedReviewerIds
-                  .map((id) => actorById.get(id) ?? id)
-                  .join(", ") || "None"}
-              </dd>
-            </div>
-            <div>
-              <dt>Latest commit</dt>
-              <dd>{pullRequest.latestCommitSha}</dd>
-            </div>
-          </dl>
-        </div>
-
-        <div className="panel">
-          <h2>Review decisions</h2>
-          {pullRequest.reviews.length === 0 ? (
-            <p className="muted">No reviews have been recorded yet.</p>
-          ) : (
-            <ul className="event-list">
-              {pullRequest.reviews.map((review) => (
-                <li key={review.id}>
-                  <strong>{reviewDecisionLabel(review.decision)}</strong>
-                  <span>
-                    {actorById.get(review.reviewerId) ?? review.reviewerId} ·{" "}
-                    {new Date(review.submittedAt).toLocaleString()}
-                  </span>
-                  {review.commitSha ? (
-                    <span>Commit {review.commitSha}</span>
-                  ) : null}
-                  {review.body ? <p>{review.body}</p> : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </section>
-
-      <section className="panel">
-        <h2>Unresolved threads</h2>
-        {pullRequest.threads.filter((thread) => !thread.isResolved).length === 0 ? (
-          <p className="muted">No unresolved review threads.</p>
-        ) : (
-          <ul className="event-list">
-            {pullRequest.threads
-              .filter((thread) => !thread.isResolved)
-              .map((thread) => (
-                <li key={thread.id}>
-                  <strong>{thread.filePath ?? "Conversation"}</strong>
-                  <span>
-                    {thread.line ? `Line ${thread.line}` : "No line context"} ·{" "}
-                    {thread.participantIds
-                      .map((id) => actorById.get(id) ?? id)
-                      .join(", ")}
-                  </span>
-                </li>
-              ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="panel">
-        <h2>Recent activity</h2>
-        {pullRequest.activity.length === 0 ? (
-          <p className="muted">No activity events have been recorded yet.</p>
-        ) : (
-          <ul className="event-list">
-            {pullRequest.activity.map((event) => (
-              <li key={event.id}>
-                <strong>{event.title}</strong>
-                <span>
-                  {actorById.get(event.actorId) ?? event.actorId} ·{" "}
-                  {new Date(event.occurredAt).toLocaleString()}
-                </span>
-                {event.body ? <p>{event.body}</p> : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      </div>
+      <Card className="border-white/10 bg-[#1e1e1b] p-6 text-[#dcd8ce]">
+        <p className="max-w-2xl text-sm leading-6 text-[#bdb8ad]">
+          The detail route is wired into the rebuilt shell. The Detail E
+          activity timeline and deterministic context band land in the detail
+          checkpoint.
+        </p>
+      </Card>
     </div>
-  );
-}
-
-function reviewDecisionLabel(decision: string): string {
-  if (decision === "approved") {
-    return "Approved";
-  }
-
-  if (decision === "changes_requested") {
-    return "Changes requested";
-  }
-
-  return "Commented";
+  )
 }
