@@ -137,6 +137,67 @@ try {
   ) {
     throw new Error(`Unexpected sync run counts: ${JSON.stringify(syncRun)}.`);
   }
+
+  await syncOpenPullRequestsFromGithub(orm, {
+    async listOpenPullRequests() {
+      const inProgressRows = await orm.em.getConnection().execute<
+        Array<{ status: string; finished_at: Date | string | null }>
+      >(
+        `
+          select status, finished_at
+          from sync_runs
+          order by started_at desc
+          limit 1
+        `
+      );
+      const inProgress = inProgressRows[0];
+
+      if (
+        !inProgress ||
+        inProgress.status !== "in_progress" ||
+        inProgress.finished_at
+      ) {
+        throw new Error(
+          `Expected observable in-progress sync run, got ${JSON.stringify(
+            inProgress
+          )}.`
+        );
+      }
+
+      throw new Error("Synthetic sync failure");
+    }
+  }).catch((error: unknown) => {
+    if (!(error instanceof Error) || error.message !== "Synthetic sync failure") {
+      throw error;
+    }
+  });
+
+  const failureRows = await orm.em.getConnection().execute<
+    Array<{
+      status: string;
+      error: string | null;
+      finished_at: Date | string | null;
+    }>
+  >(
+    `
+      select status, error, finished_at
+      from sync_runs
+      order by started_at desc
+      limit 1
+    `
+  );
+  const failure = failureRows[0];
+
+  if (
+    !failure ||
+    failure.status !== "failed" ||
+    failure.error !== "Synthetic sync failure" ||
+    !failure.finished_at
+  ) {
+    throw new Error(
+      `Expected failed sync run bookkeeping, got ${JSON.stringify(failure)}.`
+    );
+  }
 } finally {
   await orm.close(true);
 }

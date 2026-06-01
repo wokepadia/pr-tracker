@@ -20,6 +20,7 @@ export async function syncOpenPullRequestsFromGithub(
 ): Promise<GitHubPullRequestSyncResult> {
   const startedAt = new Date().toISOString();
   const sourceName = options.sourceName ?? "github-app";
+  const syncRunId = await startSyncRun(orm, { sourceName, startedAt });
   const result: GitHubPullRequestSyncResult = {
     scannedPullRequests: 0,
     ingestedPullRequests: 0,
@@ -47,40 +48,40 @@ export async function syncOpenPullRequestsFromGithub(
       });
     }
 
-    await recordSyncRun(orm, {
-      sourceName,
+    await finishSyncRun(orm, {
+      syncRunId,
       status: "succeeded",
-      startedAt,
       finishedAt: new Date().toISOString(),
       result
     });
 
     return result;
   } catch (error) {
-    await recordSyncRun(orm, {
-      sourceName,
-      status: "failed",
-      startedAt,
-      finishedAt: new Date().toISOString(),
-      result,
-      error: error instanceof Error ? error.message : String(error)
-    });
+    try {
+      await finishSyncRun(orm, {
+        syncRunId,
+        status: "failed",
+        finishedAt: new Date().toISOString(),
+        result,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    } catch (bookkeepingError) {
+      console.error("Failed to record failed GitHub sync run.", bookkeepingError);
+    }
 
     throw error;
   }
 }
 
-async function recordSyncRun(
+async function startSyncRun(
   orm: MikroORM,
   input: {
     sourceName: string;
-    status: "succeeded" | "failed";
     startedAt: string;
-    finishedAt: string;
-    result: GitHubPullRequestSyncResult;
-    error?: string;
   }
-): Promise<void> {
+): Promise<string> {
+  const syncRunId = randomUUID();
+
   await orm.em.getConnection().execute(
     `
       insert into sync_runs (
@@ -98,16 +99,54 @@ async function recordSyncRun(
       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
-      randomUUID(),
+      syncRunId,
       input.sourceName,
+      "in_progress",
+      0,
+      0,
+      0,
+      0,
+      null,
+      input.startedAt,
+      null
+    ]
+  );
+
+  return syncRunId;
+}
+
+async function finishSyncRun(
+  orm: MikroORM,
+  input: {
+    syncRunId: string;
+    status: "succeeded" | "failed";
+    finishedAt: string;
+    result: GitHubPullRequestSyncResult;
+    error?: string;
+  }
+): Promise<void> {
+  await orm.em.getConnection().execute(
+    `
+      update sync_runs
+      set
+        status = ?,
+        scanned_pull_requests = ?,
+        ingested_pull_requests = ?,
+        ingested_reviews = ?,
+        ignored_pull_requests = ?,
+        error = ?,
+        finished_at = ?
+      where id = ?
+    `,
+    [
       input.status,
       input.result.scannedPullRequests,
       input.result.ingestedPullRequests,
       input.result.ingestedReviews,
       input.result.ignoredPullRequests,
       input.error ?? null,
-      input.startedAt,
-      input.finishedAt
+      input.finishedAt,
+      input.syncRunId
     ]
   );
 }
