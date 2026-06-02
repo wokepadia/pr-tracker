@@ -23,6 +23,7 @@ import {
   Inbox,
   MessageSquareText,
   PanelRight,
+  RotateCcw,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -36,12 +37,15 @@ import {
   type ReviewQueueBucketId,
   type ReviewQueueItemView,
 } from "@/reviewer/view-model"
+import {
+  loadLocalQueueState,
+  saveLocalQueueState,
+  type LocalQueueStateByPullRequestId,
+} from "@/reviewer/local-queue-state"
 
 type LaneId = ReviewQueueBucketId
 
-type QueueGroupMode = "action" | "repository"
-
-type LocalQueueState = "snoozed"
+type QueueGroupMode = "action" | "repository" | "snoozed"
 
 interface LaneDefinition {
   id: LaneId
@@ -125,9 +129,11 @@ export function InboxPage() {
       ])
     },
   })
-  const [localQueueState, setLocalQueueState] = useState<
-    Partial<Record<string, LocalQueueState>>
-  >({})
+  const [localQueueState, setLocalQueueState] =
+    useState<LocalQueueStateByPullRequestId>(() => {
+      if (typeof window === "undefined") return {}
+      return loadLocalQueueState(window.localStorage)
+    })
   const [failedCaughtUpItemId, setFailedCaughtUpItemId] = useState<string>()
   const [groupMode, setGroupMode] = useState<QueueGroupMode>("action")
   const inboxView = useMemo(
@@ -136,6 +142,13 @@ export function InboxPage() {
   )
   const activeItems = useMemo(
     () => inboxView?.items.filter((item) => !localQueueState[item.id]) ?? [],
+    [inboxView, localQueueState]
+  )
+  const snoozedItems = useMemo(
+    () =>
+      inboxView?.items.filter(
+        (item) => localQueueState[item.id] === "snoozed"
+      ) ?? [],
     [inboxView, localQueueState]
   )
   const laneItems = useMemo(
@@ -186,12 +199,27 @@ export function InboxPage() {
     [openRepositoryIds, repositoryGroups]
   )
   const visibleQueueItems =
-    groupMode === "action" ? visibleItems : visibleRepositoryItems
+    groupMode === "action"
+      ? visibleItems
+      : groupMode === "repository"
+        ? visibleRepositoryItems
+        : snoozedItems
   const [selectedId, setSelectedId] = useState<string>(
     () => visibleQueueItems[0]?.id ?? activeItems[0]?.id ?? ""
   )
+  const selectableItems = groupMode === "snoozed" ? snoozedItems : activeItems
   const selectedItem =
-    activeItems.find((item) => item.id === selectedId) ?? activeItems[0]
+    selectableItems.find((item) => item.id === selectedId) ??
+    selectableItems[0] ??
+    activeItems[0] ??
+    snoozedItems[0]
+  const selectedItemIsSnoozed = Boolean(
+    selectedItem && localQueueState[selectedItem.id] === "snoozed"
+  )
+
+  useEffect(() => {
+    saveLocalQueueState(window.localStorage, localQueueState)
+  }, [localQueueState])
 
   useEffect(() => {
     if (groupMode !== "action") return
@@ -226,9 +254,9 @@ export function InboxPage() {
 
   useEffect(() => {
     if (!visibleQueueItems.some((item) => item.id === selectedId)) {
-      setSelectedId(visibleQueueItems[0]?.id ?? activeItems[0]?.id ?? "")
+      setSelectedId(visibleQueueItems[0]?.id ?? selectableItems[0]?.id ?? "")
     }
-  }, [activeItems, selectedId, visibleQueueItems])
+  }, [selectableItems, selectedId, visibleQueueItems])
 
   function moveSelectionAfterHiding(itemId: string) {
     const currentIndex = visibleQueueItems.findIndex((item) => item.id === itemId)
@@ -250,10 +278,30 @@ export function InboxPage() {
   }
 
   function snoozeSelected() {
-    if (!selectedItem) return
+    if (!selectedItem || selectedItemIsSnoozed) return
     const itemId = selectedItem.id
     setLocalQueueState((current) => ({ ...current, [itemId]: "snoozed" }))
     moveSelectionAfterHiding(itemId)
+  }
+
+  function restoreSelected() {
+    if (!selectedItem || !selectedItemIsSnoozed) return
+    const itemId = selectedItem.id
+    setLocalQueueState((current) => {
+      const next = { ...current }
+      delete next[itemId]
+      return next
+    })
+    setGroupMode("action")
+    setOpenLaneIds((current) => {
+      const next = new Set(current)
+      const restoredBucketId = bucketIdForItem(selectedItem)
+      if (restoredBucketId) {
+        next.add(restoredBucketId)
+      }
+      return next
+    })
+    setSelectedId(itemId)
   }
 
   function openSelectedDetail() {
@@ -282,6 +330,12 @@ export function InboxPage() {
     if (firstLaneItem) {
       setSelectedId(firstLaneItem.id)
     }
+  }
+
+  function focusSnoozed() {
+    if (snoozedItems.length === 0) return
+    setGroupMode("snoozed")
+    setSelectedId(snoozedItems[0]?.id ?? "")
   }
 
   useEffect(() => {
@@ -334,7 +388,11 @@ export function InboxPage() {
       }
 
       if (event.key === "s") {
-        snoozeSelected()
+        if (selectedItemIsSnoozed) {
+          restoreSelected()
+        } else {
+          snoozeSelected()
+        }
         return
       }
 
@@ -343,7 +401,13 @@ export function InboxPage() {
 
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [openSelectedDetail, selectedItem, visibleQueueItems, markSeenMutation])
+  }, [
+    openSelectedDetail,
+    selectedItem,
+    selectedItemIsSnoozed,
+    visibleQueueItems,
+    markSeenMutation,
+  ])
 
   if (inboxQuery.isLoading) {
     return <InboxStatusPanel title="Loading review inbox" />
@@ -362,13 +426,13 @@ export function InboxPage() {
     <div className="grid min-h-[760px] grid-cols-1 sm:grid-cols-[190px_1fr] lg:grid-cols-[212px_1fr]">
       <InboxSidebar
         laneItems={laneItems}
-        activeLaneId={bucketIdForItem(selectedItem)}
-        snoozedCount={
-          inboxView.items.filter(
-            (item) => localQueueState[item.id] === "snoozed"
-          ).length
+        activeLaneId={
+          groupMode === "snoozed" ? undefined : bucketIdForItem(selectedItem)
         }
+        snoozedActive={groupMode === "snoozed"}
+        snoozedCount={snoozedItems.length}
         onSelectLane={focusLane}
+        onSelectSnoozed={focusSnoozed}
       />
 
       <section className="flex min-w-0 flex-col bg-[#242420]">
@@ -380,45 +444,58 @@ export function InboxPage() {
         <div className="grid min-h-[697px] grid-cols-1 xl:grid-cols-[58fr_42fr]">
           <div className="min-w-0 border-b border-white/10 xl:border-r xl:border-b-0">
             <div className="h-full overflow-y-auto pt-2 pb-7">
-              {groupMode === "action"
-                ? actionQueueGroups.map((lane) => (
-                    <QueueLane
-                      key={lane.id}
-                      group={lane}
-                      isOpen={openLaneIds.has(lane.id)}
-                      items={laneItems[lane.id]}
-                      selectedId={selectedItem?.id ?? ""}
-                      onToggle={() => {
-                        setOpenLaneIds((current) =>
-                          toggleOpenGroup(current, lane.id)
-                        )
-                      }}
-                      onSelect={setSelectedId}
-                    />
-                  ))
-                : repositoryGroups.map((group) => (
-                    <QueueLane
-                      key={group.id}
-                      group={group}
-                      isOpen={openRepositoryIds.has(group.id)}
-                      items={group.items}
-                      selectedId={selectedItem?.id ?? ""}
-                      onToggle={() => {
-                        setOpenRepositoryIds((current) =>
-                          toggleOpenGroup(current, group.id)
-                        )
-                      }}
-                      onSelect={setSelectedId}
-                    />
-                  ))}
+              {groupMode === "action" ? (
+                actionQueueGroups.map((lane) => (
+                  <QueueLane
+                    key={lane.id}
+                    group={lane}
+                    isOpen={openLaneIds.has(lane.id)}
+                    items={laneItems[lane.id]}
+                    selectedId={selectedItem?.id ?? ""}
+                    onToggle={() => {
+                      setOpenLaneIds((current) =>
+                        toggleOpenGroup(current, lane.id)
+                      )
+                    }}
+                    onSelect={setSelectedId}
+                  />
+                ))
+              ) : groupMode === "repository" ? (
+                repositoryGroups.map((group) => (
+                  <QueueLane
+                    key={group.id}
+                    group={group}
+                    isOpen={openRepositoryIds.has(group.id)}
+                    items={group.items}
+                    selectedId={selectedItem?.id ?? ""}
+                    onToggle={() => {
+                      setOpenRepositoryIds((current) =>
+                        toggleOpenGroup(current, group.id)
+                      )
+                    }}
+                    onSelect={setSelectedId}
+                  />
+                ))
+              ) : (
+                <QueueLane
+                  group={{ id: "snoozed", label: "Snoozed", tone: "quiet" }}
+                  isOpen
+                  items={snoozedItems}
+                  selectedId={selectedItem?.id ?? ""}
+                  onToggle={() => undefined}
+                  onSelect={setSelectedId}
+                />
+              )}
             </div>
           </div>
           {selectedItem ? (
             <QuickPeekPanel
               item={selectedItem}
+              isSnoozed={selectedItemIsSnoozed}
               isMarkingSeen={markSeenMutation.isPending}
               caughtUpError={failedCaughtUpItemId === selectedItem.id}
               onSnooze={snoozeSelected}
+              onRestore={restoreSelected}
               onCaughtUp={() => void markSelectedCaughtUp()}
             />
           ) : (
@@ -433,13 +510,17 @@ export function InboxPage() {
 function InboxSidebar({
   laneItems,
   activeLaneId,
+  snoozedActive,
   snoozedCount,
   onSelectLane,
+  onSelectSnoozed,
 }: {
   laneItems: Record<LaneId, ReviewQueueItemView[]>
   activeLaneId?: LaneId
+  snoozedActive: boolean
   snoozedCount: number
   onSelectLane: (laneId: LaneId) => void
+  onSelectSnoozed: () => void
 }) {
   return (
     <aside className="flex flex-col border-b border-white/10 bg-[#191916] px-3 py-4 sm:border-r sm:border-b-0">
@@ -497,7 +578,13 @@ function InboxSidebar({
         />
       </SidebarSection>
       <SidebarSection label="Stashed">
-        <SidebarItem label="Snoozed" count={snoozedCount} />
+        <SidebarItem
+          active={snoozedActive}
+          attention={snoozedCount > 0}
+          label="Snoozed"
+          count={snoozedCount}
+          onClick={snoozedCount > 0 ? onSelectSnoozed : undefined}
+        />
         <SidebarItem
           active={activeLaneId === "watching"}
           label="Watching"
@@ -868,15 +955,19 @@ function FactChip({
 
 function QuickPeekPanel({
   item,
+  isSnoozed,
   isMarkingSeen,
   caughtUpError,
   onSnooze,
+  onRestore,
   onCaughtUp,
 }: {
   item: ReviewQueueItemView
+  isSnoozed: boolean
   isMarkingSeen: boolean
   caughtUpError: boolean
   onSnooze: () => void
+  onRestore: () => void
   onCaughtUp: () => void
 }) {
   const reReviewRequested = item.activityEvents.some((event) =>
@@ -1067,11 +1158,15 @@ function QuickPeekPanel({
         <Button
           type="button"
           variant="outline"
-          onClick={onSnooze}
+          onClick={isSnoozed ? onRestore : onSnooze}
           className="h-9 border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
         >
-          <Clock3 className="h-4 w-4" />
-          Snooze
+          {isSnoozed ? (
+            <RotateCcw className="h-4 w-4" />
+          ) : (
+            <Clock3 className="h-4 w-4" />
+          )}
+          {isSnoozed ? "Restore" : "Snooze"}
         </Button>
         <Button
           type="button"
@@ -1200,7 +1295,7 @@ function EmptyPeekPanel() {
         No active review items
       </h2>
       <p className="mt-2 max-w-[300px] text-sm leading-6 text-[#9f9a91]">
-        Everything in this local queue has been snoozed or marked caught up.
+        There are no active review items in the current view.
       </p>
     </aside>
   )
