@@ -785,8 +785,8 @@ function DetailSideRail({
           />
         ))}
         <RailKeyValue
-          label="mergeable"
-          value={detailMergeableLabel(item)}
+          label="attention"
+          value={detailAttentionLabel(item)}
         />
         {item.changedFilesSinceLastSeen.length > 0 ? (
           <RailKeyValue
@@ -866,12 +866,14 @@ function detailQueueLabel(item: ReviewQueueItemView): string {
   return "Watching"
 }
 
-function detailMergeableLabel(item: ReviewQueueItemView): string {
-  if (item.waitingOn === "you") return "blocked · you"
-  if (item.waitingOn === "author") return "waiting · author"
-  if (item.laneId === "approved") return "approved · watching"
-  if (item.laneId === "caught_up") return "caught up · watching"
-  if (item.laneId === "stale") return "stale · watching"
+export function detailAttentionLabel(
+  item: Pick<ReviewQueueItemView, "waitingOn" | "laneId">
+): string {
+  if (item.waitingOn === "you") return "waiting on you"
+  if (item.waitingOn === "author") return "waiting on author"
+  if (item.laneId === "approved") return "approved"
+  if (item.laneId === "caught_up") return "caught up"
+  if (item.laneId === "stale") return "stale"
   return "watching"
 }
 
