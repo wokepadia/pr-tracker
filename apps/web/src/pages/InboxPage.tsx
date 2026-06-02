@@ -68,6 +68,7 @@ interface LaneDefinition {
   id: LaneId
   label: string
   tone: "hot" | "changed" | "waiting" | "success" | "quiet"
+  description?: string
   defaultOpen: boolean
 }
 
@@ -75,6 +76,15 @@ interface QueueGroupDefinition {
   id: string
   label: string
   tone: LaneDefinition["tone"]
+  description?: string
+}
+
+const laneDescriptions: Record<LaneId, string> = {
+  needs_review: "Your review is the next move",
+  updated_since_review: "Activity after your last pass",
+  waiting_on_author: "Blocked on author changes",
+  approved: "Recently approved",
+  watching: "Tracked, not urgent",
 }
 
 const lanes: LaneDefinition[] = [
@@ -82,30 +92,35 @@ const lanes: LaneDefinition[] = [
     id: "needs_review",
     label: "Needs your review",
     tone: "hot",
+    description: laneDescriptions.needs_review,
     defaultOpen: true,
   },
   {
     id: "updated_since_review",
     label: "Changed since you last looked",
     tone: "changed",
+    description: laneDescriptions.updated_since_review,
     defaultOpen: true,
   },
   {
     id: "waiting_on_author",
     label: "Waiting on author",
     tone: "waiting",
+    description: laneDescriptions.waiting_on_author,
     defaultOpen: false,
   },
   {
     id: "approved",
     label: "Approved recently",
     tone: "success",
+    description: laneDescriptions.approved,
     defaultOpen: false,
   },
   {
     id: "watching",
     label: "Watching / stale",
     tone: "quiet",
+    description: laneDescriptions.watching,
     defaultOpen: false,
   },
 ]
@@ -1135,7 +1150,7 @@ function QueueLane({
         type="button"
         onClick={onToggle}
         aria-expanded={isOpen}
-        className="flex w-full items-center gap-3 px-5 py-3 text-left"
+        className="grid w-full grid-cols-[4px_16px_1fr_auto] items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-muted/25"
       >
         <span className={cn("h-5 w-1 rounded-full", laneToneClasses[group.tone])} />
         {isOpen ? (
@@ -1143,13 +1158,20 @@ function QueueLane({
         ) : (
           <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/70" />
         )}
-        <span className="text-xs text-muted-foreground">
-          {group.label}
+        <span className="min-w-0">
+          <span className="block truncate text-xs font-medium text-foreground">
+            {group.label}
+          </span>
+          {group.description ? (
+            <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+              {group.description}
+            </span>
+          ) : null}
         </span>
         <Badge
           variant="outline"
           className={cn(
-            "h-5 rounded-full px-2 text-xs",
+            "h-5 justify-self-end rounded-full px-2 text-xs",
             laneBadgeToneClasses[group.tone]
           )}
         >
