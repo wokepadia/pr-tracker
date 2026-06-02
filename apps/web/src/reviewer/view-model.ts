@@ -123,6 +123,7 @@ export function toReviewQueueItemView(
   const newActivity = pullRequest.activity.filter((event) =>
     isNewerThan(event.occurredAt, lastSeenAt)
   )
+  const latestNewActivity = maxByIsoDate(newActivity, (event) => event.occurredAt)
   const viewerReviews = pullRequest.reviews
     .filter((review) => review.reviewerId === viewerId)
     .sort((a, b) => Date.parse(b.submittedAt) - Date.parse(a.submittedAt))
@@ -130,7 +131,7 @@ export function toReviewQueueItemView(
   const authorLogin = actorLogin(actorById, pullRequest.authorId)
   const waitingOn = getWaitingOn(item.workflowState)
   const lastMeaningfulAt =
-    newActivity[0]?.occurredAt ??
+    latestNewActivity?.occurredAt ??
     latestViewerReview?.submittedAt ??
     pullRequest.updatedAt
 
@@ -254,8 +255,13 @@ function buildReviewerStates(
 ): ReviewerState[] {
   const latestByReviewer = new Map<string, ReviewDecision | "pending">()
 
-  for (const review of pullRequest.reviews) {
+  const reviewsNewestFirst = pullRequest.reviews
+    .slice()
+    .sort((a, b) => Date.parse(b.submittedAt) - Date.parse(a.submittedAt))
+
+  for (const review of reviewsNewestFirst) {
     if (review.reviewerId === viewerId) continue
+    if (latestByReviewer.has(review.reviewerId)) continue
     latestByReviewer.set(review.reviewerId, review.decision)
   }
 
@@ -306,4 +312,19 @@ function isNewerThan(
 ): boolean {
   if (!isoDate || !comparisonIsoDate) return Boolean(isoDate)
   return Date.parse(isoDate) > Date.parse(comparisonIsoDate)
+}
+
+function maxByIsoDate<T>(
+  items: T[],
+  getIsoDate: (item: T) => string | undefined
+): T | undefined {
+  return items.reduce<T | undefined>((latest, item) => {
+    const itemTime = Date.parse(getIsoDate(item) ?? "")
+    if (Number.isNaN(itemTime)) return latest
+
+    const latestTime = latest ? Date.parse(getIsoDate(latest) ?? "") : NaN
+    return !latest || Number.isNaN(latestTime) || itemTime > latestTime
+      ? item
+      : latest
+  }, undefined)
 }
