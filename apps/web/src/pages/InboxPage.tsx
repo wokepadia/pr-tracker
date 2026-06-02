@@ -1389,15 +1389,15 @@ function QuickPeekPanel({
         ) : null}
       </div>
 
-      <div className="mt-auto grid grid-cols-2 gap-2 border-t border-white/10 px-5 py-4 min-[1420px]:grid-cols-[1fr_1fr_1fr_1fr_auto]">
+      <div className="mt-auto grid grid-cols-2 gap-2 border-t border-white/10 px-5 py-4">
         {caughtUpError ? (
-          <div className="col-span-2 rounded-md border border-[#d0a24c]/30 bg-[#d0a24c]/10 px-3 py-2 text-[12px] leading-5 text-[#d8d3c8] min-[1420px]:col-span-5">
+          <div className="col-span-2 rounded-md border border-[#d0a24c]/30 bg-[#d0a24c]/10 px-3 py-2 text-[12px] leading-5 text-[#d8d3c8]">
             Could not save caught-up state. Try again.
           </div>
         ) : null}
         <Button
           asChild
-          className="col-span-2 h-9 bg-[#d0a24c] text-[#191916] hover:bg-[#e0b45f] min-[1420px]:col-span-5"
+          className="col-span-2 h-9 bg-[#d0a24c] text-[#191916] hover:bg-[#e0b45f]"
         >
           <a href={item.url} target="_blank" rel="noreferrer">
             Open in GitHub to review
@@ -1409,7 +1409,7 @@ function QuickPeekPanel({
           variant="outline"
           onClick={isSnoozed ? onRestore : onSnooze}
           disabled={isMuted}
-          className="h-9 border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+          className="h-9 min-w-0 justify-center border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
         >
           {isSnoozed ? (
             <RotateCcw className="h-4 w-4" />
@@ -1424,7 +1424,7 @@ function QuickPeekPanel({
           onClick={onTogglePin}
           disabled={isSnoozed || isMuted}
           aria-pressed={isPinned}
-          className="h-9 border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+          className="h-9 min-w-0 justify-center border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
         >
           <Pin className="h-4 w-4" />
           {isPinned ? "Unpin" : "Pin"}
@@ -1434,7 +1434,7 @@ function QuickPeekPanel({
           variant="outline"
           onClick={isMuted ? onRestore : onMute}
           disabled={isSnoozed}
-          className="h-9 border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+          className="h-9 min-w-0 justify-center border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
         >
           <BellOff className="h-4 w-4" />
           {isMuted ? "Unmute" : "Mute"}
@@ -1444,7 +1444,7 @@ function QuickPeekPanel({
           variant="outline"
           onClick={onCaughtUp}
           disabled={!canMarkCaughtUp}
-          className="h-9 border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+          className="h-9 min-w-0 justify-center border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
         >
           <Check className="h-4 w-4" />
           {isMarkingSeen
@@ -1456,12 +1456,11 @@ function QuickPeekPanel({
         <Button
           asChild
           variant="ghost"
-          size="icon"
-          className="h-9 w-full text-[#9f9a91] hover:bg-white/[0.04] hover:text-[#f0ede4] min-[1420px]:w-9"
+          className="col-span-2 h-9 text-[#9f9a91] hover:bg-white/[0.04] hover:text-[#f0ede4]"
         >
           <Link to="/pull-requests/$pullRequestId" params={{ pullRequestId: item.id }}>
-            <span className="sr-only">Open PR detail</span>
             <GitPullRequest className="h-4 w-4" />
+            Open PR detail
           </Link>
         </Button>
       </div>
