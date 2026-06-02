@@ -1181,6 +1181,7 @@ function QuickPeekPanel({
   onMute: () => void
   onCaughtUp: () => void
 }) {
+  const canMarkCaughtUp = canMarkReviewItemCaughtUp(item, isMarkingSeen)
   const reReviewRequested = item.activityEvents.some((event) =>
     event.isNew && event.action.toLowerCase().includes("requested your review")
   )
@@ -1404,7 +1405,7 @@ function QuickPeekPanel({
           type="button"
           variant="outline"
           onClick={onCaughtUp}
-          disabled={isMarkingSeen || item.unseenEventCount === 0}
+          disabled={!canMarkCaughtUp}
           className="h-9 border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
         >
           <Check className="h-4 w-4" />

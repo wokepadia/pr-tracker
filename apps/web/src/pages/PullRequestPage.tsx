@@ -681,6 +681,7 @@ function DetailSideRail({
   onMute: () => void
   onCaughtUp: () => void
 }) {
+  const canMarkCaughtUp = canMarkReviewItemCaughtUp(item, isMarkingSeen)
   const totalAdditions = item.changedFilesSinceLastSeen.reduce(
     (total, file) => total + (file.additions ?? 0),
     0
@@ -713,7 +714,7 @@ function DetailSideRail({
           <Button
             type="button"
             variant="outline"
-            disabled={isMarkingSeen || newEventCount === 0}
+            disabled={!canMarkCaughtUp}
             onClick={onCaughtUp}
             className="h-9 justify-center border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
           >
