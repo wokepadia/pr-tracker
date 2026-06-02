@@ -756,7 +756,7 @@ function DetailSideRail({
               ? "Saving"
               : newEventCount === 0
                 ? "All caught up"
-                : "Mark all caught up"}
+                : "Mark caught up"}
           </Button>
           <div className="grid grid-cols-2 gap-2">
             <Button
