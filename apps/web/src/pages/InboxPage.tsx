@@ -30,8 +30,10 @@ import {
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Kbd } from "@/components/ui/kbd"
 import { Separator } from "@/components/ui/separator"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { getReviewerInbox, markPullRequestSeen } from "@/api"
 import { formatCount } from "@/lib/copy"
 import { cn } from "@/lib/utils"
@@ -737,7 +739,7 @@ function InboxSidebar({
         <div className="flex h-4 w-4 items-center justify-center rounded-[3px] bg-[#e5e5e5] text-[9px] font-bold text-[#171717]">
           R
         </div>
-        <div className="font-mono text-[11px] tracking-[0.14em] text-[#f5f5f5] uppercase">
+        <div className="text-xs text-[#f5f5f5]">
           Review Q
         </div>
       </div>
@@ -818,7 +820,7 @@ function InboxSidebar({
           }
         />
       </SidebarSection>
-      <div className="mt-4 hidden rounded-md border border-white/10 bg-white/[0.03] p-3 text-[11px] leading-5 text-[#737373] sm:mt-auto sm:block">
+      <div className="mt-4 hidden rounded-md border border-white/10 bg-white/[0.03] p-3 text-xs leading-5 text-[#737373] sm:mt-auto sm:block">
         Review decisions still happen in GitHub. This surface only tracks where
         your attention belongs.
       </div>
@@ -839,7 +841,7 @@ function InboxStatusPanel({
         <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-[#e5e5e5]">
           <Inbox className="h-5 w-5" />
         </div>
-        <h1 className="text-[18px] font-semibold tracking-tight text-[#f5f5f5]">
+        <h1 className="text-lg font-semibold tracking-tight text-[#f5f5f5]">
           {title}
         </h1>
         {detail ? (
@@ -859,7 +861,7 @@ function SidebarSection({
 }) {
   return (
     <div className="mb-2 sm:mb-5">
-      <div className="px-2 pb-2 pt-2 font-mono text-[9.5px] tracking-[0.14em] text-[#525252] uppercase sm:pt-3">
+      <div className="px-2 pb-2 pt-2 text-xs text-[#525252] sm:pt-3">
         {label}
       </div>
       <div className="grid grid-cols-2 gap-1 sm:block sm:space-y-1">{children}</div>
@@ -881,7 +883,7 @@ function SidebarItem({
   onClick?: () => void
 }) {
   const itemClassName = cn(
-    "grid w-full grid-cols-[7px_1fr_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-[#a3a3a3] sm:py-2 sm:text-[13px]",
+    "grid w-full grid-cols-[7px_1fr_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-[#a3a3a3] sm:py-2 sm:text-sm",
     active && "bg-white/[0.07] text-[#f5f5f5]",
     onClick && !active && "hover:bg-white/[0.04]",
     !onClick && "cursor-default"
@@ -898,7 +900,7 @@ function SidebarItem({
       <span className={cn(attention && "font-medium text-[#f5f5f5]")}>{label}</span>
       <span
         className={cn(
-          "font-mono text-[11px] text-[#525252]",
+          "text-xs text-[#525252]",
           attention &&
             "rounded-full bg-[#e5e5e5] px-2 py-[1px] font-semibold text-[#171717]"
         )}
@@ -939,75 +941,41 @@ function InboxHeader({
 }) {
   return (
     <div className="flex min-h-[62px] flex-wrap items-center gap-3 border-b border-white/10 px-5 py-2">
-      <h1 className="text-[17px] font-semibold tracking-tight">Review Inbox</h1>
-      <span className="font-mono text-[11px] text-[#737373]">
-        · {syncLabel}
-      </span>
-      <label
-        htmlFor="review-inbox-search"
-        className="ml-auto flex h-8 min-w-[220px] max-w-[360px] flex-1 items-center gap-2 rounded-md border border-white/10 bg-[#1f1f1f] px-2.5 text-[#737373] focus-within:border-[#e5e5e5]/70"
-      >
-        <Search className="h-3.5 w-3.5" />
-        <input
+      <h1 className="text-lg font-semibold tracking-tight">Review Inbox</h1>
+      <span className="text-xs text-muted-foreground">· {syncLabel}</span>
+      <div className="relative ml-auto min-w-[220px] max-w-[360px] flex-1">
+        <Input
           id="review-inbox-search"
           type="search"
           value={searchQuery}
           onChange={(event) => onSearchQueryChange(event.target.value)}
           placeholder="Search PRs, repos, authors, files"
-          className="min-w-0 flex-1 bg-transparent font-mono text-[11px] text-[#f5f5f5] outline-none placeholder:text-[#525252]"
+          className="h-8 rounded-lg bg-[#171717] pr-9 pl-8 text-sm"
         />
-        <Kbd>/</Kbd>
-      </label>
-      <div
-        className="inline-flex h-8 items-center gap-1 rounded-md border border-white/10 p-1 font-mono text-[11px] text-[#d4d4d4]"
-        role="group"
-        aria-label="Group pull requests"
-      >
-        <span className="px-2 text-[#737373]">group:</span>
-        <GroupModeButton
-          active={groupMode === "action"}
-          onClick={() => onGroupModeChange("action")}
-        >
-          action
-        </GroupModeButton>
-        <GroupModeButton
-          active={groupMode === "repository"}
-          onClick={() => onGroupModeChange("repository")}
-        >
-          repo
-        </GroupModeButton>
+        <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Kbd className="absolute top-1/2 right-2 -translate-y-1/2">/</Kbd>
       </div>
-      <div className="ml-3 hidden items-center gap-1.5 font-mono text-[10px] tracking-[0.08em] text-[#737373] uppercase lg:flex">
+      <Tabs
+        value={groupMode}
+        onValueChange={(value) => onGroupModeChange(value as QueueGroupMode)}
+        className="gap-0"
+      >
+        <TabsList aria-label="Group pull requests">
+          <TabsTrigger value="action" className="px-3">
+            Action
+          </TabsTrigger>
+          <TabsTrigger value="repository" className="px-3">
+            Repo
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+      <div className="ml-3 hidden items-center gap-1.5 text-xs text-muted-foreground lg:flex">
         <Kbd>j</Kbd>
         <span>/</span>
         <Kbd>k</Kbd>
         <span>to move</span>
       </div>
     </div>
-  )
-}
-
-function GroupModeButton({
-  active,
-  children,
-  onClick,
-}: {
-  active: boolean
-  children: ReactNode
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={cn(
-        "h-6 rounded-[4px] px-2 text-[#737373] hover:bg-white/[0.04] hover:text-[#f5f5f5]",
-        active && "bg-[#e5e5e5] font-semibold text-[#171717] hover:bg-[#e5e5e5] hover:text-[#171717]"
-      )}
-    >
-      {children}
-    </button>
   )
 }
 
@@ -1054,13 +1022,13 @@ function QueueLane({
         ) : (
           <ChevronRight className="h-3.5 w-3.5 text-[#525252]" />
         )}
-        <span className="font-mono text-[11px] tracking-[0.12em] text-[#b7b2a7] uppercase">
+        <span className="text-xs text-[#a3a3a3]">
           {group.label}
         </span>
         <Badge
           variant="outline"
           className={cn(
-            "h-5 rounded-full border-white/10 bg-transparent px-2 font-mono text-[11px] text-[#737373]",
+            "h-5 rounded-full border-white/10 bg-transparent px-2 text-xs text-[#737373]",
             group.tone === "hot" && "border-[#e5e5e5] bg-[#e5e5e5] text-[#171717]"
           )}
         >
@@ -1115,17 +1083,17 @@ function QueueRow({
           selected && "bg-[#e5e5e5]"
         )}
       />
-      <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-white/10 bg-white/[0.05] font-mono text-[10px] text-[#a3a3a3]">
+      <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-xs text-[#a3a3a3]">
         {initials}
       </span>
       <span className="min-w-0">
         <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-[13.5px] font-medium text-[#f5f5f5]">
+          <span className="truncate text-sm font-medium text-[#f5f5f5]">
             {item.title}
           </span>
           <span
             className={cn(
-              "rounded-full border border-white/10 px-2 py-[1px] font-mono text-[9.5px] tracking-[0.06em] text-[#737373] uppercase",
+              "rounded-full border border-white/10 px-2 py-[1px] text-xs text-[#737373]",
               item.waitingOn === "you" &&
                 "border-[#e5e5e5]/70 bg-[#e5e5e5]/15 text-[#e5e5e5]"
             )}
@@ -1133,7 +1101,7 @@ function QueueRow({
             {queuePillLabel(item)}
           </span>
         </span>
-        <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] text-[#737373]">
+        <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#737373]">
           <span className="text-[#a3a3a3]">
             {item.repository} / #{item.number}
           </span>
@@ -1155,16 +1123,16 @@ function QueueRow({
           {reReviewRequested ? <FactChip icon={Eye} text="review req" active /> : null}
         </span>
       </span>
-      <span className="flex min-w-[74px] flex-col items-end gap-1 font-mono">
+      <span className="flex min-w-[74px] flex-col items-end gap-1">
         <span
           className={cn(
-            "text-[12px] text-[#a3a3a3]",
+            "text-xs text-[#a3a3a3]",
             item.waitingOn === "you" && "font-semibold text-[#e5e5e5]"
           )}
         >
           {item.waitingAge}
         </span>
-        <span className="text-[9.5px] tracking-[0.08em] text-[#525252] uppercase">
+        <span className="text-xs text-[#525252]">
           {queueTimingLabel(item)}
         </span>
       </span>
@@ -1184,7 +1152,7 @@ function FactChip({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-[4px] border border-white/10 bg-[#171717] px-1.5 py-[1px] text-[10.5px] text-[#737373]",
+        "inline-flex items-center gap-1 rounded-[4px] border border-white/10 bg-[#171717] px-1.5 py-[1px] text-xs text-[#737373]",
         active && "border-[#e5e5e5]/50 bg-[#e5e5e5]/12 text-[#e5e5e5]"
       )}
     >
@@ -1243,14 +1211,14 @@ function QuickPeekPanel({
   return (
     <aside className="flex min-h-[520px] min-w-0 flex-col bg-[#171717]">
       <div className="border-b border-white/10 px-5 py-5">
-        <div className="flex items-center gap-2 font-mono text-[10.5px] tracking-[0.12em] text-[#737373] uppercase">
+        <div className="flex items-center gap-2 text-xs text-[#737373]">
           <PanelRight className="h-3.5 w-3.5" />
           Quick peek · no need to open
         </div>
-        <h2 className="mt-3 text-[20px] font-semibold leading-7 tracking-tight text-[#f5f5f5]">
+        <h2 className="mt-3 text-xl font-semibold leading-7 tracking-tight text-[#f5f5f5]">
           {item.title}
         </h2>
-        <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[11px] text-[#737373]">
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[#737373]">
           <span>
             {item.repository} / #{item.number}
           </span>
@@ -1265,11 +1233,11 @@ function QuickPeekPanel({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
         <section className="rounded-md border border-[#e5e5e5]/30 bg-[#e5e5e5]/10 p-4">
-          <div className="flex items-center gap-2 font-mono text-[11px] tracking-[0.1em] text-[#e5e5e5] uppercase">
+          <div className="flex items-center gap-2 text-xs text-[#e5e5e5]">
             <Clock3 className="h-3.5 w-3.5" />
             Since your last visit · {item.lastSeenAt}
           </div>
-          <ul className="mt-3 space-y-2 text-[13px] leading-5 text-[#d4d4d4]">
+          <ul className="mt-3 space-y-2 text-sm leading-5 text-[#d4d4d4]">
             {factRows.length > 0 ? factRows.map((row) => (
               <li key={row.id} className="flex gap-2">
                 <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#e5e5e5]" />
@@ -1287,7 +1255,7 @@ function QuickPeekPanel({
         <Separator className="my-5 bg-white/10" />
 
         <section>
-          <div className="font-mono text-[11px] tracking-[0.1em] text-[#a3a3a3] uppercase">
+          <div className="text-xs text-[#a3a3a3]">
             Open threads · {item.unresolvedThreadCount} of{" "}
             {item.totalThreadCount} unresolved
           </div>
@@ -1297,16 +1265,16 @@ function QuickPeekPanel({
                 key={thread.id}
                 className="grid grid-cols-[30px_1fr] gap-3 rounded-md border border-white/10 bg-white/[0.03] p-3"
               >
-                <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-white/10 bg-white/[0.04] font-mono text-[10px] text-[#a3a3a3]">
+                <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-xs text-[#a3a3a3]">
                   {thread.author.slice(0, 2).toUpperCase()}
                 </span>
                 <div className="min-w-0">
-                  <div className="line-clamp-2 text-[12.5px] leading-5 text-[#d4d4d4]">
+                  <div className="line-clamp-2 text-sm leading-5 text-[#d4d4d4]">
                     {thread.excerpt}
                   </div>
                   <div
                     className={cn(
-                      "mt-1.5 font-mono text-[10px] tracking-[0.06em] uppercase",
+                      "mt-1.5 text-xs",
                       thread.status === "unresolved"
                         ? "text-[#e5e5e5]"
                         : "text-[#525252]"
@@ -1318,7 +1286,7 @@ function QuickPeekPanel({
                 </div>
               </div>
             )) : (
-              <div className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-[12.5px] leading-5 text-[#737373]">
+              <div className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-sm leading-5 text-[#737373]">
                 No open review threads.
               </div>
             )}
@@ -1331,14 +1299,14 @@ function QuickPeekPanel({
 
         {item.changedFilesSinceLastSeen.length > 0 ? (
           <section>
-            <div className="font-mono text-[11px] tracking-[0.1em] text-[#a3a3a3] uppercase">
+            <div className="text-xs text-[#a3a3a3]">
               Files touched since last look · {item.changedFilesSinceLastSeen.length}
             </div>
             <div className="mt-3 space-y-1">
               {item.changedFilesSinceLastSeen.map((file) => (
                 <div
                   key={file.path}
-                  className="flex items-center justify-between gap-4 rounded-[4px] px-2 py-1.5 font-mono text-[11px] text-[#a3a3a3] hover:bg-white/[0.03]"
+                  className="flex items-center justify-between gap-4 rounded-[4px] px-2 py-1.5 text-xs text-[#a3a3a3] hover:bg-white/[0.03]"
                 >
                   <span className="truncate">{file.path}</span>
                   <span className="text-[#737373]">
@@ -1353,10 +1321,10 @@ function QuickPeekPanel({
         <Separator className="my-5 bg-white/10" />
 
         <section>
-          <div className="font-mono text-[11px] tracking-[0.1em] text-[#a3a3a3] uppercase">
+          <div className="text-xs text-[#a3a3a3]">
             Queue reason
           </div>
-          <div className="mt-3 rounded-md border border-white/10 bg-white/[0.03] p-3 text-[13px] leading-5 text-[#d4d4d4]">
+          <div className="mt-3 rounded-md border border-white/10 bg-white/[0.03] p-3 text-sm leading-5 text-[#d4d4d4]">
             {item.reason}
           </div>
         </section>
@@ -1365,19 +1333,19 @@ function QuickPeekPanel({
           <>
             <Separator className="my-5 bg-white/10" />
             <section>
-              <div className="font-mono text-[11px] tracking-[0.1em] text-[#a3a3a3] uppercase">
+              <div className="text-xs text-[#a3a3a3]">
                 Latest activity
               </div>
               <div className="mt-3 space-y-2">
                 {item.activityEvents.slice(0, 3).map((event) => (
                   <div
                     key={event.id}
-                    className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-[12.5px] leading-5 text-[#d4d4d4]"
+                    className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-sm leading-5 text-[#d4d4d4]"
                   >
                     <div>
                       <b>{event.actor}</b> {event.action}
                     </div>
-                    <div className="mt-1 font-mono text-[10px] tracking-[0.06em] text-[#525252] uppercase">
+                    <div className="mt-1 text-xs text-[#525252]">
                       {event.occurredAt}
                       {event.isNew ? " · new" : ""}
                     </div>
@@ -1391,7 +1359,7 @@ function QuickPeekPanel({
 
       <div className="mt-auto grid grid-cols-2 gap-2 border-t border-white/10 px-5 py-4">
         {caughtUpError ? (
-          <div className="col-span-2 rounded-md border border-[#e5e5e5]/30 bg-[#e5e5e5]/10 px-3 py-2 text-[12px] leading-5 text-[#d4d4d4]">
+          <div className="col-span-2 rounded-md border border-[#e5e5e5]/30 bg-[#e5e5e5]/10 px-3 py-2 text-xs leading-5 text-[#d4d4d4]">
             Could not save caught-up state. Try again.
           </div>
         ) : null}
@@ -1582,7 +1550,7 @@ function EmptyPeekPanel({
       <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-[#e5e5e5]">
         <Check className="h-5 w-5" />
       </div>
-      <h2 className="mt-5 text-[18px] font-semibold tracking-tight text-[#f5f5f5]">
+      <h2 className="mt-5 text-lg font-semibold tracking-tight text-[#f5f5f5]">
         {copy.title}
       </h2>
       <p className="mt-2 max-w-[300px] text-sm leading-6 text-[#a3a3a3]">
