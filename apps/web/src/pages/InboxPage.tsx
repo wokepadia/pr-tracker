@@ -67,7 +67,7 @@ type LaneId = ReviewQueueBucketId
 interface LaneDefinition {
   id: LaneId
   label: string
-  tone: "hot" | "changed" | "quiet"
+  tone: "hot" | "changed" | "waiting" | "success" | "quiet"
   defaultOpen: boolean
 }
 
@@ -93,13 +93,13 @@ const lanes: LaneDefinition[] = [
   {
     id: "waiting_on_author",
     label: "Waiting on author",
-    tone: "quiet",
+    tone: "waiting",
     defaultOpen: false,
   },
   {
     id: "approved",
     label: "Approved recently",
-    tone: "quiet",
+    tone: "success",
     defaultOpen: false,
   },
   {
@@ -111,9 +111,27 @@ const lanes: LaneDefinition[] = [
 ]
 
 const laneToneClasses: Record<LaneDefinition["tone"], string> = {
-  hot: "bg-foreground",
-  changed: "bg-muted-foreground",
-  quiet: "bg-muted-foreground/30",
+  hot: "bg-amber-500",
+  changed: "bg-sky-500",
+  waiting: "bg-emerald-500",
+  success: "bg-teal-500",
+  quiet: "bg-slate-300",
+}
+
+const laneBadgeToneClasses: Record<LaneDefinition["tone"], string> = {
+  hot: "border-amber-200 bg-amber-50 text-amber-800",
+  changed: "border-sky-200 bg-sky-50 text-sky-800",
+  waiting: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  success: "border-teal-200 bg-teal-50 text-teal-800",
+  quiet: "border-border bg-muted/40 text-muted-foreground",
+}
+
+const rowSelectedToneClasses: Record<LaneDefinition["tone"], string> = {
+  hot: "bg-amber-50/80 shadow-[inset_3px_0_0_#f59e0b]",
+  changed: "bg-sky-50/80 shadow-[inset_3px_0_0_#0ea5e9]",
+  waiting: "bg-emerald-50/80 shadow-[inset_3px_0_0_#10b981]",
+  success: "bg-teal-50/80 shadow-[inset_3px_0_0_#14b8a6]",
+  quiet: "bg-muted shadow-[inset_3px_0_0_#94a3b8]",
 }
 
 const primaryQueueLaneIds: LaneId[] = [
@@ -617,6 +635,15 @@ export function InboxPage() {
       <section className="flex min-w-0 flex-col bg-background">
         <InboxHeader
           groupMode={groupMode}
+          activeCount={searchedActiveItems.length}
+          needsReviewCount={laneItems.needs_review.length}
+          changedCount={laneItems.updated_since_review.length}
+          waitingCount={laneItems.waiting_on_author.length}
+          stashedCount={
+            searchedPinnedItems.length +
+            searchedSnoozedItems.length +
+            searchedMutedItems.length
+          }
           searchQuery={searchQuery}
           syncLabel={formatSyncLabel(inboxQuery.dataUpdatedAt)}
           onGroupModeChange={setGroupMode}
@@ -756,6 +783,7 @@ function InboxSidebar({
         <SidebarItem
           active={activeLaneId === "needs_review"}
           attention={laneItems.needs_review.length > 0}
+          tone="hot"
           label={workflowLabels.needs_review}
           count={laneItems.needs_review.length}
           onClick={
@@ -767,6 +795,7 @@ function InboxSidebar({
         <SidebarItem
           active={activeLaneId === "updated_since_review"}
           attention={laneItems.updated_since_review.length > 0}
+          tone="changed"
           label={workflowLabels.updated_since_review}
           count={laneItems.updated_since_review.length}
           onClick={
@@ -778,6 +807,7 @@ function InboxSidebar({
         <SidebarItem
           active={activeLaneId === "waiting_on_author"}
           attention={laneItems.waiting_on_author.length > 0}
+          tone="waiting"
           label={workflowLabels.waiting_on_author}
           count={laneItems.waiting_on_author.length}
           onClick={
@@ -788,6 +818,7 @@ function InboxSidebar({
         />
         <SidebarItem
           active={activeLaneId === "approved"}
+          tone="success"
           label={workflowLabels.approved}
           count={laneItems.approved.length}
           onClick={
@@ -801,6 +832,7 @@ function InboxSidebar({
         <SidebarItem
           active={pinnedActive}
           attention={pinnedCount > 0}
+          tone="changed"
           label="Pinned"
           count={pinnedCount}
           onClick={pinnedCount > 0 ? onSelectPinned : undefined}
@@ -808,18 +840,21 @@ function InboxSidebar({
         <SidebarItem
           active={snoozedActive}
           attention={snoozedCount > 0}
+          tone="waiting"
           label="Snoozed"
           count={snoozedCount}
           onClick={snoozedCount > 0 ? onSelectSnoozed : undefined}
         />
         <SidebarItem
           active={mutedActive}
+          tone="quiet"
           label="Muted"
           count={mutedCount}
           onClick={mutedCount > 0 ? onSelectMuted : undefined}
         />
         <SidebarItem
           active={activeLaneId === "watching"}
+          tone="quiet"
           label="Watching"
           count={laneItems.watching.length}
           onClick={
@@ -883,17 +918,19 @@ function SidebarItem({
   count,
   active,
   attention,
+  tone = "quiet",
   onClick,
 }: {
   label: string
   count: number
   active?: boolean
   attention?: boolean
+  tone?: LaneDefinition["tone"]
   onClick?: () => void
 }) {
   const itemClassName = cn(
     "grid w-full grid-cols-[7px_1fr_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground sm:py-2 sm:text-sm",
-    active && "bg-muted text-foreground",
+    active && "bg-white text-foreground shadow-sm ring-1 ring-border",
     onClick && !active && "hover:bg-muted/40",
     !onClick && "cursor-default"
   )
@@ -903,7 +940,7 @@ function SidebarItem({
       <span
         className={cn(
           "h-[7px] w-[7px] rounded-full bg-muted-foreground/30",
-          attention && "bg-foreground"
+          attention && laneToneClasses[tone]
         )}
       />
       <span className={cn(attention && "font-medium text-foreground")}>{label}</span>
@@ -911,7 +948,8 @@ function SidebarItem({
         className={cn(
           "text-xs text-muted-foreground/70",
           attention &&
-            "rounded-full bg-foreground px-2 py-[1px] font-semibold text-background"
+            "rounded-full border px-2 py-[1px] font-semibold",
+          attention && laneBadgeToneClasses[tone]
         )}
       >
         {count}
@@ -937,54 +975,114 @@ function SidebarItem({
 
 function InboxHeader({
   groupMode,
+  activeCount,
+  needsReviewCount,
+  changedCount,
+  waitingCount,
+  stashedCount,
   searchQuery,
   syncLabel,
   onGroupModeChange,
   onSearchQueryChange,
 }: {
   groupMode: QueueGroupMode
+  activeCount: number
+  needsReviewCount: number
+  changedCount: number
+  waitingCount: number
+  stashedCount: number
   searchQuery: string
   syncLabel: string
   onGroupModeChange: (mode: QueueGroupMode) => void
   onSearchQueryChange: (query: string) => void
 }) {
   return (
-    <div className="flex min-h-[62px] flex-wrap items-center gap-3 border-b border-border px-5 py-2">
-      <h1 className="text-lg font-semibold tracking-tight">Review Inbox</h1>
-      <span className="text-xs text-muted-foreground">· {syncLabel}</span>
-      <div className="relative min-w-0 flex-[1_1_100%] lg:ml-auto lg:min-w-[220px] lg:max-w-[360px] lg:flex-1">
-        <Input
-          id="review-inbox-search"
-          type="search"
-          value={searchQuery}
-          onChange={(event) => onSearchQueryChange(event.target.value)}
-          placeholder="Search PRs, repos, authors, files"
-          className="h-8 rounded-lg bg-card pr-3 pl-8 text-sm lg:pr-9"
-        />
-        <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Kbd className="absolute top-1/2 right-2 hidden -translate-y-1/2 lg:inline-flex">
-          /
-        </Kbd>
+    <div className="grid gap-3 border-b border-border bg-white px-5 py-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-semibold tracking-tight">Review Inbox</h1>
+            <span className="text-xs text-muted-foreground">· {syncLabel}</span>
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {activeCount} active PRs sorted by reviewer attention
+          </div>
+        </div>
+        <div className="relative min-w-0 flex-[1_1_100%] lg:ml-auto lg:min-w-[220px] lg:max-w-[360px] lg:flex-1">
+          <Input
+            id="review-inbox-search"
+            type="search"
+            value={searchQuery}
+            onChange={(event) => onSearchQueryChange(event.target.value)}
+            placeholder="Search PRs, repos, authors, files"
+            className="h-8 rounded-lg bg-background pr-3 pl-8 text-sm lg:pr-9"
+          />
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Kbd className="absolute top-1/2 right-2 hidden -translate-y-1/2 lg:inline-flex">
+            /
+          </Kbd>
+        </div>
+        <Tabs
+          value={groupMode}
+          onValueChange={(value) => onGroupModeChange(value as QueueGroupMode)}
+          className="gap-0"
+        >
+          <TabsList aria-label="Group pull requests">
+            <TabsTrigger value="action" className="px-3">
+              Action
+            </TabsTrigger>
+            <TabsTrigger value="repository" className="px-3">
+              Repo
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="ml-3 hidden items-center gap-1.5 text-xs text-muted-foreground lg:flex">
+          <Kbd>j</Kbd>
+          <span>/</span>
+          <Kbd>k</Kbd>
+          <span>to move</span>
+        </div>
       </div>
-      <Tabs
-        value={groupMode}
-        onValueChange={(value) => onGroupModeChange(value as QueueGroupMode)}
-        className="gap-0"
-      >
-        <TabsList aria-label="Group pull requests">
-          <TabsTrigger value="action" className="px-3">
-            Action
-          </TabsTrigger>
-          <TabsTrigger value="repository" className="px-3">
-            Repo
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
-      <div className="ml-3 hidden items-center gap-1.5 text-xs text-muted-foreground lg:flex">
-        <Kbd>j</Kbd>
-        <span>/</span>
-        <Kbd>k</Kbd>
-        <span>to move</span>
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <HeaderMetric
+          label="Needs you"
+          value={needsReviewCount}
+          tone="hot"
+        />
+        <HeaderMetric
+          label="Changed"
+          value={changedCount}
+          tone="changed"
+        />
+        <HeaderMetric
+          label="Waiting"
+          value={waitingCount}
+          tone="waiting"
+        />
+        <HeaderMetric
+          label="Stashed"
+          value={stashedCount}
+          tone="quiet"
+        />
+      </div>
+    </div>
+  )
+}
+
+function HeaderMetric({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: number
+  tone: LaneDefinition["tone"]
+}) {
+  return (
+    <div className={cn("rounded-lg border px-3 py-2", laneBadgeToneClasses[tone])}>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-medium">{label}</span>
+        <span className="text-base font-semibold tabular-nums">{value}</span>
       </div>
     </div>
   )
@@ -1041,8 +1139,8 @@ function QueueLane({
         <Badge
           variant="outline"
           className={cn(
-            "h-5 rounded-full border-border bg-transparent px-2 text-xs text-muted-foreground",
-            group.tone === "hot" && "border-foreground bg-foreground text-background"
+            "h-5 rounded-full px-2 text-xs",
+            laneBadgeToneClasses[group.tone]
           )}
         >
           {items.length}
@@ -1077,6 +1175,7 @@ function QueueRow({
   onOpenDetail: () => void
 }) {
   const initials = item.authorLogin.slice(0, 2).toUpperCase()
+  const tone = toneForItem(item)
   const reReviewRequested = item.activityEvents.some((event) =>
     event.isNew && event.action.toLowerCase().includes("requested your review")
   )
@@ -1094,18 +1193,16 @@ function QueueRow({
       aria-pressed={selected}
       className={cn(
         "relative grid w-full grid-cols-[26px_1fr_auto] items-center gap-3 border-t border-border px-5 py-3 text-left transition-colors hover:bg-muted/40",
-        selected && "bg-muted shadow-[inset_3px_0_0_#171717]"
+        selected && rowSelectedToneClasses[tone]
       )}
     >
       <span
         className={cn(
           "absolute inset-y-0 left-0 w-[3px]",
-          item.waitingOn === "you" && "bg-foreground",
-          item.waitingOn === "author" && "bg-muted-foreground/30",
-          selected && "bg-foreground"
+          laneToneClasses[tone]
         )}
       />
-      <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-border bg-muted/50 text-xs text-muted-foreground">
+      <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-border bg-white text-xs text-muted-foreground">
         {initials}
       </span>
       <span className="min-w-0">
@@ -1116,8 +1213,7 @@ function QueueRow({
           <span
             className={cn(
               "shrink-0 rounded-full border border-border px-2 py-[1px] text-xs text-muted-foreground",
-              item.waitingOn === "you" &&
-                "border-foreground/70 bg-foreground/15 text-foreground"
+              item.waitingOn === "you" && laneBadgeToneClasses[tone]
             )}
           >
             {queuePillLabel(item)}
@@ -1210,6 +1306,7 @@ function QuickPeekPanel({
   onCaughtUp: () => void
 }) {
   const canMarkCaughtUp = canMarkReviewItemCaughtUp(item, isMarkingSeen)
+  const tone = toneForItem(item)
   const reReviewRequested = item.activityEvents.some((event) =>
     event.isNew && event.action.toLowerCase().includes("requested your review")
   )
@@ -1254,15 +1351,15 @@ function QuickPeekPanel({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-        <section className="rounded-md border border-foreground/30 bg-foreground/10 p-4">
-          <div className="flex items-center gap-2 text-xs text-foreground">
+        <section className={cn("rounded-md border p-4", laneBadgeToneClasses[tone])}>
+          <div className="flex items-center gap-2 text-xs font-medium">
             <Clock3 className="h-3.5 w-3.5" />
             Since your last visit · {item.lastSeenAt}
           </div>
-          <ul className="mt-3 space-y-2 text-sm leading-5 text-foreground">
+          <ul className="mt-3 space-y-2 text-sm leading-5">
             {factRows.length > 0 ? factRows.map((row) => (
               <li key={row.id} className="flex gap-2">
-                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-foreground" />
+                <span className={cn("mt-2 h-1.5 w-1.5 rounded-full", laneToneClasses[tone])} />
                 <span>{row.label}</span>
               </li>
             )) : (
@@ -1531,8 +1628,10 @@ function buildRepositoryGroups(
 }
 
 function toneForItem(item: ReviewQueueItemView): LaneDefinition["tone"] {
-  if (item.waitingOn === "you") return "hot"
   if (item.laneId === "updated_since_review") return "changed"
+  if (item.waitingOn === "you") return "hot"
+  if (item.waitingOn === "author") return "waiting"
+  if (item.laneId === "approved") return "success"
   return "quiet"
 }
 

@@ -51,6 +51,24 @@ const reviewDecisionLabels: Record<ReviewDecision, string> = {
   commented: "commented",
 }
 
+type DetailTone = "hot" | "changed" | "waiting" | "success" | "quiet"
+
+const detailToneClasses: Record<DetailTone, string> = {
+  hot: "border-amber-200 bg-amber-50 text-amber-800",
+  changed: "border-sky-200 bg-sky-50 text-sky-800",
+  waiting: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  success: "border-teal-200 bg-teal-50 text-teal-800",
+  quiet: "border-border bg-muted/40 text-muted-foreground",
+}
+
+const detailDotClasses: Record<DetailTone, string> = {
+  hot: "bg-amber-500",
+  changed: "bg-sky-500",
+  waiting: "bg-emerald-500",
+  success: "bg-teal-500",
+  quiet: "bg-slate-300",
+}
+
 export function PullRequestPage() {
   const { pullRequestId } = useParams({ from: "/pull-requests/$pullRequestId" })
   const queryClient = useQueryClient()
@@ -270,6 +288,7 @@ export function PullRequestPage() {
             newEvents={newEvents}
             oldEvents={oldEvents}
             lastSeenAt={item.lastSeenAt}
+            tone={detailToneForItem(loadedItem)}
           />
         </main>
         <DetailSideRail
@@ -313,6 +332,8 @@ function DetailStatusPanel({
 }
 
 function DetailHeader({ item }: { item: ReviewQueueItemView }) {
+  const tone = detailToneForItem(item)
+
   return (
     <header className="grid grid-cols-1 gap-5 border-b border-border px-7 py-6 lg:grid-cols-[auto_1fr_auto]">
       <Button
@@ -355,8 +376,8 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
       </div>
 
       <div className="flex min-w-[190px] flex-col items-stretch gap-3">
-        <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-foreground">
-          <span className="mr-2 inline-block h-2 w-2 rounded-full bg-foreground" />
+        <div className={cn("rounded-md border px-3 py-2 text-xs font-medium", detailToneClasses[tone])}>
+          <span className={cn("mr-2 inline-block h-2 w-2 rounded-full", detailDotClasses[tone])} />
           {userReviewStanding(item.userLastReviewDecision)}
         </div>
         <Button asChild className="h-9">
@@ -380,7 +401,12 @@ function DetailFact({
   hot?: boolean
 }) {
   return (
-    <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+    <div
+      className={cn(
+        "rounded-md border px-3 py-2",
+        hot ? "border-amber-200 bg-amber-50 text-amber-800" : "border-border bg-muted/30"
+      )}
+    >
       <div className="text-xs text-muted-foreground/70">
         {label}
       </div>
@@ -406,6 +432,7 @@ function ContextBand({
   reviewRequestCount: number
 }) {
   const reReviewRequested = reviewRequestCount > 0
+  const tone = detailToneForItem(item)
   const changeCards = [
     {
       id: "commits",
@@ -463,11 +490,11 @@ function ContextBand({
 
   return (
     <section className="px-7 py-5">
-      <div className="rounded-lg border border-border bg-background p-5">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <RotateCcw className="h-3.5 w-3.5 text-foreground" />
+      <div className={cn("rounded-lg border bg-background p-5", detailToneClasses[tone])}>
+        <div className="flex items-center gap-2 text-xs font-medium">
+          <RotateCcw className="h-3.5 w-3.5" />
           Review context
-          <span className="text-muted-foreground/40">·</span>
+          <span className="opacity-45">·</span>
           {item.lastSeenAt}
         </div>
         <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
@@ -523,7 +550,7 @@ function ContextBand({
             .slice(0, 3)
             .map((event) => (
               <div key={event.id} className="flex gap-2">
-                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-foreground" />
+                <span className={cn("mt-2 h-1.5 w-1.5 rounded-full", detailDotClasses[tone])} />
                 <span>
                   <b>{event.actor}</b> {event.action}
                   {event.detail ? ` - ${event.detail}` : ""}
@@ -598,17 +625,19 @@ function Timeline({
   newEvents,
   oldEvents,
   lastSeenAt,
+  tone,
 }: {
   newEvents: ActivityEventView[]
   oldEvents: ActivityEventView[]
   lastSeenAt: string
+  tone: DetailTone
 }) {
   return (
     <div className="relative">
       <div className="absolute top-2 bottom-2 left-[7px] w-px bg-border" />
       <div className="space-y-5">
         {newEvents.map((event) => (
-          <TimelineItem key={event.id} event={event} isNew />
+          <TimelineItem key={event.id} event={event} isNew tone={tone} />
         ))}
         {newEvents.length > 0 && (
           <div className="relative grid gap-2 py-1 pl-7 sm:flex sm:items-center sm:gap-3">
@@ -623,7 +652,7 @@ function Timeline({
           </div>
         )}
         {oldEvents.map((event) => (
-          <TimelineItem key={event.id} event={event} />
+          <TimelineItem key={event.id} event={event} tone={tone} />
         ))}
       </div>
     </div>
@@ -633,16 +662,18 @@ function Timeline({
 function TimelineItem({
   event,
   isNew,
+  tone,
 }: {
   event: ActivityEventView
   isNew?: boolean
+  tone: DetailTone
 }) {
   return (
     <div className="relative grid grid-cols-1 gap-1 pl-7 sm:grid-cols-[112px_1fr] sm:gap-5">
       <span
         className={cn(
           "absolute top-1.5 left-0 h-3.5 w-3.5 rounded-full border border-border bg-background",
-          isNew && "border-foreground bg-foreground"
+          isNew && cn("border-transparent", detailDotClasses[tone])
         )}
       />
       <div className="text-xs text-muted-foreground/70">{event.occurredAt}</div>
@@ -864,6 +895,14 @@ function detailQueueLabel(item: ReviewQueueItemView): string {
   if (item.laneId === "caught_up") return "Caught up"
   if (item.laneId === "stale") return "Stale"
   return "Watching"
+}
+
+function detailToneForItem(item: ReviewQueueItemView): DetailTone {
+  if (item.laneId === "updated_since_review") return "changed"
+  if (item.waitingOn === "you") return "hot"
+  if (item.waitingOn === "author") return "waiting"
+  if (item.laneId === "approved") return "success"
+  return "quiet"
 }
 
 function requestStateLabel(item: ReviewQueueItemView): string {
