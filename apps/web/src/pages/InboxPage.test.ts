@@ -21,10 +21,11 @@ describe("inbox queue search", () => {
       authorLogin: "ari",
       reason: "New commits were pushed after your last review.",
       activityAction: "pushed 1 commit",
+      changedFilePath: "apps/web/src/reviewer/local-queue-state.ts",
     }),
   ]
 
-  it("matches title, repository, PR number, author, reason, and activity", () => {
+  it("matches title, repository, PR number, author, reason, activity, and files", () => {
     expect(filterQueueItems(items, "filters").map((item) => item.id)).toEqual([
       "pr_2",
     ])
@@ -41,6 +42,9 @@ describe("inbox queue search", () => {
       "pr_2",
     ])
     expect(filterQueueItems(items, "pushed").map((item) => item.id)).toEqual([
+      "pr_2",
+    ])
+    expect(filterQueueItems(items, "local-queue").map((item) => item.id)).toEqual([
       "pr_2",
     ])
   })
@@ -89,6 +93,7 @@ function makeQueueItem(
     authorLogin: string
     reason: string
     activityAction: string
+    changedFilePath?: string
   }
 ): ReviewQueueItemView {
   return {
@@ -113,7 +118,9 @@ function makeQueueItem(
     newReplyCount: 0,
     unresolvedThreadCount: 0,
     totalThreadCount: 0,
-    changedFilesSinceLastSeen: [],
+    changedFilesSinceLastSeen: overrides.changedFilePath
+      ? [{ path: overrides.changedFilePath, additions: 1, deletions: 0 }]
+      : [],
     reviewThreads: [],
     activityEvents: [
       {

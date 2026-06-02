@@ -915,7 +915,7 @@ function InboxHeader({
           type="search"
           value={searchQuery}
           onChange={(event) => onSearchQueryChange(event.target.value)}
-          placeholder="Search PRs, repos, authors"
+          placeholder="Search PRs, repos, authors, files"
           className="min-w-0 flex-1 bg-transparent font-mono text-[11px] text-[#f0ede4] outline-none placeholder:text-[#77736a]"
         />
         <Kbd>/</Kbd>
@@ -1541,6 +1541,7 @@ function buildSearchTextForItem(item: ReviewQueueItemView): string {
         event.detail ?? "",
       ]),
       ...item.reviewThreads.map((thread) => thread.excerpt),
+      ...item.changedFilesSinceLastSeen.map((file) => file.path),
     ].join(" ")
   )
 }
