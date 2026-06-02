@@ -4,13 +4,21 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query"
-import { useState, type ComponentType, type ReactNode } from "react"
+import {
+  useEffect,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from "react"
 import {
   ArrowLeft,
+  BellOff,
   Check,
+  Clock3,
   ExternalLink,
   GitCommitHorizontal,
   MessageSquareText,
+  Pin,
   RotateCcw,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -23,6 +31,13 @@ import {
   type ActivityEventView,
   type ReviewQueueItemView,
 } from "@/reviewer/view-model"
+import {
+  hasLocalQueueState,
+  loadLocalQueueState,
+  saveLocalQueueState,
+  type LocalPullRequestQueueState,
+  type LocalQueueStateByPullRequestId,
+} from "@/reviewer/local-queue-state"
 import type { ReviewDecision } from "@pr-tracker/core"
 
 const reviewDecisionLabels: Record<ReviewDecision, string> = {
@@ -35,6 +50,11 @@ export function PullRequestPage() {
   const { pullRequestId } = useParams({ from: "/pull-requests/$pullRequestId" })
   const queryClient = useQueryClient()
   const [caughtUpError, setCaughtUpError] = useState(false)
+  const [localQueueState, setLocalQueueState] =
+    useState<LocalQueueStateByPullRequestId>(() => {
+      if (typeof window === "undefined") return {}
+      return loadLocalQueueState(window.localStorage)
+    })
   const detailQuery = useQuery({
     queryKey: ["pull-request", pullRequestId],
     queryFn: () => getPullRequest(pullRequestId),
@@ -57,6 +77,10 @@ export function PullRequestPage() {
       )
     : undefined
 
+  useEffect(() => {
+    saveLocalQueueState(window.localStorage, localQueueState)
+  }, [localQueueState])
+
   if (detailQuery.isLoading) {
     return <DetailStatusPanel title="Loading pull request" />
   }
@@ -76,6 +100,60 @@ export function PullRequestPage() {
   const reReviewRequested = loadedItem.activityEvents.some((event) =>
     event.isNew && event.action.toLowerCase().includes("requested your review")
   )
+  const loadedItemLocalState = localQueueState[loadedItem.id] ?? {}
+  const isPinned = Boolean(loadedItemLocalState.pinned)
+  const isSnoozed = Boolean(loadedItemLocalState.snoozed)
+  const isMuted = Boolean(loadedItemLocalState.muted)
+
+  function updateLocalItemState(
+    update: (current: LocalPullRequestQueueState) => LocalPullRequestQueueState
+  ) {
+    setLocalQueueState((current) => {
+      const next = { ...current }
+      const nextItemState = update(current[loadedItem.id] ?? {})
+
+      if (hasLocalQueueState(nextItemState)) {
+        next[loadedItem.id] = nextItemState
+      } else {
+        delete next[loadedItem.id]
+      }
+
+      return next
+    })
+  }
+
+  function snoozePullRequest() {
+    if (isSnoozed || isMuted) return
+    updateLocalItemState((current) => ({
+      ...current,
+      muted: undefined,
+      snoozed: true,
+    }))
+  }
+
+  function restorePullRequest() {
+    if (!isSnoozed && !isMuted) return
+    updateLocalItemState((current) => {
+      const next = { ...current }
+      delete next.snoozed
+      delete next.muted
+      return next
+    })
+  }
+
+  function togglePinPullRequest() {
+    if (isSnoozed || isMuted) return
+    updateLocalItemState((current) => ({
+      ...current,
+      pinned: current.pinned ? undefined : true,
+    }))
+  }
+
+  function mutePullRequest() {
+    if (isMuted) return
+    updateLocalItemState(() => ({ muted: true }))
+  }
+
   async function markCaughtUp() {
     setCaughtUpError(false)
     markSeenMutation.reset()
@@ -106,8 +184,15 @@ export function PullRequestPage() {
         <DetailSideRail
           item={loadedItem}
           newEventCount={newEvents.length}
+          isPinned={isPinned}
+          isSnoozed={isSnoozed}
+          isMuted={isMuted}
           isMarkingSeen={markSeenMutation.isPending}
           caughtUpError={caughtUpError}
+          onSnooze={snoozePullRequest}
+          onRestore={restorePullRequest}
+          onTogglePin={togglePinPullRequest}
+          onMute={mutePullRequest}
           onCaughtUp={() => void markCaughtUp()}
         />
       </div>
@@ -476,14 +561,28 @@ function TimelineItem({
 function DetailSideRail({
   item,
   newEventCount,
+  isPinned,
+  isSnoozed,
+  isMuted,
   isMarkingSeen,
   caughtUpError,
+  onSnooze,
+  onRestore,
+  onTogglePin,
+  onMute,
   onCaughtUp,
 }: {
   item: ReviewQueueItemView
   newEventCount: number
+  isPinned: boolean
+  isSnoozed: boolean
+  isMuted: boolean
   isMarkingSeen: boolean
   caughtUpError: boolean
+  onSnooze: () => void
+  onRestore: () => void
+  onTogglePin: () => void
+  onMute: () => void
   onCaughtUp: () => void
 }) {
   const totalAdditions = item.changedFilesSinceLastSeen.reduce(
@@ -529,6 +628,43 @@ function DetailSideRail({
                 ? "All caught up"
                 : "Mark all caught up"}
           </Button>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isMuted}
+              onClick={isSnoozed ? onRestore : onSnooze}
+              className="h-9 justify-center border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+            >
+              {isSnoozed ? (
+                <RotateCcw className="h-4 w-4" />
+              ) : (
+                <Clock3 className="h-4 w-4" />
+              )}
+              {isSnoozed ? "Restore" : "Snooze"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isSnoozed || isMuted}
+              aria-pressed={isPinned}
+              onClick={onTogglePin}
+              className="h-9 justify-center border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+            >
+              <Pin className="h-4 w-4" />
+              {isPinned ? "Unpin" : "Pin"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isSnoozed}
+              onClick={isMuted ? onRestore : onMute}
+              className="col-span-2 h-9 justify-center border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+            >
+              <BellOff className="h-4 w-4" />
+              {isMuted ? "Unmute" : "Mute"}
+            </Button>
+          </div>
         </div>
       </RailCard>
 
