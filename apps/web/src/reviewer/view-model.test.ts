@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { buildSampleInbox } from "@pr-tracker/reviewer-workflow"
 import { buildInboxView, toReviewQueueItemView } from "./view-model"
+import type { ReviewerInbox, WorkflowState } from "@pr-tracker/reviewer-workflow"
 
 afterEach(() => {
   vi.useRealTimers()
@@ -17,6 +18,43 @@ describe("reviewer view model", () => {
     expect(view.laneItems.waiting_on_author.map((item) => item.id)).toEqual([
       "pr_3",
     ])
+  })
+
+  it("keeps approved and watching pull requests reachable as queue buckets", () => {
+    const inbox: ReviewerInbox = {
+      viewer: { id: "viewer", login: "you" },
+      actors: [
+        { id: "viewer", login: "you" },
+        { id: "maya", login: "maya" },
+      ],
+      items: [
+        classifiedItem("pr_approved", "approved"),
+        classifiedItem("pr_watching", "watching"),
+        classifiedItem("pr_stale", "stale"),
+      ],
+      sections: {
+        needs_review: [],
+        updated_since_review: [],
+        waiting_on_author: [],
+        needs_thread_attention: [],
+        approved: [classifiedItem("pr_approved", "approved")],
+        stale: [classifiedItem("pr_stale", "stale")],
+        watching: [classifiedItem("pr_watching", "watching")],
+        inactive: [],
+      },
+    }
+
+    const view = buildInboxView(inbox)
+
+    expect(view.laneItems.approved.map((item) => item.id)).toEqual([
+      "pr_approved",
+    ])
+    expect(view.laneItems.watching.map((item) => item.id)).toEqual([
+      "pr_watching",
+      "pr_stale",
+    ])
+    expect(view.approvedCount).toBe(1)
+    expect(view.watchingCount).toBe(2)
   })
 
   it("counts only unseen deterministic activity facts", () => {
@@ -167,3 +205,29 @@ describe("reviewer view model", () => {
     expect(view.otherReviewers).toEqual([{ login: "sam", decision: "approved" }])
   })
 })
+
+function classifiedItem(id: string, workflowState: WorkflowState) {
+  return {
+    workflowState,
+    reason: `${workflowState} reason`,
+    lastSeenAt: "2026-06-01T08:00:00.000Z",
+    unseenActivityCount: 0,
+    pullRequest: {
+      id,
+      repository: "acme/api",
+      number: 100,
+      title: id,
+      url: `https://github.com/acme/api/pull/${id}`,
+      authorId: "maya",
+      state: "open" as const,
+      isDraft: false,
+      createdAt: "2026-05-30T08:00:00.000Z",
+      updatedAt: "2026-06-02T11:00:00.000Z",
+      latestCommitSha: "c3",
+      requestedReviewerIds: [],
+      reviews: [],
+      threads: [],
+      activity: [],
+    },
+  }
+}

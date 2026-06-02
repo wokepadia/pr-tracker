@@ -32,11 +32,11 @@ import { getReviewerInbox, markPullRequestSeen } from "@/api"
 import { cn } from "@/lib/utils"
 import {
   buildInboxView,
-  type ReviewLaneId,
+  type ReviewQueueBucketId,
   type ReviewQueueItemView,
 } from "@/reviewer/view-model"
 
-type LaneId = ReviewLaneId
+type LaneId = ReviewQueueBucketId
 
 type LocalQueueState = "snoozed"
 
@@ -66,6 +66,18 @@ const lanes: LaneDefinition[] = [
     tone: "quiet",
     defaultOpen: false,
   },
+  {
+    id: "approved",
+    label: "Approved recently",
+    tone: "quiet",
+    defaultOpen: false,
+  },
+  {
+    id: "watching",
+    label: "Watching / stale",
+    tone: "quiet",
+    defaultOpen: false,
+  },
 ]
 
 const laneToneClasses: Record<LaneDefinition["tone"], string> = {
@@ -78,6 +90,8 @@ const workflowLabels: Record<LaneId, string> = {
   needs_review: "Needs you",
   updated_since_review: "Changed since",
   waiting_on_author: "Waiting on author",
+  approved: "Approved · recent",
+  watching: "Watching / stale",
 }
 
 export function InboxPage() {
@@ -113,7 +127,7 @@ export function InboxPage() {
       lanes.reduce(
         (acc, lane) => {
           acc[lane.id] = activeItems.filter(
-            (item) => item.laneId === lane.id
+            (item) => itemBelongsToBucket(item, lane.id)
           )
           return acc
         },
@@ -136,6 +150,20 @@ export function InboxPage() {
   )
   const selectedItem =
     activeItems.find((item) => item.id === selectedId) ?? activeItems[0]
+
+  useEffect(() => {
+    if (visibleItems.length > 0 || activeItems.length === 0) return
+
+    const firstNonEmptyLane = lanes.find((lane) => laneItems[lane.id].length > 0)
+    if (!firstNonEmptyLane) return
+
+    setOpenLaneIds((current) => {
+      if (current.has(firstNonEmptyLane.id)) return current
+      const next = new Set(current)
+      next.add(firstNonEmptyLane.id)
+      return next
+    })
+  }, [activeItems.length, laneItems, visibleItems.length])
 
   useEffect(() => {
     if (!visibleItems.some((item) => item.id === selectedId)) {
@@ -273,9 +301,7 @@ export function InboxPage() {
     <div className="grid min-h-[760px] grid-cols-1 sm:grid-cols-[190px_1fr] lg:grid-cols-[212px_1fr]">
       <InboxSidebar
         laneItems={laneItems}
-        activeLaneId={lanes.find((lane) => lane.id === selectedItem?.laneId)?.id}
-        approvedCount={inboxView.approvedCount}
-        watchingCount={inboxView.watchingCount}
+        activeLaneId={bucketIdForItem(selectedItem)}
         snoozedCount={
           inboxView.items.filter(
             (item) => localQueueState[item.id] === "snoozed"
@@ -332,15 +358,11 @@ export function InboxPage() {
 function InboxSidebar({
   laneItems,
   activeLaneId,
-  approvedCount,
-  watchingCount,
   snoozedCount,
   onSelectLane,
 }: {
   laneItems: Record<LaneId, ReviewQueueItemView[]>
   activeLaneId?: LaneId
-  approvedCount: number
-  watchingCount: number
   snoozedCount: number
   onSelectLane: (laneId: LaneId) => void
 }) {
@@ -376,11 +398,21 @@ function InboxSidebar({
           count={laneItems.waiting_on_author.length}
           onClick={() => onSelectLane("waiting_on_author")}
         />
-        <SidebarItem label="Approved · recent" count={approvedCount} />
+        <SidebarItem
+          active={activeLaneId === "approved"}
+          label={workflowLabels.approved}
+          count={laneItems.approved.length}
+          onClick={() => onSelectLane("approved")}
+        />
+        <SidebarItem
+          active={activeLaneId === "watching"}
+          label={workflowLabels.watching}
+          count={laneItems.watching.length}
+          onClick={() => onSelectLane("watching")}
+        />
       </SidebarSection>
       <SidebarSection label="Stashed">
         <SidebarItem label="Snoozed" count={snoozedCount} />
-        <SidebarItem label="Watching" count={watchingCount} />
       </SidebarSection>
       <div className="mt-4 rounded-md border border-white/10 bg-white/[0.03] p-3 text-[11px] leading-5 text-[#8e8b82] sm:mt-auto">
         Review decisions still happen in GitHub. This surface only tracks where
@@ -627,7 +659,7 @@ function QueueRow({
                 "border-[#d0a24c]/70 bg-[#d0a24c]/15 text-[#d0a24c]"
             )}
           >
-            {item.waitingOn === "you" ? "you" : "author"}
+            {queuePillLabel(item)}
           </span>
         </span>
         <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] text-[#8e8b82]">
@@ -662,7 +694,7 @@ function QueueRow({
           {item.waitingAge}
         </span>
         <span className="text-[9.5px] tracking-[0.08em] text-[#77736a] uppercase">
-          {item.waitingOn === "you" ? "waiting on you" : "on author"}
+          {queueTimingLabel(item)}
         </span>
       </span>
     </button>
@@ -745,8 +777,7 @@ function QuickPeekPanel({
           <span>{item.authorLogin}</span>
           <span className="text-white/20">·</span>
           <span className={cn(item.waitingOn === "you" && "text-[#d0a24c]")}>
-            {item.waitingOn === "you" ? "waiting on you" : "waiting on author"}{" "}
-            {item.waitingAge}
+            {queueTimingLabel(item)} {item.waitingAge}
           </span>
         </div>
       </div>
@@ -925,6 +956,40 @@ function QuickPeekPanel({
       </div>
     </aside>
   )
+}
+
+function queuePillLabel(item: ReviewQueueItemView): string {
+  if (item.waitingOn === "you") return "you"
+  if (item.waitingOn === "author") return "author"
+  if (item.laneId === "approved") return "approved"
+  if (item.laneId === "stale") return "stale"
+  return "watching"
+}
+
+function queueTimingLabel(item: ReviewQueueItemView): string {
+  if (item.waitingOn === "you") return "waiting on you"
+  if (item.waitingOn === "author") return "on author"
+  if (item.laneId === "approved") return "approved"
+  if (item.laneId === "stale") return "stale"
+  return "watching"
+}
+
+function bucketIdForItem(
+  item: ReviewQueueItemView | undefined
+): LaneId | undefined {
+  if (!item) return undefined
+  return item.laneId === "stale" ? "watching" : item.laneId
+}
+
+function itemBelongsToBucket(
+  item: ReviewQueueItemView,
+  bucketId: LaneId
+): boolean {
+  if (bucketId === "watching") {
+    return item.laneId === "watching" || item.laneId === "stale"
+  }
+
+  return item.laneId === bucketId
 }
 
 function EmptyPeekPanel() {

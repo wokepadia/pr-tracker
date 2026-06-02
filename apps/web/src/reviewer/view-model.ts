@@ -15,6 +15,8 @@ export type ReviewLaneId =
   | "updated_since_review"
   | "waiting_on_author"
 
+export type ReviewQueueBucketId = ReviewLaneId | "approved" | "watching"
+
 export type WaitingOn = "you" | "author" | "none"
 
 export interface ReviewerState {
@@ -79,7 +81,7 @@ export interface ReviewQueueItemView {
 
 export interface ReviewerInboxView {
   items: ReviewQueueItemView[]
-  laneItems: Record<ReviewLaneId, ReviewQueueItemView[]>
+  laneItems: Record<ReviewQueueBucketId, ReviewQueueItemView[]>
   approvedCount: number
   watchingCount: number
   actorById: Map<string, Actor>
@@ -102,12 +104,15 @@ export function buildInboxView(inbox: ReviewerInbox): ReviewerInboxView {
       waiting_on_author: items.filter(
         (item) => item.laneId === "waiting_on_author"
       ),
+      approved: items.filter((item) => item.laneId === "approved"),
+      watching: items.filter(
+        (item) => item.laneId === "watching" || item.laneId === "stale"
+      ),
     },
-    approvedCount: inbox.sections.approved.length,
-    watchingCount:
-      inbox.sections.watching.length +
-      inbox.sections.stale.length +
-      inbox.sections.needs_thread_attention.length,
+    approvedCount: items.filter((item) => item.laneId === "approved").length,
+    watchingCount: items.filter(
+      (item) => item.laneId === "watching" || item.laneId === "stale"
+    ).length,
     actorById,
     viewerId: inbox.viewer.id,
   }

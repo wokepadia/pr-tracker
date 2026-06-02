@@ -163,7 +163,7 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
         </h1>
         <div className="mt-4 grid max-w-[760px] grid-cols-1 gap-2 md:grid-cols-3">
           <DetailFact
-            label={item.waitingOn === "you" ? "Waiting on you" : "Waiting on author"}
+            label={detailQueueLabel(item)}
             value={item.waitingAge}
             hot={item.waitingOn === "you"}
           />
@@ -478,7 +478,7 @@ function DetailSideRail({
         ))}
         <RailKeyValue
           label="mergeable"
-          value={item.waitingOn === "you" ? "blocked · you" : "waiting · author"}
+          value={detailMergeableLabel(item)}
         />
         {item.changedFilesSinceLastSeen.length > 0 ? (
           <RailKeyValue
@@ -547,4 +547,20 @@ function userReviewStanding(decision: ReviewDecision | "pending"): string {
   if (decision === "changes_requested") return "You requested changes"
   if (decision === "commented") return "You commented"
   return "No review yet"
+}
+
+function detailQueueLabel(item: ReviewQueueItemView): string {
+  if (item.waitingOn === "you") return "Waiting on you"
+  if (item.waitingOn === "author") return "Waiting on author"
+  if (item.laneId === "approved") return "Already approved"
+  if (item.laneId === "stale") return "Stale"
+  return "Watching"
+}
+
+function detailMergeableLabel(item: ReviewQueueItemView): string {
+  if (item.waitingOn === "you") return "blocked · you"
+  if (item.waitingOn === "author") return "waiting · author"
+  if (item.laneId === "approved") return "approved · watching"
+  if (item.laneId === "stale") return "stale · watching"
+  return "watching"
 }
