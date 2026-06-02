@@ -584,7 +584,7 @@ export function InboxPage() {
   }
 
   return (
-    <div className="grid min-h-[760px] grid-cols-1 sm:grid-cols-[190px_1fr] lg:grid-cols-[212px_1fr]">
+    <div className="grid min-h-[calc(100vh-48px)] grid-cols-1 sm:grid-cols-[190px_1fr] lg:grid-cols-[212px_1fr]">
       <InboxSidebar
         laneItems={laneItems}
         activeActionTabId={groupMode === "action" ? activeActionTabId : undefined}
@@ -601,93 +601,91 @@ export function InboxPage() {
         onSelectMuted={focusMuted}
       />
 
-      <section className="flex min-w-0 flex-col bg-background">
-        <InboxHeader
-          groupMode={groupMode}
-          activeCount={searchedActiveItems.length}
-          searchQuery={searchQuery}
-          syncLabel={formatSyncLabel(inboxQuery.dataUpdatedAt)}
-          onGroupModeChange={setGroupMode}
-          onSearchQueryChange={setSearchQuery}
-        />
-        <div className="grid min-h-[697px] grid-cols-1 xl:grid-cols-[58fr_42fr]">
-          <div className="min-w-0 border-b border-border xl:border-r xl:border-b-0">
-            <div className="h-full overflow-y-auto pt-2 pb-7">
-              {groupMode === "action" ? (
-                <ActionQueueList
-                  items={visibleActionItems}
-                  selectedId={selectedItem?.id ?? ""}
-                  onOpenDetail={openItemDetail}
-                  onSelect={setSelectedId}
-                />
-              ) : groupMode === "repository" ? (
-                repositoryGroups.map((group) => (
-                  <QueueLane
-                    key={group.id}
-                    group={group}
-                    isOpen={openRepositoryIds.has(group.id)}
-                    items={group.items}
-                    selectedId={selectedItem?.id ?? ""}
-                    onOpenDetail={openItemDetail}
-                    onToggle={() => {
-                      setOpenRepositoryIds((current) =>
-                        toggleOpenGroup(current, group.id)
-                      )
-                    }}
-                    onSelect={setSelectedId}
-                  />
-                ))
-              ) : groupMode === "pinned" ? (
+      <section className="grid min-w-0 bg-background xl:grid-cols-[58fr_42fr]">
+        <div className="flex min-w-0 flex-col border-b border-border xl:border-r xl:border-b-0">
+          <InboxHeader
+            groupMode={groupMode}
+            activeCount={searchedActiveItems.length}
+            searchQuery={searchQuery}
+            syncLabel={formatSyncLabel(inboxQuery.dataUpdatedAt)}
+            onGroupModeChange={setGroupMode}
+            onSearchQueryChange={setSearchQuery}
+          />
+          <div className="min-h-0 flex-1 overflow-y-auto pt-2 pb-7">
+            {groupMode === "action" ? (
+              <ActionQueueList
+                items={visibleActionItems}
+                selectedId={selectedItem?.id ?? ""}
+                onOpenDetail={openItemDetail}
+                onSelect={setSelectedId}
+              />
+            ) : groupMode === "repository" ? (
+              repositoryGroups.map((group) => (
                 <QueueLane
-                  group={{ id: "pinned", label: "Pinned", tone: "changed" }}
-                  isOpen
-                  items={searchedPinnedItems}
+                  key={group.id}
+                  group={group}
+                  isOpen={openRepositoryIds.has(group.id)}
+                  items={group.items}
                   selectedId={selectedItem?.id ?? ""}
                   onOpenDetail={openItemDetail}
-                  onToggle={() => undefined}
+                  onToggle={() => {
+                    setOpenRepositoryIds((current) =>
+                      toggleOpenGroup(current, group.id)
+                    )
+                  }}
                   onSelect={setSelectedId}
                 />
-              ) : groupMode === "snoozed" ? (
-                <QueueLane
-                  group={{ id: "snoozed", label: "Snoozed", tone: "quiet" }}
-                  isOpen
-                  items={searchedSnoozedItems}
-                  selectedId={selectedItem?.id ?? ""}
-                  onOpenDetail={openItemDetail}
-                  onToggle={() => undefined}
-                  onSelect={setSelectedId}
-                />
-              ) : (
-                <QueueLane
-                  group={{ id: "muted", label: "Muted", tone: "quiet" }}
-                  isOpen
-                  items={searchedMutedItems}
-                  selectedId={selectedItem?.id ?? ""}
-                  onOpenDetail={openItemDetail}
-                  onToggle={() => undefined}
-                  onSelect={setSelectedId}
-                />
-              )}
-            </div>
+              ))
+            ) : groupMode === "pinned" ? (
+              <QueueLane
+                group={{ id: "pinned", label: "Pinned", tone: "changed" }}
+                isOpen
+                items={searchedPinnedItems}
+                selectedId={selectedItem?.id ?? ""}
+                onOpenDetail={openItemDetail}
+                onToggle={() => undefined}
+                onSelect={setSelectedId}
+              />
+            ) : groupMode === "snoozed" ? (
+              <QueueLane
+                group={{ id: "snoozed", label: "Snoozed", tone: "quiet" }}
+                isOpen
+                items={searchedSnoozedItems}
+                selectedId={selectedItem?.id ?? ""}
+                onOpenDetail={openItemDetail}
+                onToggle={() => undefined}
+                onSelect={setSelectedId}
+              />
+            ) : (
+              <QueueLane
+                group={{ id: "muted", label: "Muted", tone: "quiet" }}
+                isOpen
+                items={searchedMutedItems}
+                selectedId={selectedItem?.id ?? ""}
+                onOpenDetail={openItemDetail}
+                onToggle={() => undefined}
+                onSelect={setSelectedId}
+              />
+            )}
           </div>
-          {selectedItem ? (
-            <QuickPeekPanel
-              item={selectedItem}
-              isPinned={selectedItemIsPinned}
-              isSnoozed={selectedItemIsSnoozed}
-              isMuted={selectedItemIsMuted}
-              isMarkingSeen={markSeenMutation.isPending}
-              caughtUpError={failedCaughtUpItemId === selectedItem.id}
-              onSnooze={snoozeSelected}
-              onRestore={restoreSelected}
-              onTogglePin={togglePinSelected}
-              onMute={muteSelected}
-              onCaughtUp={() => void markSelectedCaughtUp()}
-            />
-          ) : (
-            <EmptyPeekPanel groupMode={groupMode} searchQuery={searchQuery} />
-          )}
         </div>
+        {selectedItem ? (
+          <QuickPeekPanel
+            item={selectedItem}
+            isPinned={selectedItemIsPinned}
+            isSnoozed={selectedItemIsSnoozed}
+            isMuted={selectedItemIsMuted}
+            isMarkingSeen={markSeenMutation.isPending}
+            caughtUpError={failedCaughtUpItemId === selectedItem.id}
+            onSnooze={snoozeSelected}
+            onRestore={restoreSelected}
+            onTogglePin={togglePinSelected}
+            onMute={muteSelected}
+            onCaughtUp={() => void markSelectedCaughtUp()}
+          />
+        ) : (
+          <EmptyPeekPanel groupMode={groupMode} searchQuery={searchQuery} />
+        )}
       </section>
     </div>
   )
