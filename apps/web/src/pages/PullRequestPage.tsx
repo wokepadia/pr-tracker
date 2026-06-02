@@ -224,9 +224,10 @@ export function PullRequestPage() {
   const loadedItem = item
   const newEvents = loadedItem.activityEvents.filter((event) => event.isNew)
   const oldEvents = loadedItem.activityEvents.filter((event) => !event.isNew)
-  const reReviewRequested = loadedItem.activityEvents.some((event) =>
-    event.isNew && event.action.toLowerCase().includes("requested your review")
-  )
+  const reviewRequestCount = loadedItem.activityEvents.filter(
+    (event) =>
+      event.isNew && event.action.toLowerCase().includes("requested your review")
+  ).length
   const loadedItemLocalState = localQueueState[loadedItem.id] ?? {}
   const isPinned = Boolean(loadedItemLocalState.pinned)
   const isSnoozed = Boolean(loadedItemLocalState.snoozed)
@@ -258,7 +259,7 @@ export function PullRequestPage() {
       <ContextBand
         item={loadedItem}
         newEventCount={newEvents.length}
-        reReviewRequested={reReviewRequested}
+        reviewRequestCount={reviewRequestCount}
       />
       <div className="grid grid-cols-1 gap-0 border-t border-border xl:grid-cols-[62fr_38fr]">
         <main className="min-w-0 px-7 py-6">
@@ -398,12 +399,13 @@ function DetailFact({
 function ContextBand({
   item,
   newEventCount,
-  reReviewRequested,
+  reviewRequestCount,
 }: {
   item: ReviewQueueItemView
   newEventCount: number
-  reReviewRequested: boolean
+  reviewRequestCount: number
 }) {
+  const reReviewRequested = reviewRequestCount > 0
   const changeCards = [
     {
       id: "commits",
@@ -438,8 +440,8 @@ function ContextBand({
     },
     {
       id: "review",
-      value: "yes",
-      label: "re-review asked",
+      value: String(reviewRequestCount),
+      label: pluralize(reviewRequestCount, "review request"),
       show: reReviewRequested,
       hot: true,
     },
@@ -609,12 +611,15 @@ function Timeline({
           <TimelineItem key={event.id} event={event} isNew />
         ))}
         {newEvents.length > 0 && (
-          <div className="relative flex items-center gap-3 py-1 pl-7">
-            <span className="h-px flex-1 bg-border" />
-            <span className="text-xs text-foreground">
-              everything above is new since you last looked · {lastSeenAt}
+          <div className="relative grid gap-2 py-1 pl-7 sm:flex sm:items-center sm:gap-3">
+            <span className="hidden h-px flex-1 bg-border sm:block" />
+            <span className="text-xs leading-5 text-foreground sm:leading-none">
+              <span className="sm:hidden">New since last look · {lastSeenAt}</span>
+              <span className="hidden sm:inline">
+                everything above is new since you last looked · {lastSeenAt}
+              </span>
             </span>
-            <span className="h-px flex-1 bg-border" />
+            <span className="hidden h-px flex-1 bg-border sm:block" />
           </div>
         )}
         {oldEvents.map((event) => (
@@ -633,7 +638,7 @@ function TimelineItem({
   isNew?: boolean
 }) {
   return (
-    <div className="relative grid grid-cols-[112px_1fr] gap-5 pl-7">
+    <div className="relative grid grid-cols-1 gap-1 pl-7 sm:grid-cols-[112px_1fr] sm:gap-5">
       <span
         className={cn(
           "absolute top-1.5 left-0 h-3.5 w-3.5 rounded-full border border-border bg-background",
