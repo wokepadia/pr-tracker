@@ -364,7 +364,7 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
         <h1 className="mt-2 max-w-[900px] text-2xl font-semibold leading-8 tracking-tight text-foreground">
           {item.title}
         </h1>
-        <div className="mt-4 grid max-w-[860px] grid-cols-1 gap-2 md:grid-cols-4">
+        <div className="mt-4 grid max-w-[860px] grid-cols-2 gap-2 md:grid-cols-4">
           <DetailFact label="Updated" value={item.updatedAt} />
           <DetailFact
             label={detailQueueLabel(item)}
@@ -417,7 +417,7 @@ function DetailFact({
       </div>
       <div
         className={cn(
-          "mt-1 text-xs text-foreground",
+          "mt-1 truncate text-xs text-foreground",
           hot && "font-semibold text-foreground"
         )}
       >
@@ -505,7 +505,7 @@ function ContextBand({
             {timelineEventSummary(newEventCount)}
           </span>
         </div>
-        <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-2 xl:grid-cols-5">
           <ContextFact
             label="your last review"
             value={
