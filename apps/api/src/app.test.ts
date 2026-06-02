@@ -71,6 +71,17 @@ describe("api app", () => {
     const item = inbox.items.find((entry) => entry.pullRequest.id === "pr_1");
 
     expect(item?.unseenActivityCount).toBe(0);
+
+    const detailResponse = await app.request("/api/pull-requests/pr_1");
+    const detail = (await detailResponse.json()) as {
+      item: { pullRequest: { id: string }; unseenActivityCount: number };
+    };
+
+    expect(detailResponse.status).toBe(200);
+    expect(detail.item).toMatchObject({
+      pullRequest: { id: "pr_1" },
+      unseenActivityCount: 0
+    });
   });
 
   it("accepts unsigned local webhook payloads when GitHub env is absent", async () => {

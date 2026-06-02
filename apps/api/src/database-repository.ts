@@ -75,13 +75,11 @@ export function createDatabaseRepository(
 
   return {
     async getReviewerInbox(now) {
-      const pullRequests = await loadPullRequests(await getOrm());
+      const orm = await getOrm();
+      const pullRequests = await loadPullRequests(orm);
       const actors = buildActors(pullRequests, [viewerLogin]);
       const viewer = ensureActor(actors, viewerLogin);
-      const lastSeenAtByPullRequestId = await loadLastSeen(
-        await getOrm(),
-        viewerLogin
-      );
+      const lastSeenAtByPullRequestId = await loadLastSeen(orm, viewerLogin);
 
       return buildReviewerInbox({
         viewer,
@@ -93,7 +91,8 @@ export function createDatabaseRepository(
     },
 
     async getPullRequest(id): Promise<PullRequestDetail | undefined> {
-      const pullRequests = await loadPullRequests(await getOrm(), id);
+      const orm = await getOrm();
+      const pullRequests = await loadPullRequests(orm, id);
       const pullRequest = pullRequests[0];
 
       if (!pullRequest) {
@@ -101,10 +100,7 @@ export function createDatabaseRepository(
       }
       const actors = buildActors(pullRequests, [viewerLogin]);
       const viewer = ensureActor(actors, viewerLogin);
-      const lastSeenAtByPullRequestId = await loadLastSeen(
-        await getOrm(),
-        viewerLogin
-      );
+      const lastSeenAtByPullRequestId = await loadLastSeen(orm, viewerLogin);
       const inbox = buildReviewerInbox({
         viewer,
         actors,

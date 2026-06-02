@@ -1,4 +1,4 @@
-import type { Actor, PullRequestItem } from "@pr-tracker/core";
+import type { Actor } from "@pr-tracker/core";
 import {
   sampleActors,
   sampleLastSeenAtByPullRequestId,
