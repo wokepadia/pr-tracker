@@ -376,7 +376,7 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
       </div>
 
       <div className="flex min-w-[190px] flex-col items-stretch gap-3">
-        <div className={cn("rounded-md border px-3 py-2 text-xs font-medium", detailToneClasses[tone])}>
+        <div className="rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-foreground">
           <span className={cn("mr-2 inline-block h-2 w-2 rounded-full", detailDotClasses[tone])} />
           {userReviewStanding(item.userLastReviewDecision)}
         </div>
