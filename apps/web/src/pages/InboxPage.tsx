@@ -26,6 +26,7 @@ import {
   PanelRight,
   Pin,
   RotateCcw,
+  Search,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -140,6 +141,7 @@ export function InboxPage() {
     })
   const [failedCaughtUpItemId, setFailedCaughtUpItemId] = useState<string>()
   const [groupMode, setGroupMode] = useState<QueueGroupMode>("action")
+  const [searchQuery, setSearchQuery] = useState("")
   const inboxView = useMemo(
     () => (inboxQuery.data ? buildInboxView(inboxQuery.data) : undefined),
     [inboxQuery.data]
@@ -172,18 +174,34 @@ export function InboxPage() {
       inboxView?.items.filter((item) => localQueueState[item.id]?.muted) ?? [],
     [inboxView, localQueueState]
   )
+  const searchedActiveItems = useMemo(
+    () => filterQueueItems(activeItems, searchQuery),
+    [activeItems, searchQuery]
+  )
+  const searchedPinnedItems = useMemo(
+    () => filterQueueItems(pinnedItems, searchQuery),
+    [pinnedItems, searchQuery]
+  )
+  const searchedSnoozedItems = useMemo(
+    () => filterQueueItems(snoozedItems, searchQuery),
+    [snoozedItems, searchQuery]
+  )
+  const searchedMutedItems = useMemo(
+    () => filterQueueItems(mutedItems, searchQuery),
+    [mutedItems, searchQuery]
+  )
   const laneItems = useMemo(
     () =>
       lanes.reduce(
         (acc, lane) => {
-          acc[lane.id] = activeItems.filter(
+          acc[lane.id] = searchedActiveItems.filter(
             (item) => itemBelongsToBucket(item, lane.id)
           )
           return acc
         },
         {} as Record<LaneId, ReviewQueueItemView[]>
       ),
-    [activeItems]
+    [searchedActiveItems]
   )
   const [openLaneIds, setOpenLaneIds] = useState<Set<LaneId>>(
     () => new Set(lanes.filter((lane) => lane.defaultOpen).map((lane) => lane.id))
@@ -206,8 +224,8 @@ export function InboxPage() {
     [actionQueueGroups, laneItems, openLaneIds]
   )
   const repositoryGroups = useMemo(
-    () => buildRepositoryGroups(activeItems),
-    [activeItems]
+    () => buildRepositoryGroups(searchedActiveItems),
+    [searchedActiveItems]
   )
   const [openRepositoryIds, setOpenRepositoryIds] = useState<Set<string>>(
     () => new Set()
@@ -225,28 +243,28 @@ export function InboxPage() {
       : groupMode === "repository"
         ? visibleRepositoryItems
         : groupMode === "pinned"
-          ? pinnedItems
+          ? searchedPinnedItems
           : groupMode === "snoozed"
-            ? snoozedItems
-            : mutedItems
+            ? searchedSnoozedItems
+            : searchedMutedItems
   const [selectedId, setSelectedId] = useState<string>(
     () => visibleQueueItems[0]?.id ?? activeItems[0]?.id ?? ""
   )
   const selectableItems =
     groupMode === "pinned"
-      ? pinnedItems
+      ? searchedPinnedItems
       : groupMode === "snoozed"
-        ? snoozedItems
+        ? searchedSnoozedItems
         : groupMode === "muted"
-          ? mutedItems
-          : activeItems
+          ? searchedMutedItems
+          : searchedActiveItems
   const selectedItem =
     selectableItems.find((item) => item.id === selectedId) ??
     selectableItems[0] ??
-    activeItems[0] ??
-    pinnedItems[0] ??
-    snoozedItems[0] ??
-    mutedItems[0]
+    searchedActiveItems[0] ??
+    searchedPinnedItems[0] ??
+    searchedSnoozedItems[0] ??
+    searchedMutedItems[0]
   const selectedItemLocalState = selectedItem
     ? localQueueState[selectedItem.id] ?? {}
     : {}
@@ -260,7 +278,7 @@ export function InboxPage() {
 
   useEffect(() => {
     if (groupMode !== "action") return
-    if (visibleQueueItems.length > 0 || activeItems.length === 0) return
+    if (visibleQueueItems.length > 0 || searchedActiveItems.length === 0) return
 
     const firstNonEmptyLane = lanes.find((lane) => laneItems[lane.id].length > 0)
     if (!firstNonEmptyLane) return
@@ -271,7 +289,7 @@ export function InboxPage() {
       next.add(firstNonEmptyLane.id)
       return next
     })
-  }, [activeItems.length, groupMode, laneItems, visibleQueueItems.length])
+  }, [groupMode, laneItems, searchedActiveItems.length, visibleQueueItems.length])
 
   useEffect(() => {
     if (groupMode !== "repository") return
@@ -300,7 +318,7 @@ export function InboxPage() {
     const remainingVisible = visibleQueueItems.filter((item) => item.id !== itemId)
     const nextVisible =
       remainingVisible[Math.min(currentIndex, remainingVisible.length - 1)]
-    const nextActive = activeItems.find((item) => item.id !== itemId)
+    const nextActive = searchedActiveItems.find((item) => item.id !== itemId)
 
     if (!nextVisible && isStashedGroupMode(groupMode)) {
       setGroupMode("action")
@@ -435,7 +453,7 @@ export function InboxPage() {
     function onKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented) return
       if (event.metaKey || event.ctrlKey || event.altKey) return
-      if (!["j", "k", "Enter", "e", "s", "p", "m", "c"].includes(event.key)) {
+      if (!["j", "k", "Enter", "e", "s", "p", "m", "c", "/"].includes(event.key)) {
         return
       }
       const activeElement = document.activeElement
@@ -454,6 +472,11 @@ export function InboxPage() {
       }
 
       event.preventDefault()
+
+      if (event.key === "/") {
+        document.getElementById("review-inbox-search")?.focus()
+        return
+      }
 
       if (event.key === "j" || event.key === "k") {
         setSelectedId((currentId) => {
@@ -555,8 +578,10 @@ export function InboxPage() {
       <section className="flex min-w-0 flex-col bg-[#242420]">
         <InboxHeader
           groupMode={groupMode}
+          searchQuery={searchQuery}
           syncLabel={formatSyncLabel(inboxQuery.dataUpdatedAt)}
           onGroupModeChange={setGroupMode}
+          onSearchQueryChange={setSearchQuery}
         />
         <div className="grid min-h-[697px] grid-cols-1 xl:grid-cols-[58fr_42fr]">
           <div className="min-w-0 border-b border-white/10 xl:border-r xl:border-b-0">
@@ -638,7 +663,7 @@ export function InboxPage() {
               onCaughtUp={() => void markSelectedCaughtUp()}
             />
           ) : (
-            <EmptyPeekPanel />
+            <EmptyPeekPanel hasSearchQuery={searchQuery.trim().length > 0} />
           )}
         </div>
       </section>
@@ -868,21 +893,40 @@ function SidebarItem({
 
 function InboxHeader({
   groupMode,
+  searchQuery,
   syncLabel,
   onGroupModeChange,
+  onSearchQueryChange,
 }: {
   groupMode: QueueGroupMode
+  searchQuery: string
   syncLabel: string
   onGroupModeChange: (mode: QueueGroupMode) => void
+  onSearchQueryChange: (query: string) => void
 }) {
   return (
-    <div className="flex h-[62px] items-center border-b border-white/10 px-5">
+    <div className="flex min-h-[62px] flex-wrap items-center gap-3 border-b border-white/10 px-5 py-2">
       <h1 className="text-[17px] font-semibold tracking-tight">Review Inbox</h1>
-      <span className="ml-4 font-mono text-[11px] text-[#8e8b82]">
+      <span className="font-mono text-[11px] text-[#8e8b82]">
         · {syncLabel}
       </span>
+      <label
+        htmlFor="review-inbox-search"
+        className="ml-auto flex h-8 min-w-[220px] max-w-[360px] flex-1 items-center gap-2 rounded-md border border-white/10 bg-[#1f1f1c] px-2.5 text-[#8e8b82] focus-within:border-[#d0a24c]/70"
+      >
+        <Search className="h-3.5 w-3.5" />
+        <input
+          id="review-inbox-search"
+          type="search"
+          value={searchQuery}
+          onChange={(event) => onSearchQueryChange(event.target.value)}
+          placeholder="Search PRs, repos, authors"
+          className="min-w-0 flex-1 bg-transparent font-mono text-[11px] text-[#f0ede4] outline-none placeholder:text-[#77736a]"
+        />
+        <Kbd>/</Kbd>
+      </label>
       <div
-        className="ml-auto inline-flex h-8 items-center gap-1 rounded-md border border-white/10 p-1 font-mono text-[11px] text-[#c9c5ba]"
+        className="inline-flex h-8 items-center gap-1 rounded-md border border-white/10 p-1 font-mono text-[11px] text-[#c9c5ba]"
         role="group"
         aria-label="Group pull requests"
       >
@@ -1458,6 +1502,43 @@ function buildRepositoryGroups(
   return [...groups.values()]
 }
 
+function filterQueueItems(
+  items: ReviewQueueItemView[],
+  query: string
+): ReviewQueueItemView[] {
+  const normalizedQuery = normalizeSearchText(query)
+  if (!normalizedQuery) return items
+
+  return items.filter((item) =>
+    buildSearchTextForItem(item).includes(normalizedQuery)
+  )
+}
+
+function buildSearchTextForItem(item: ReviewQueueItemView): string {
+  return normalizeSearchText(
+    [
+      item.title,
+      item.repository,
+      `#${item.number}`,
+      String(item.number),
+      item.authorLogin,
+      item.reason,
+      item.workflowState,
+      item.userLastReviewDecision,
+      ...item.activityEvents.flatMap((event) => [
+        event.actor,
+        event.action,
+        event.detail ?? "",
+      ]),
+      ...item.reviewThreads.map((thread) => thread.excerpt),
+    ].join(" ")
+  )
+}
+
+function normalizeSearchText(value: string): string {
+  return value.trim().toLowerCase()
+}
+
 function toneForItem(item: ReviewQueueItemView): LaneDefinition["tone"] {
   if (item.waitingOn === "you") return "hot"
   if (item.laneId === "updated_since_review") return "changed"
@@ -1483,17 +1564,19 @@ function toggleOpenGroup<T extends string>(current: Set<T>, id: T): Set<T> {
   return next
 }
 
-function EmptyPeekPanel() {
+function EmptyPeekPanel({ hasSearchQuery }: { hasSearchQuery: boolean }) {
   return (
     <aside className="flex min-w-0 flex-col items-center justify-center bg-[#20201d] px-8 text-center">
       <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-[#d0a24c]">
         <Check className="h-5 w-5" />
       </div>
       <h2 className="mt-5 text-[18px] font-semibold tracking-tight text-[#f0ede4]">
-        No active review items
+        {hasSearchQuery ? "No matching review items" : "No active review items"}
       </h2>
       <p className="mt-2 max-w-[300px] text-sm leading-6 text-[#9f9a91]">
-        There are no active review items in the current view.
+        {hasSearchQuery
+          ? "Adjust the search query to bring matching review items back into view."
+          : "There are no active review items in the current view."}
       </p>
     </aside>
   )
