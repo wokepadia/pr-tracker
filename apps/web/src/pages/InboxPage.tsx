@@ -432,21 +432,21 @@ export function InboxPage() {
   }
 
   function focusSnoozed() {
-    if (snoozedItems.length === 0) return
+    if (searchedSnoozedItems.length === 0) return
     setGroupMode("snoozed")
-    setSelectedId(snoozedItems[0]?.id ?? "")
+    setSelectedId(searchedSnoozedItems[0]?.id ?? "")
   }
 
   function focusPinned() {
-    if (pinnedItems.length === 0) return
+    if (searchedPinnedItems.length === 0) return
     setGroupMode("pinned")
-    setSelectedId(pinnedItems[0]?.id ?? "")
+    setSelectedId(searchedPinnedItems[0]?.id ?? "")
   }
 
   function focusMuted() {
-    if (mutedItems.length === 0) return
+    if (searchedMutedItems.length === 0) return
     setGroupMode("muted")
-    setSelectedId(mutedItems[0]?.id ?? "")
+    setSelectedId(searchedMutedItems[0]?.id ?? "")
   }
 
   useEffect(() => {
@@ -564,11 +564,11 @@ export function InboxPage() {
           isStashedGroupMode(groupMode) ? undefined : bucketIdForItem(selectedItem)
         }
         pinnedActive={groupMode === "pinned"}
-        pinnedCount={pinnedItems.length}
+        pinnedCount={searchedPinnedItems.length}
         snoozedActive={groupMode === "snoozed"}
-        snoozedCount={snoozedItems.length}
+        snoozedCount={searchedSnoozedItems.length}
         mutedActive={groupMode === "muted"}
-        mutedCount={mutedItems.length}
+        mutedCount={searchedMutedItems.length}
         onSelectLane={focusLane}
         onSelectPinned={focusPinned}
         onSelectSnoozed={focusSnoozed}
@@ -1502,7 +1502,7 @@ function buildRepositoryGroups(
   return [...groups.values()]
 }
 
-function filterQueueItems(
+export function filterQueueItems(
   items: ReviewQueueItemView[],
   query: string
 ): ReviewQueueItemView[] {
