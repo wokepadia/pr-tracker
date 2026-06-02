@@ -119,19 +119,19 @@ const laneToneClasses: Record<LaneDefinition["tone"], string> = {
 }
 
 const laneBadgeToneClasses: Record<LaneDefinition["tone"], string> = {
-  hot: "border-amber-200 bg-amber-50/80 text-amber-800",
-  changed: "border-sky-200 bg-sky-50/75 text-sky-800",
-  waiting: "border-emerald-200 bg-emerald-50/75 text-emerald-800",
-  success: "border-teal-200 bg-teal-50/75 text-teal-800",
+  hot: "border-amber-200 bg-amber-50 text-amber-800",
+  changed: "border-sky-200 bg-sky-50 text-sky-800",
+  waiting: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  success: "border-teal-200 bg-teal-50 text-teal-800",
   quiet: "border-border bg-muted/40 text-muted-foreground",
 }
 
 const rowSelectedToneClasses: Record<LaneDefinition["tone"], string> = {
-  hot: "bg-amber-50/65 shadow-[inset_3px_0_0_#f59e0b]",
-  changed: "bg-sky-50/65 shadow-[inset_3px_0_0_#0ea5e9]",
-  waiting: "bg-emerald-50/65 shadow-[inset_3px_0_0_#10b981]",
-  success: "bg-teal-50/65 shadow-[inset_3px_0_0_#14b8a6]",
-  quiet: "bg-muted/80 shadow-[inset_3px_0_0_#94a3b8]",
+  hot: "bg-amber-50/80 shadow-[inset_3px_0_0_#f59e0b]",
+  changed: "bg-sky-50/80 shadow-[inset_3px_0_0_#0ea5e9]",
+  waiting: "bg-emerald-50/80 shadow-[inset_3px_0_0_#10b981]",
+  success: "bg-teal-50/80 shadow-[inset_3px_0_0_#14b8a6]",
+  quiet: "bg-muted shadow-[inset_3px_0_0_#94a3b8]",
 }
 
 const primaryQueueLaneIds: LaneId[] = [
@@ -772,10 +772,10 @@ function InboxSidebar({
   return (
     <aside className="flex flex-col border-b border-border bg-card px-3 py-3 sm:border-r sm:border-b-0 sm:py-4">
       <div className="flex items-center gap-2 px-2 pt-1 pb-2 sm:pb-4">
-        <div className="flex h-4 w-4 items-center justify-center rounded-[3px] bg-foreground text-[9px] font-bold text-background shadow-sm">
+        <div className="flex h-4 w-4 items-center justify-center rounded-[3px] bg-foreground text-[9px] font-bold text-background">
           R
         </div>
-        <div className="text-xs font-medium text-foreground">
+        <div className="text-xs text-foreground">
           Review Q
         </div>
       </div>
@@ -864,7 +864,7 @@ function InboxSidebar({
           }
         />
       </SidebarSection>
-      <div className="mt-4 hidden rounded-md border border-border/80 bg-muted/25 p-3 text-xs leading-5 text-muted-foreground sm:mt-auto sm:block">
+      <div className="mt-4 hidden rounded-md border border-border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground sm:mt-auto sm:block">
         Review decisions still happen in GitHub. This surface only tracks where
         your attention belongs.
       </div>
@@ -905,7 +905,7 @@ function SidebarSection({
 }) {
   return (
     <div className="mb-2 sm:mb-5">
-      <div className="px-2 pb-1.5 pt-2 text-[11px] font-medium text-muted-foreground/70 sm:pt-3">
+      <div className="px-2 pb-2 pt-2 text-xs text-muted-foreground/70 sm:pt-3">
         {label}
       </div>
       <div className="grid grid-cols-2 gap-1 sm:block sm:space-y-1">{children}</div>
@@ -929,8 +929,8 @@ function SidebarItem({
   onClick?: () => void
 }) {
   const itemClassName = cn(
-    "grid w-full grid-cols-[7px_1fr_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors sm:py-2 sm:text-sm",
-    active && "bg-white text-foreground shadow-sm ring-1 ring-border/80",
+    "grid w-full grid-cols-[7px_1fr_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground sm:py-2 sm:text-sm",
+    active && "bg-white text-foreground shadow-sm ring-1 ring-border",
     onClick && !active && "hover:bg-muted/40",
     !onClick && "cursor-default"
   )
@@ -1008,14 +1008,14 @@ function InboxHeader({
             {activeCount} active PRs sorted by reviewer attention
           </div>
         </div>
-        <div className="relative min-w-0 flex-[1_1_100%] lg:ml-auto lg:min-w-[260px] lg:max-w-[420px] lg:flex-1">
+        <div className="relative min-w-0 flex-[1_1_100%] lg:ml-auto lg:min-w-[220px] lg:max-w-[360px] lg:flex-1">
           <Input
             id="review-inbox-search"
             type="search"
             value={searchQuery}
             onChange={(event) => onSearchQueryChange(event.target.value)}
             placeholder="Search PRs, repos, authors, files"
-            className="h-8 rounded-md bg-background pr-3 pl-8 text-sm shadow-none lg:pr-9"
+            className="h-8 rounded-lg bg-background pr-3 pl-8 text-sm lg:pr-9"
           />
           <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Kbd className="absolute top-1/2 right-2 hidden -translate-y-1/2 lg:inline-flex">
@@ -1079,7 +1079,7 @@ function HeaderMetric({
   tone: LaneDefinition["tone"]
 }) {
   return (
-    <div className={cn("rounded-md border px-3 py-2", laneBadgeToneClasses[tone])}>
+    <div className={cn("rounded-lg border px-3 py-2", laneBadgeToneClasses[tone])}>
       <div className="flex items-center justify-between gap-3">
         <span className="text-xs font-medium">{label}</span>
         <span className="text-base font-semibold tabular-nums">{value}</span>
@@ -1125,9 +1125,9 @@ function QueueLane({
         type="button"
         onClick={onToggle}
         aria-expanded={isOpen}
-        className="flex w-full items-center gap-3 px-5 py-2.5 text-left hover:bg-muted/25"
+        className="flex w-full items-center gap-3 px-5 py-3 text-left"
       >
-        <span className={cn("h-4 w-1 rounded-full", laneToneClasses[group.tone])} />
+        <span className={cn("h-5 w-1 rounded-full", laneToneClasses[group.tone])} />
         {isOpen ? (
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/70" />
         ) : (
@@ -1191,8 +1191,8 @@ function QueueRow({
         onOpenDetail()
       }}
       aria-pressed={selected}
-        className={cn(
-        "relative grid w-full grid-cols-[26px_1fr_auto] items-center gap-3 border-t border-border px-5 py-3 text-left transition-colors hover:bg-muted/30",
+      className={cn(
+        "relative grid w-full grid-cols-[26px_1fr_auto] items-center gap-3 border-t border-border px-5 py-3 text-left transition-colors hover:bg-muted/40",
         selected && rowSelectedToneClasses[tone]
       )}
     >
@@ -1202,12 +1202,12 @@ function QueueRow({
           laneToneClasses[tone]
         )}
       />
-      <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-border bg-white text-[11px] text-muted-foreground">
+      <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-border bg-white text-xs text-muted-foreground">
         {initials}
       </span>
       <span className="min-w-0">
         <span className="flex min-w-0 items-start gap-2 sm:items-center">
-          <span className="line-clamp-2 min-w-0 flex-1 text-[13px] font-medium leading-5 text-foreground sm:truncate sm:line-clamp-1">
+          <span className="line-clamp-2 min-w-0 flex-1 text-sm font-medium text-foreground sm:truncate sm:line-clamp-1">
             {item.title}
           </span>
           <span
@@ -1219,7 +1219,7 @@ function QueueRow({
             {queuePillLabel(item)}
           </span>
         </span>
-        <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+        <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           <span className="text-muted-foreground">
             {item.repository} / #{item.number}
           </span>
@@ -1241,7 +1241,7 @@ function QueueRow({
           {reReviewRequested ? <FactChip icon={Eye} text="review req" active /> : null}
         </span>
       </span>
-        <span className="flex min-w-[74px] flex-col items-end gap-0.5">
+      <span className="flex min-w-[74px] flex-col items-end gap-1">
         <span
           className={cn(
             "text-xs text-muted-foreground",
@@ -1271,7 +1271,7 @@ function FactChip({
     <span
       className={cn(
         "inline-flex items-center gap-1 rounded-[4px] border border-border bg-card px-1.5 py-[1px] text-xs text-muted-foreground",
-        active && "border-foreground/35 bg-foreground/8 text-foreground"
+        active && "border-foreground/50 bg-foreground/12 text-foreground"
       )}
     >
       <Icon className="h-3 w-3" />
@@ -1329,12 +1329,12 @@ function QuickPeekPanel({
   ].filter((row) => row.show)
   return (
     <aside className="flex min-h-[520px] min-w-0 flex-col bg-card">
-      <div className="border-b border-border px-5 py-4">
+      <div className="border-b border-border px-5 py-5">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <PanelRight className="h-3.5 w-3.5" />
           Quick peek · no need to open
         </div>
-        <h2 className="mt-3 text-[1.35rem] font-semibold leading-7 tracking-tight text-foreground">
+        <h2 className="mt-3 text-xl font-semibold leading-7 tracking-tight text-foreground">
           {item.title}
         </h2>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -1350,8 +1350,8 @@ function QuickPeekPanel({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        <section className={cn("rounded-md border p-3.5", laneBadgeToneClasses[tone])}>
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+        <section className={cn("rounded-md border p-4", laneBadgeToneClasses[tone])}>
           <div className="flex items-center gap-2 text-xs font-medium">
             <Clock3 className="h-3.5 w-3.5" />
             Since your last visit · {item.lastSeenAt}
@@ -1371,7 +1371,7 @@ function QuickPeekPanel({
           </ul>
         </section>
 
-        <Separator className="my-4 bg-border" />
+        <Separator className="my-5 bg-border" />
 
         <section>
           <div className="text-xs text-muted-foreground">
@@ -1382,9 +1382,9 @@ function QuickPeekPanel({
             {item.reviewThreads.length > 0 ? item.reviewThreads.map((thread) => (
               <div
                 key={thread.id}
-                className="grid grid-cols-[28px_1fr] gap-3 rounded-md border border-border bg-muted/25 p-3"
+                className="grid grid-cols-[30px_1fr] gap-3 rounded-md border border-border bg-muted/30 p-3"
               >
-                <span className="flex h-[28px] w-[28px] items-center justify-center rounded-full border border-border bg-muted/40 text-xs text-muted-foreground">
+                <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-border bg-muted/40 text-xs text-muted-foreground">
                   {thread.author.slice(0, 2).toUpperCase()}
                 </span>
                 <div className="min-w-0">
@@ -1405,7 +1405,7 @@ function QuickPeekPanel({
                 </div>
               </div>
             )) : (
-              <div className="rounded-md border border-border bg-muted/20 p-3 text-sm leading-5 text-muted-foreground">
+              <div className="rounded-md border border-border bg-muted/30 p-3 text-sm leading-5 text-muted-foreground">
                 No open review threads.
               </div>
             )}
@@ -1413,7 +1413,7 @@ function QuickPeekPanel({
         </section>
 
         {item.changedFilesSinceLastSeen.length > 0 ? (
-          <Separator className="my-4 bg-border" />
+          <Separator className="my-5 bg-border" />
         ) : null}
 
         {item.changedFilesSinceLastSeen.length > 0 ? (
@@ -1437,20 +1437,20 @@ function QuickPeekPanel({
           </section>
         ) : null}
 
-        <Separator className="my-4 bg-border" />
+        <Separator className="my-5 bg-border" />
 
         <section>
           <div className="text-xs text-muted-foreground">
             Queue reason
           </div>
-          <div className="mt-3 rounded-md border border-border bg-muted/20 p-3 text-sm leading-5 text-foreground">
+          <div className="mt-3 rounded-md border border-border bg-muted/30 p-3 text-sm leading-5 text-foreground">
             {item.reason}
           </div>
         </section>
 
         {item.activityEvents.length > 0 ? (
           <>
-            <Separator className="my-4 bg-border" />
+            <Separator className="my-5 bg-border" />
             <section>
               <div className="text-xs text-muted-foreground">
                 Latest activity
@@ -1459,7 +1459,7 @@ function QuickPeekPanel({
                 {item.activityEvents.slice(0, 3).map((event) => (
                   <div
                     key={event.id}
-                    className="rounded-md border border-border bg-muted/20 p-3 text-sm leading-5 text-foreground"
+                    className="rounded-md border border-border bg-muted/30 p-3 text-sm leading-5 text-foreground"
                   >
                     <div>
                       <b>{event.actor}</b> {event.action}
@@ -1476,7 +1476,7 @@ function QuickPeekPanel({
         ) : null}
       </div>
 
-      <div className="mt-auto grid grid-cols-2 gap-2 border-t border-border bg-white/80 px-5 py-4">
+      <div className="mt-auto grid grid-cols-2 gap-2 border-t border-border px-5 py-4">
         {caughtUpError ? (
           <div className="col-span-2 rounded-md border border-foreground/30 bg-foreground/10 px-3 py-2 text-xs leading-5 text-foreground">
             Could not save caught-up state. Try again.
