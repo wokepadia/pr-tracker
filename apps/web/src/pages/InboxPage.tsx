@@ -622,7 +622,7 @@ export function InboxPage() {
                 <QueueLane
                   group={{ id: "pinned", label: "Pinned", tone: "changed" }}
                   isOpen
-                  items={pinnedItems}
+                  items={searchedPinnedItems}
                   selectedId={selectedItem?.id ?? ""}
                   onToggle={() => undefined}
                   onSelect={setSelectedId}
@@ -631,7 +631,7 @@ export function InboxPage() {
                 <QueueLane
                   group={{ id: "snoozed", label: "Snoozed", tone: "quiet" }}
                   isOpen
-                  items={snoozedItems}
+                  items={searchedSnoozedItems}
                   selectedId={selectedItem?.id ?? ""}
                   onToggle={() => undefined}
                   onSelect={setSelectedId}
@@ -640,7 +640,7 @@ export function InboxPage() {
                 <QueueLane
                   group={{ id: "muted", label: "Muted", tone: "quiet" }}
                   isOpen
-                  items={mutedItems}
+                  items={searchedMutedItems}
                   selectedId={selectedItem?.id ?? ""}
                   onToggle={() => undefined}
                   onSelect={setSelectedId}
