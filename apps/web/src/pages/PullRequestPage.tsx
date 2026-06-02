@@ -426,6 +426,16 @@ function ContextBand({
       hot: item.unresolvedThreadCount > 0,
     },
     {
+      id: "files",
+      value: String(item.changedFilesSinceLastSeen.length),
+      label: pluralize(
+        item.changedFilesSinceLastSeen.length,
+        "file touched",
+        "files touched"
+      ),
+      show: item.changedFilesSinceLastSeen.length > 0,
+    },
+    {
       id: "review",
       value: "yes",
       label: "re-review asked",
