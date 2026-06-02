@@ -11,6 +11,8 @@
 
 Treat the root `Review Queue Wireframes (standalone).html` file as the canonical reviewer UI wireframe. Use [docs/wireframe-reference.md](docs/wireframe-reference.md) for how to reference it. Product and UI work should preserve the intent of that wireframe unless the user explicitly changes direction.
 
+Design and QA for the app should target desktop use. Do not spend implementation time optimizing, testing, or making tradeoffs for mobile layouts unless the user explicitly asks for mobile support in that task.
+
 ## Domain Model
 
 The underlying domain model must stay independent of the reviewer workflow and independent of any single UI view.
