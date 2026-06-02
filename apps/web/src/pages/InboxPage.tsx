@@ -70,7 +70,6 @@ interface LaneDefinition {
   label: string
   tone: "hot" | "changed" | "waiting" | "success" | "quiet"
   description?: string
-  defaultOpen: boolean
 }
 
 interface QueueGroupDefinition {
@@ -94,35 +93,30 @@ const lanes: LaneDefinition[] = [
     label: "Needs your review",
     tone: "hot",
     description: laneDescriptions.needs_review,
-    defaultOpen: true,
   },
   {
     id: "updated_since_review",
     label: "Changed since you last looked",
     tone: "changed",
     description: laneDescriptions.updated_since_review,
-    defaultOpen: true,
   },
   {
     id: "waiting_on_author",
     label: "Waiting on author",
     tone: "waiting",
     description: laneDescriptions.waiting_on_author,
-    defaultOpen: false,
   },
   {
     id: "approved",
     label: "Approved recently",
     tone: "success",
     description: laneDescriptions.approved,
-    defaultOpen: false,
   },
   {
     id: "watching",
     label: "Watching / stale",
     tone: "quiet",
     description: laneDescriptions.watching,
-    defaultOpen: false,
   },
 ]
 
@@ -148,14 +142,6 @@ const rowSelectedToneClasses: Record<LaneDefinition["tone"], string> = {
   waiting: "bg-emerald-50/80 shadow-[inset_3px_0_0_#10b981]",
   success: "bg-teal-50/80 shadow-[inset_3px_0_0_#14b8a6]",
   quiet: "bg-muted shadow-[inset_3px_0_0_#94a3b8]",
-}
-
-const workflowLabels: Record<LaneId, string> = {
-  needs_review: "Needs you",
-  updated_since_review: "Changed since",
-  waiting_on_author: "Waiting on author",
-  approved: "Approved · recent",
-  watching: "Watching / stale",
 }
 
 const queueTabLabels: Record<LaneId, string> = {
@@ -456,22 +442,6 @@ export function InboxPage() {
     window.open(selectedItem.url, "_blank", "noreferrer")
   }
 
-  function focusHome() {
-    setGroupMode("action")
-    setActiveActionTabId("home")
-    setSelectedId(searchedActiveItems[0]?.id ?? "")
-  }
-
-  function focusLane(laneId: LaneId) {
-    setGroupMode("action")
-    setActiveActionTabId(laneId)
-
-    const firstLaneItem = laneItems[laneId][0]
-    if (firstLaneItem) {
-      setSelectedId(firstLaneItem.id)
-    }
-  }
-
   function focusSnoozed() {
     if (searchedSnoozedItems.length === 0) return
     setGroupMode("snoozed")
@@ -600,16 +570,12 @@ export function InboxPage() {
   return (
     <div className="grid min-h-[760px] grid-cols-1 sm:grid-cols-[190px_1fr] lg:grid-cols-[212px_1fr]">
       <InboxSidebar
-        laneItems={laneItems}
-        activeActionTabId={groupMode === "action" ? activeActionTabId : undefined}
         pinnedActive={groupMode === "pinned"}
         pinnedCount={searchedPinnedItems.length}
         snoozedActive={groupMode === "snoozed"}
         snoozedCount={searchedSnoozedItems.length}
         mutedActive={groupMode === "muted"}
         mutedCount={searchedMutedItems.length}
-        onSelectHome={focusHome}
-        onSelectLane={focusLane}
         onSelectPinned={focusPinned}
         onSelectSnoozed={focusSnoozed}
         onSelectMuted={focusMuted}
@@ -619,14 +585,6 @@ export function InboxPage() {
         <InboxHeader
           groupMode={groupMode}
           activeCount={searchedActiveItems.length}
-          needsReviewCount={laneItems.needs_review.length}
-          changedCount={laneItems.updated_since_review.length}
-          waitingCount={laneItems.waiting_on_author.length}
-          stashedCount={
-            searchedPinnedItems.length +
-            searchedSnoozedItems.length +
-            searchedMutedItems.length
-          }
           searchQuery={searchQuery}
           syncLabel={formatSyncLabel(inboxQuery.dataUpdatedAt)}
           onGroupModeChange={setGroupMode}
@@ -724,39 +682,26 @@ export function InboxPage() {
 }
 
 function InboxSidebar({
-  laneItems,
-  activeActionTabId,
   pinnedActive,
   pinnedCount,
   snoozedActive,
   snoozedCount,
   mutedActive,
   mutedCount,
-  onSelectHome,
-  onSelectLane,
   onSelectPinned,
   onSelectSnoozed,
   onSelectMuted,
 }: {
-  laneItems: Record<LaneId, ReviewQueueItemView[]>
-  activeActionTabId?: ActionQueueTabId
   pinnedActive: boolean
   pinnedCount: number
   snoozedActive: boolean
   snoozedCount: number
   mutedActive: boolean
   mutedCount: number
-  onSelectHome: () => void
-  onSelectLane: (laneId: LaneId) => void
   onSelectPinned: () => void
   onSelectSnoozed: () => void
   onSelectMuted: () => void
 }) {
-  const activeTotal = lanes.reduce(
-    (total, lane) => total + laneItems[lane.id].length,
-    0
-  )
-
   return (
     <aside className="flex flex-col border-b border-border bg-card px-3 py-3 sm:border-r sm:border-b-0 sm:py-4">
       <div className="flex items-center gap-2 px-2 pt-1 pb-2 sm:pb-4">
@@ -767,63 +712,6 @@ function InboxSidebar({
           Review Q
         </div>
       </div>
-      <SidebarSection label="Review buckets">
-        <SidebarItem
-          active={activeActionTabId === "home"}
-          attention={activeTotal > 0}
-          tone="quiet"
-          label="Home"
-          count={activeTotal}
-          onClick={onSelectHome}
-        />
-        <SidebarItem
-          active={activeActionTabId === "needs_review"}
-          attention={laneItems.needs_review.length > 0}
-          tone="hot"
-          label={workflowLabels.needs_review}
-          count={laneItems.needs_review.length}
-          onClick={
-            laneItems.needs_review.length > 0
-              ? () => onSelectLane("needs_review")
-              : undefined
-          }
-        />
-        <SidebarItem
-          active={activeActionTabId === "updated_since_review"}
-          attention={laneItems.updated_since_review.length > 0}
-          tone="changed"
-          label={workflowLabels.updated_since_review}
-          count={laneItems.updated_since_review.length}
-          onClick={
-            laneItems.updated_since_review.length > 0
-              ? () => onSelectLane("updated_since_review")
-              : undefined
-          }
-        />
-        <SidebarItem
-          active={activeActionTabId === "waiting_on_author"}
-          attention={laneItems.waiting_on_author.length > 0}
-          tone="waiting"
-          label={workflowLabels.waiting_on_author}
-          count={laneItems.waiting_on_author.length}
-          onClick={
-            laneItems.waiting_on_author.length > 0
-              ? () => onSelectLane("waiting_on_author")
-              : undefined
-          }
-        />
-        <SidebarItem
-          active={activeActionTabId === "approved"}
-          tone="success"
-          label={workflowLabels.approved}
-          count={laneItems.approved.length}
-          onClick={
-            laneItems.approved.length > 0
-              ? () => onSelectLane("approved")
-              : undefined
-          }
-        />
-      </SidebarSection>
       <SidebarSection label="Stashed">
         <SidebarItem
           active={pinnedActive}
@@ -847,17 +735,6 @@ function InboxSidebar({
           label="Muted"
           count={mutedCount}
           onClick={mutedCount > 0 ? onSelectMuted : undefined}
-        />
-        <SidebarItem
-          active={activeActionTabId === "watching"}
-          tone="quiet"
-          label="Watching"
-          count={laneItems.watching.length}
-          onClick={
-            laneItems.watching.length > 0
-              ? () => onSelectLane("watching")
-              : undefined
-          }
         />
       </SidebarSection>
       <div className="mt-4 hidden rounded-md border border-border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground sm:mt-auto sm:block">
@@ -972,10 +849,6 @@ function SidebarItem({
 function InboxHeader({
   groupMode,
   activeCount,
-  needsReviewCount,
-  changedCount,
-  waitingCount,
-  stashedCount,
   searchQuery,
   syncLabel,
   onGroupModeChange,
@@ -983,10 +856,6 @@ function InboxHeader({
 }: {
   groupMode: QueueGroupMode
   activeCount: number
-  needsReviewCount: number
-  changedCount: number
-  waitingCount: number
-  stashedCount: number
   searchQuery: string
   syncLabel: string
   onGroupModeChange: (mode: QueueGroupMode) => void
@@ -1038,57 +907,6 @@ function InboxHeader({
           <Kbd>k</Kbd>
           <span>to move</span>
         </div>
-      </div>
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <HeaderMetric
-          label="Needs you"
-          value={needsReviewCount}
-          tone="hot"
-        />
-        <HeaderMetric
-          label="Changed"
-          value={changedCount}
-          tone="changed"
-        />
-        <HeaderMetric
-          label="Waiting"
-          value={waitingCount}
-          tone="waiting"
-        />
-        <HeaderMetric
-          label="Stashed"
-          value={stashedCount}
-          tone="quiet"
-        />
-      </div>
-    </div>
-  )
-}
-
-function HeaderMetric({
-  label,
-  value,
-  tone,
-}: {
-  label: string
-  value: number
-  tone: LaneDefinition["tone"]
-}) {
-  return (
-    <div className="rounded-lg border border-border bg-card px-3 py-2 shadow-[0_1px_0_rgba(0,0,0,0.02)]">
-      <div className="flex items-center justify-between gap-3">
-        <span className="inline-flex min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground">
-          <span className={cn("h-1.5 w-1.5 rounded-full", laneToneClasses[tone])} />
-          <span className="truncate">{label}</span>
-        </span>
-        <span
-          className={cn(
-            "text-base font-semibold tabular-nums text-foreground",
-            value === 0 && "text-muted-foreground"
-          )}
-        >
-          {value}
-        </span>
       </div>
     </div>
   )
