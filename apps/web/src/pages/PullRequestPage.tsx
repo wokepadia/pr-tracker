@@ -27,6 +27,7 @@ import { getPullRequest, markPullRequestSeen } from "@/api"
 import { formatCount, pluralize } from "@/lib/copy"
 import { cn } from "@/lib/utils"
 import {
+  canMarkReviewItemCaughtUp,
   toReviewQueueItemView,
   type ActivityEventView,
   type ReviewQueueItemView,
@@ -194,7 +195,7 @@ export function PullRequestPage() {
         return
       }
 
-      if (shortcutItem.unseenEventCount > 0 && !markSeenMutation.isPending) {
+      if (canMarkReviewItemCaughtUp(shortcutItem, markSeenMutation.isPending)) {
         void markCaughtUpById(shortcutItem.id)
       }
     }

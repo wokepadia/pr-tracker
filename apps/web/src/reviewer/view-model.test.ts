@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { buildSampleInbox } from "@pr-tracker/reviewer-workflow"
-import { buildInboxView, toReviewQueueItemView } from "./view-model"
+import {
+  buildInboxView,
+  canMarkReviewItemCaughtUp,
+  toReviewQueueItemView,
+} from "./view-model"
 import type { ReviewerInbox, WorkflowState } from "@pr-tracker/reviewer-workflow"
 
 afterEach(() => {
@@ -227,6 +231,13 @@ describe("reviewer view model", () => {
     )
 
     expect(view.otherReviewers).toEqual([{ login: "sam", decision: "approved" }])
+  })
+
+  it("guards caught-up actions to items with unseen activity", () => {
+    expect(canMarkReviewItemCaughtUp(undefined, false)).toBe(false)
+    expect(canMarkReviewItemCaughtUp({ unseenEventCount: 0 }, false)).toBe(false)
+    expect(canMarkReviewItemCaughtUp({ unseenEventCount: 1 }, true)).toBe(false)
+    expect(canMarkReviewItemCaughtUp({ unseenEventCount: 1 }, false)).toBe(true)
   })
 })
 

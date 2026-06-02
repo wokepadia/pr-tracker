@@ -89,6 +89,13 @@ export interface ReviewerInboxView {
   viewerId: string
 }
 
+export function canMarkReviewItemCaughtUp(
+  item: Pick<ReviewQueueItemView, "unseenEventCount"> | undefined,
+  isSaving: boolean
+): boolean {
+  return Boolean(item && item.unseenEventCount > 0 && !isSaving)
+}
+
 export function buildInboxView(inbox: ReviewerInbox): ReviewerInboxView {
   const actorById = new Map(inbox.actors.map((actor) => [actor.id, actor]))
   const items = inbox.items.map((item) =>

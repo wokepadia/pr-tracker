@@ -37,6 +37,7 @@ import { formatCount } from "@/lib/copy"
 import { cn } from "@/lib/utils"
 import {
   buildInboxView,
+  canMarkReviewItemCaughtUp,
   type ReviewQueueBucketId,
   type ReviewQueueItemView,
 } from "@/reviewer/view-model"
@@ -314,8 +315,16 @@ export function InboxPage() {
   }
 
   async function markSelectedCaughtUp() {
-    if (!selectedItem) return
-    const itemId = selectedItem.id
+    const itemToMark = selectedItem
+
+    if (
+      !itemToMark ||
+      !canMarkReviewItemCaughtUp(itemToMark, markSeenMutation.isPending)
+    ) {
+      return
+    }
+
+    const itemId = itemToMark.id
     setFailedCaughtUpItemId(undefined)
     markSeenMutation.reset()
     await markSeenMutation.mutateAsync(itemId).catch(() => {
