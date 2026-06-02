@@ -109,8 +109,8 @@ const lanes: LaneDefinition[] = [
 ]
 
 const laneToneClasses: Record<LaneDefinition["tone"], string> = {
-  hot: "bg-[#d0a24c]",
-  changed: "bg-[#9c8a60]",
+  hot: "bg-[#e5e5e5]",
+  changed: "bg-[#a3a3a3]",
   quiet: "bg-white/20",
 }
 
@@ -608,7 +608,7 @@ export function InboxPage() {
         onSelectMuted={focusMuted}
       />
 
-      <section className="flex min-w-0 flex-col bg-[#242420]">
+      <section className="flex min-w-0 flex-col bg-[#1f1f1f]">
         <InboxHeader
           groupMode={groupMode}
           searchQuery={searchQuery}
@@ -732,12 +732,12 @@ function InboxSidebar({
   onSelectMuted: () => void
 }) {
   return (
-    <aside className="flex flex-col border-b border-white/10 bg-[#191916] px-3 py-3 sm:border-r sm:border-b-0 sm:py-4">
+    <aside className="flex flex-col border-b border-white/10 bg-[#171717] px-3 py-3 sm:border-r sm:border-b-0 sm:py-4">
       <div className="flex items-center gap-2 px-2 pt-1 pb-2 sm:pb-4">
-        <div className="flex h-4 w-4 items-center justify-center rounded-[3px] bg-[#d0a24c] text-[9px] font-bold text-[#191916]">
+        <div className="flex h-4 w-4 items-center justify-center rounded-[3px] bg-[#e5e5e5] text-[9px] font-bold text-[#171717]">
           R
         </div>
-        <div className="font-mono text-[11px] tracking-[0.14em] text-[#f0ede4] uppercase">
+        <div className="font-mono text-[11px] tracking-[0.14em] text-[#f5f5f5] uppercase">
           Review Q
         </div>
       </div>
@@ -818,7 +818,7 @@ function InboxSidebar({
           }
         />
       </SidebarSection>
-      <div className="mt-4 hidden rounded-md border border-white/10 bg-white/[0.03] p-3 text-[11px] leading-5 text-[#8e8b82] sm:mt-auto sm:block">
+      <div className="mt-4 hidden rounded-md border border-white/10 bg-white/[0.03] p-3 text-[11px] leading-5 text-[#737373] sm:mt-auto sm:block">
         Review decisions still happen in GitHub. This surface only tracks where
         your attention belongs.
       </div>
@@ -834,16 +834,16 @@ function InboxStatusPanel({
   detail?: string
 }) {
   return (
-    <div className="grid min-h-[760px] place-items-center bg-[#242420] px-6">
-      <div className="max-w-sm rounded-lg border border-white/10 bg-[#20201d] p-6 text-center">
-        <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-[#d0a24c]">
+    <div className="grid min-h-[760px] place-items-center bg-[#1f1f1f] px-6">
+      <div className="max-w-sm rounded-lg border border-white/10 bg-[#171717] p-6 text-center">
+        <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-[#e5e5e5]">
           <Inbox className="h-5 w-5" />
         </div>
-        <h1 className="text-[18px] font-semibold tracking-tight text-[#f0ede4]">
+        <h1 className="text-[18px] font-semibold tracking-tight text-[#f5f5f5]">
           {title}
         </h1>
         {detail ? (
-          <p className="mt-2 text-sm leading-6 text-[#9f9a91]">{detail}</p>
+          <p className="mt-2 text-sm leading-6 text-[#a3a3a3]">{detail}</p>
         ) : null}
       </div>
     </div>
@@ -859,7 +859,7 @@ function SidebarSection({
 }) {
   return (
     <div className="mb-2 sm:mb-5">
-      <div className="px-2 pb-2 pt-2 font-mono text-[9.5px] tracking-[0.14em] text-[#77736a] uppercase sm:pt-3">
+      <div className="px-2 pb-2 pt-2 font-mono text-[9.5px] tracking-[0.14em] text-[#525252] uppercase sm:pt-3">
         {label}
       </div>
       <div className="grid grid-cols-2 gap-1 sm:block sm:space-y-1">{children}</div>
@@ -881,8 +881,8 @@ function SidebarItem({
   onClick?: () => void
 }) {
   const itemClassName = cn(
-    "grid w-full grid-cols-[7px_1fr_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-[#a5a299] sm:py-2 sm:text-[13px]",
-    active && "bg-white/[0.07] text-[#f0ede4]",
+    "grid w-full grid-cols-[7px_1fr_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-[#a3a3a3] sm:py-2 sm:text-[13px]",
+    active && "bg-white/[0.07] text-[#f5f5f5]",
     onClick && !active && "hover:bg-white/[0.04]",
     !onClick && "cursor-default"
   )
@@ -892,15 +892,15 @@ function SidebarItem({
       <span
         className={cn(
           "h-[7px] w-[7px] rounded-full bg-white/20",
-          attention && "bg-[#d0a24c]"
+          attention && "bg-[#e5e5e5]"
         )}
       />
-      <span className={cn(attention && "font-medium text-[#f0ede4]")}>{label}</span>
+      <span className={cn(attention && "font-medium text-[#f5f5f5]")}>{label}</span>
       <span
         className={cn(
-          "font-mono text-[11px] text-[#77736a]",
+          "font-mono text-[11px] text-[#525252]",
           attention &&
-            "rounded-full bg-[#d0a24c] px-2 py-[1px] font-semibold text-[#191916]"
+            "rounded-full bg-[#e5e5e5] px-2 py-[1px] font-semibold text-[#171717]"
         )}
       >
         {count}
@@ -940,12 +940,12 @@ function InboxHeader({
   return (
     <div className="flex min-h-[62px] flex-wrap items-center gap-3 border-b border-white/10 px-5 py-2">
       <h1 className="text-[17px] font-semibold tracking-tight">Review Inbox</h1>
-      <span className="font-mono text-[11px] text-[#8e8b82]">
+      <span className="font-mono text-[11px] text-[#737373]">
         · {syncLabel}
       </span>
       <label
         htmlFor="review-inbox-search"
-        className="ml-auto flex h-8 min-w-[220px] max-w-[360px] flex-1 items-center gap-2 rounded-md border border-white/10 bg-[#1f1f1c] px-2.5 text-[#8e8b82] focus-within:border-[#d0a24c]/70"
+        className="ml-auto flex h-8 min-w-[220px] max-w-[360px] flex-1 items-center gap-2 rounded-md border border-white/10 bg-[#1f1f1f] px-2.5 text-[#737373] focus-within:border-[#e5e5e5]/70"
       >
         <Search className="h-3.5 w-3.5" />
         <input
@@ -954,16 +954,16 @@ function InboxHeader({
           value={searchQuery}
           onChange={(event) => onSearchQueryChange(event.target.value)}
           placeholder="Search PRs, repos, authors, files"
-          className="min-w-0 flex-1 bg-transparent font-mono text-[11px] text-[#f0ede4] outline-none placeholder:text-[#77736a]"
+          className="min-w-0 flex-1 bg-transparent font-mono text-[11px] text-[#f5f5f5] outline-none placeholder:text-[#525252]"
         />
         <Kbd>/</Kbd>
       </label>
       <div
-        className="inline-flex h-8 items-center gap-1 rounded-md border border-white/10 p-1 font-mono text-[11px] text-[#c9c5ba]"
+        className="inline-flex h-8 items-center gap-1 rounded-md border border-white/10 p-1 font-mono text-[11px] text-[#d4d4d4]"
         role="group"
         aria-label="Group pull requests"
       >
-        <span className="px-2 text-[#8e8b82]">group:</span>
+        <span className="px-2 text-[#737373]">group:</span>
         <GroupModeButton
           active={groupMode === "action"}
           onClick={() => onGroupModeChange("action")}
@@ -977,7 +977,7 @@ function InboxHeader({
           repo
         </GroupModeButton>
       </div>
-      <div className="ml-3 hidden items-center gap-1.5 font-mono text-[10px] tracking-[0.08em] text-[#8e8b82] uppercase lg:flex">
+      <div className="ml-3 hidden items-center gap-1.5 font-mono text-[10px] tracking-[0.08em] text-[#737373] uppercase lg:flex">
         <Kbd>j</Kbd>
         <span>/</span>
         <Kbd>k</Kbd>
@@ -1002,8 +1002,8 @@ function GroupModeButton({
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        "h-6 rounded-[4px] px-2 text-[#8e8b82] hover:bg-white/[0.04] hover:text-[#f0ede4]",
-        active && "bg-[#d0a24c] font-semibold text-[#191916] hover:bg-[#d0a24c] hover:text-[#191916]"
+        "h-6 rounded-[4px] px-2 text-[#737373] hover:bg-white/[0.04] hover:text-[#f5f5f5]",
+        active && "bg-[#e5e5e5] font-semibold text-[#171717] hover:bg-[#e5e5e5] hover:text-[#171717]"
       )}
     >
       {children}
@@ -1050,9 +1050,9 @@ function QueueLane({
       >
         <span className={cn("h-5 w-1 rounded-full", laneToneClasses[group.tone])} />
         {isOpen ? (
-          <ChevronDown className="h-3.5 w-3.5 text-[#77736a]" />
+          <ChevronDown className="h-3.5 w-3.5 text-[#525252]" />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 text-[#77736a]" />
+          <ChevronRight className="h-3.5 w-3.5 text-[#525252]" />
         )}
         <span className="font-mono text-[11px] tracking-[0.12em] text-[#b7b2a7] uppercase">
           {group.label}
@@ -1060,8 +1060,8 @@ function QueueLane({
         <Badge
           variant="outline"
           className={cn(
-            "h-5 rounded-full border-white/10 bg-transparent px-2 font-mono text-[11px] text-[#8e8b82]",
-            group.tone === "hot" && "border-[#d0a24c] bg-[#d0a24c] text-[#191916]"
+            "h-5 rounded-full border-white/10 bg-transparent px-2 font-mono text-[11px] text-[#737373]",
+            group.tone === "hot" && "border-[#e5e5e5] bg-[#e5e5e5] text-[#171717]"
           )}
         >
           {items.length}
@@ -1104,37 +1104,37 @@ function QueueRow({
       aria-pressed={selected}
       className={cn(
         "relative grid w-full grid-cols-[26px_1fr_auto] items-center gap-3 border-t border-white/10 px-5 py-3 text-left transition-colors hover:bg-white/[0.04]",
-        selected && "bg-white/[0.07] shadow-[inset_3px_0_0_#d0a24c]"
+        selected && "bg-white/[0.07] shadow-[inset_3px_0_0_#e5e5e5]"
       )}
     >
       <span
         className={cn(
           "absolute inset-y-0 left-0 w-[3px]",
-          item.waitingOn === "you" && "bg-[#d0a24c]",
+          item.waitingOn === "you" && "bg-[#e5e5e5]",
           item.waitingOn === "author" && "bg-white/20",
-          selected && "bg-[#d0a24c]"
+          selected && "bg-[#e5e5e5]"
         )}
       />
-      <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-white/10 bg-white/[0.05] font-mono text-[10px] text-[#9f9a91]">
+      <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-white/10 bg-white/[0.05] font-mono text-[10px] text-[#a3a3a3]">
         {initials}
       </span>
       <span className="min-w-0">
         <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-[13.5px] font-medium text-[#eeeae0]">
+          <span className="truncate text-[13.5px] font-medium text-[#f5f5f5]">
             {item.title}
           </span>
           <span
             className={cn(
-              "rounded-full border border-white/10 px-2 py-[1px] font-mono text-[9.5px] tracking-[0.06em] text-[#8e8b82] uppercase",
+              "rounded-full border border-white/10 px-2 py-[1px] font-mono text-[9.5px] tracking-[0.06em] text-[#737373] uppercase",
               item.waitingOn === "you" &&
-                "border-[#d0a24c]/70 bg-[#d0a24c]/15 text-[#d0a24c]"
+                "border-[#e5e5e5]/70 bg-[#e5e5e5]/15 text-[#e5e5e5]"
             )}
           >
             {queuePillLabel(item)}
           </span>
         </span>
-        <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] text-[#8e8b82]">
-          <span className="text-[#bbb6ab]">
+        <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] text-[#737373]">
+          <span className="text-[#a3a3a3]">
             {item.repository} / #{item.number}
           </span>
           <span className="text-white/20">·</span>
@@ -1158,13 +1158,13 @@ function QueueRow({
       <span className="flex min-w-[74px] flex-col items-end gap-1 font-mono">
         <span
           className={cn(
-            "text-[12px] text-[#bdb8ad]",
-            item.waitingOn === "you" && "font-semibold text-[#d0a24c]"
+            "text-[12px] text-[#a3a3a3]",
+            item.waitingOn === "you" && "font-semibold text-[#e5e5e5]"
           )}
         >
           {item.waitingAge}
         </span>
-        <span className="text-[9.5px] tracking-[0.08em] text-[#77736a] uppercase">
+        <span className="text-[9.5px] tracking-[0.08em] text-[#525252] uppercase">
           {queueTimingLabel(item)}
         </span>
       </span>
@@ -1184,8 +1184,8 @@ function FactChip({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-[4px] border border-white/10 bg-[#1d1d1a] px-1.5 py-[1px] text-[10.5px] text-[#8e8b82]",
-        active && "border-[#d0a24c]/50 bg-[#d0a24c]/12 text-[#d0a24c]"
+        "inline-flex items-center gap-1 rounded-[4px] border border-white/10 bg-[#171717] px-1.5 py-[1px] text-[10.5px] text-[#737373]",
+        active && "border-[#e5e5e5]/50 bg-[#e5e5e5]/12 text-[#e5e5e5]"
       )}
     >
       <Icon className="h-3 w-3" />
@@ -1241,38 +1241,38 @@ function QuickPeekPanel({
     },
   ].filter((row) => row.show)
   return (
-    <aside className="flex min-h-[520px] min-w-0 flex-col bg-[#20201d]">
+    <aside className="flex min-h-[520px] min-w-0 flex-col bg-[#171717]">
       <div className="border-b border-white/10 px-5 py-5">
-        <div className="flex items-center gap-2 font-mono text-[10.5px] tracking-[0.12em] text-[#8e8b82] uppercase">
+        <div className="flex items-center gap-2 font-mono text-[10.5px] tracking-[0.12em] text-[#737373] uppercase">
           <PanelRight className="h-3.5 w-3.5" />
           Quick peek · no need to open
         </div>
-        <h2 className="mt-3 text-[20px] font-semibold leading-7 tracking-tight text-[#f0ede4]">
+        <h2 className="mt-3 text-[20px] font-semibold leading-7 tracking-tight text-[#f5f5f5]">
           {item.title}
         </h2>
-        <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[11px] text-[#8e8b82]">
+        <div className="mt-2 flex flex-wrap items-center gap-2 font-mono text-[11px] text-[#737373]">
           <span>
             {item.repository} / #{item.number}
           </span>
           <span className="text-white/20">·</span>
           <span>{item.authorLogin}</span>
           <span className="text-white/20">·</span>
-          <span className={cn(item.waitingOn === "you" && "text-[#d0a24c]")}>
+          <span className={cn(item.waitingOn === "you" && "text-[#e5e5e5]")}>
             {queueTimingLabel(item)} {item.waitingAge}
           </span>
         </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-        <section className="rounded-md border border-[#d0a24c]/30 bg-[#d0a24c]/10 p-4">
-          <div className="flex items-center gap-2 font-mono text-[11px] tracking-[0.1em] text-[#d0a24c] uppercase">
+        <section className="rounded-md border border-[#e5e5e5]/30 bg-[#e5e5e5]/10 p-4">
+          <div className="flex items-center gap-2 font-mono text-[11px] tracking-[0.1em] text-[#e5e5e5] uppercase">
             <Clock3 className="h-3.5 w-3.5" />
             Since your last visit · {item.lastSeenAt}
           </div>
-          <ul className="mt-3 space-y-2 text-[13px] leading-5 text-[#ded9ce]">
+          <ul className="mt-3 space-y-2 text-[13px] leading-5 text-[#d4d4d4]">
             {factRows.length > 0 ? factRows.map((row) => (
               <li key={row.id} className="flex gap-2">
-                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#d0a24c]" />
+                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#e5e5e5]" />
                 <span>{row.label}</span>
               </li>
             )) : (
@@ -1287,7 +1287,7 @@ function QuickPeekPanel({
         <Separator className="my-5 bg-white/10" />
 
         <section>
-          <div className="font-mono text-[11px] tracking-[0.1em] text-[#9f9a91] uppercase">
+          <div className="font-mono text-[11px] tracking-[0.1em] text-[#a3a3a3] uppercase">
             Open threads · {item.unresolvedThreadCount} of{" "}
             {item.totalThreadCount} unresolved
           </div>
@@ -1297,19 +1297,19 @@ function QuickPeekPanel({
                 key={thread.id}
                 className="grid grid-cols-[30px_1fr] gap-3 rounded-md border border-white/10 bg-white/[0.03] p-3"
               >
-                <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-white/10 bg-white/[0.04] font-mono text-[10px] text-[#9f9a91]">
+                <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-white/10 bg-white/[0.04] font-mono text-[10px] text-[#a3a3a3]">
                   {thread.author.slice(0, 2).toUpperCase()}
                 </span>
                 <div className="min-w-0">
-                  <div className="line-clamp-2 text-[12.5px] leading-5 text-[#d8d3c8]">
+                  <div className="line-clamp-2 text-[12.5px] leading-5 text-[#d4d4d4]">
                     {thread.excerpt}
                   </div>
                   <div
                     className={cn(
                       "mt-1.5 font-mono text-[10px] tracking-[0.06em] uppercase",
                       thread.status === "unresolved"
-                        ? "text-[#d0a24c]"
-                        : "text-[#77736a]"
+                        ? "text-[#e5e5e5]"
+                        : "text-[#525252]"
                     )}
                   >
                     {thread.status}
@@ -1318,7 +1318,7 @@ function QuickPeekPanel({
                 </div>
               </div>
             )) : (
-              <div className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-[12.5px] leading-5 text-[#8e8b82]">
+              <div className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-[12.5px] leading-5 text-[#737373]">
                 No open review threads.
               </div>
             )}
@@ -1331,17 +1331,17 @@ function QuickPeekPanel({
 
         {item.changedFilesSinceLastSeen.length > 0 ? (
           <section>
-            <div className="font-mono text-[11px] tracking-[0.1em] text-[#9f9a91] uppercase">
+            <div className="font-mono text-[11px] tracking-[0.1em] text-[#a3a3a3] uppercase">
               Files touched since last look · {item.changedFilesSinceLastSeen.length}
             </div>
             <div className="mt-3 space-y-1">
               {item.changedFilesSinceLastSeen.map((file) => (
                 <div
                   key={file.path}
-                  className="flex items-center justify-between gap-4 rounded-[4px] px-2 py-1.5 font-mono text-[11px] text-[#bdb8ad] hover:bg-white/[0.03]"
+                  className="flex items-center justify-between gap-4 rounded-[4px] px-2 py-1.5 font-mono text-[11px] text-[#a3a3a3] hover:bg-white/[0.03]"
                 >
                   <span className="truncate">{file.path}</span>
-                  <span className="text-[#8e8b82]">
+                  <span className="text-[#737373]">
                     +{file.additions} / -{file.deletions}
                   </span>
                 </div>
@@ -1353,10 +1353,10 @@ function QuickPeekPanel({
         <Separator className="my-5 bg-white/10" />
 
         <section>
-          <div className="font-mono text-[11px] tracking-[0.1em] text-[#9f9a91] uppercase">
+          <div className="font-mono text-[11px] tracking-[0.1em] text-[#a3a3a3] uppercase">
             Queue reason
           </div>
-          <div className="mt-3 rounded-md border border-white/10 bg-white/[0.03] p-3 text-[13px] leading-5 text-[#d8d3c8]">
+          <div className="mt-3 rounded-md border border-white/10 bg-white/[0.03] p-3 text-[13px] leading-5 text-[#d4d4d4]">
             {item.reason}
           </div>
         </section>
@@ -1365,19 +1365,19 @@ function QuickPeekPanel({
           <>
             <Separator className="my-5 bg-white/10" />
             <section>
-              <div className="font-mono text-[11px] tracking-[0.1em] text-[#9f9a91] uppercase">
+              <div className="font-mono text-[11px] tracking-[0.1em] text-[#a3a3a3] uppercase">
                 Latest activity
               </div>
               <div className="mt-3 space-y-2">
                 {item.activityEvents.slice(0, 3).map((event) => (
                   <div
                     key={event.id}
-                    className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-[12.5px] leading-5 text-[#d8d3c8]"
+                    className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-[12.5px] leading-5 text-[#d4d4d4]"
                   >
                     <div>
                       <b>{event.actor}</b> {event.action}
                     </div>
-                    <div className="mt-1 font-mono text-[10px] tracking-[0.06em] text-[#77736a] uppercase">
+                    <div className="mt-1 font-mono text-[10px] tracking-[0.06em] text-[#525252] uppercase">
                       {event.occurredAt}
                       {event.isNew ? " · new" : ""}
                     </div>
@@ -1391,13 +1391,13 @@ function QuickPeekPanel({
 
       <div className="mt-auto grid grid-cols-2 gap-2 border-t border-white/10 px-5 py-4">
         {caughtUpError ? (
-          <div className="col-span-2 rounded-md border border-[#d0a24c]/30 bg-[#d0a24c]/10 px-3 py-2 text-[12px] leading-5 text-[#d8d3c8]">
+          <div className="col-span-2 rounded-md border border-[#e5e5e5]/30 bg-[#e5e5e5]/10 px-3 py-2 text-[12px] leading-5 text-[#d4d4d4]">
             Could not save caught-up state. Try again.
           </div>
         ) : null}
         <Button
           asChild
-          className="col-span-2 h-9 bg-[#d0a24c] text-[#191916] hover:bg-[#e0b45f]"
+          className="col-span-2 h-9 bg-[#e5e5e5] text-[#171717] hover:bg-[#fafafa]"
         >
           <a href={item.url} target="_blank" rel="noreferrer">
             Open in GitHub to review
@@ -1409,7 +1409,7 @@ function QuickPeekPanel({
           variant="outline"
           onClick={isSnoozed ? onRestore : onSnooze}
           disabled={isMuted}
-          className="h-9 min-w-0 justify-center border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+          className="h-9 min-w-0 justify-center border-white/10 bg-transparent text-[#d4d4d4] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
         >
           {isSnoozed ? (
             <RotateCcw className="h-4 w-4" />
@@ -1424,7 +1424,7 @@ function QuickPeekPanel({
           onClick={onTogglePin}
           disabled={isSnoozed || isMuted}
           aria-pressed={isPinned}
-          className="h-9 min-w-0 justify-center border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+          className="h-9 min-w-0 justify-center border-white/10 bg-transparent text-[#d4d4d4] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
         >
           <Pin className="h-4 w-4" />
           {isPinned ? "Unpin" : "Pin"}
@@ -1434,7 +1434,7 @@ function QuickPeekPanel({
           variant="outline"
           onClick={isMuted ? onRestore : onMute}
           disabled={isSnoozed}
-          className="h-9 min-w-0 justify-center border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+          className="h-9 min-w-0 justify-center border-white/10 bg-transparent text-[#d4d4d4] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
         >
           <BellOff className="h-4 w-4" />
           {isMuted ? "Unmute" : "Mute"}
@@ -1444,7 +1444,7 @@ function QuickPeekPanel({
           variant="outline"
           onClick={onCaughtUp}
           disabled={!canMarkCaughtUp}
-          className="h-9 min-w-0 justify-center border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+          className="h-9 min-w-0 justify-center border-white/10 bg-transparent text-[#d4d4d4] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
         >
           <Check className="h-4 w-4" />
           {isMarkingSeen
@@ -1456,7 +1456,7 @@ function QuickPeekPanel({
         <Button
           asChild
           variant="ghost"
-          className="col-span-2 h-9 text-[#9f9a91] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+          className="col-span-2 h-9 text-[#a3a3a3] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
         >
           <Link to="/pull-requests/$pullRequestId" params={{ pullRequestId: item.id }}>
             <GitPullRequest className="h-4 w-4" />
@@ -1578,14 +1578,14 @@ function EmptyPeekPanel({
   const copy = getEmptyPeekCopy(groupMode, searchQuery)
 
   return (
-    <aside className="flex min-w-0 flex-col items-center justify-center bg-[#20201d] px-8 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-[#d0a24c]">
+    <aside className="flex min-w-0 flex-col items-center justify-center bg-[#171717] px-8 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-[#e5e5e5]">
         <Check className="h-5 w-5" />
       </div>
-      <h2 className="mt-5 text-[18px] font-semibold tracking-tight text-[#f0ede4]">
+      <h2 className="mt-5 text-[18px] font-semibold tracking-tight text-[#f5f5f5]">
         {copy.title}
       </h2>
-      <p className="mt-2 max-w-[300px] text-sm leading-6 text-[#9f9a91]">
+      <p className="mt-2 max-w-[300px] text-sm leading-6 text-[#a3a3a3]">
         {copy.detail}
       </p>
     </aside>

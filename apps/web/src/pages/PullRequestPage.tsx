@@ -253,7 +253,7 @@ export function PullRequestPage() {
   }
 
   return (
-    <div className="min-h-[760px] bg-[#242420]">
+    <div className="min-h-[760px] bg-[#1f1f1f]">
       <DetailHeader item={loadedItem} />
       <ContextBand
         item={loadedItem}
@@ -262,7 +262,7 @@ export function PullRequestPage() {
       />
       <div className="grid grid-cols-1 gap-0 border-t border-white/10 xl:grid-cols-[62fr_38fr]">
         <main className="min-w-0 px-7 py-6">
-          <div className="mb-4 font-mono text-[10.5px] tracking-[0.12em] text-[#8e8b82] uppercase">
+          <div className="mb-4 font-mono text-[10.5px] tracking-[0.12em] text-[#737373] uppercase">
             Activity · newest first
           </div>
           <Timeline
@@ -298,13 +298,13 @@ function DetailStatusPanel({
   detail?: string
 }) {
   return (
-    <div className="grid min-h-[760px] place-items-center bg-[#242420] px-6">
-      <div className="max-w-sm rounded-lg border border-white/10 bg-[#20201d] p-6 text-center">
-        <h1 className="text-[18px] font-semibold tracking-tight text-[#f0ede4]">
+    <div className="grid min-h-[760px] place-items-center bg-[#1f1f1f] px-6">
+      <div className="max-w-sm rounded-lg border border-white/10 bg-[#171717] p-6 text-center">
+        <h1 className="text-[18px] font-semibold tracking-tight text-[#f5f5f5]">
           {title}
         </h1>
         {detail ? (
-          <p className="mt-2 text-sm leading-6 text-[#9f9a91]">{detail}</p>
+          <p className="mt-2 text-sm leading-6 text-[#a3a3a3]">{detail}</p>
         ) : null}
       </div>
     </div>
@@ -318,7 +318,7 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
         asChild
         variant="ghost"
         size="sm"
-        className="mt-1 h-8 w-fit justify-self-start text-[#bdb8ad] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+        className="mt-1 h-8 w-fit justify-self-start text-[#a3a3a3] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
       >
         <Link to="/">
           <ArrowLeft className="h-4 w-4" />
@@ -327,14 +327,14 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
       </Button>
 
       <div className="min-w-0">
-        <div className="font-mono text-[11px] text-[#8e8b82]">
+        <div className="font-mono text-[11px] text-[#737373]">
           {item.repository} / #{item.number}
           <span className="mx-2 text-white/20">·</span>
           opened by {item.authorLogin}
           <span className="mx-2 text-white/20">·</span>
           {item.openedAt}
         </div>
-        <h1 className="mt-2 text-[28px] font-semibold leading-9 tracking-tight text-[#f0ede4]">
+        <h1 className="mt-2 text-[28px] font-semibold leading-9 tracking-tight text-[#f5f5f5]">
           {item.title}
         </h1>
         <div className="mt-4 grid max-w-[860px] grid-cols-1 gap-2 md:grid-cols-4">
@@ -354,13 +354,13 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
       </div>
 
       <div className="flex min-w-[190px] flex-col items-stretch gap-3">
-        <div className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 font-mono text-[11px] text-[#d8d3c8]">
-          <span className="mr-2 inline-block h-2 w-2 rounded-full bg-[#d0a24c]" />
+        <div className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 font-mono text-[11px] text-[#d4d4d4]">
+          <span className="mr-2 inline-block h-2 w-2 rounded-full bg-[#e5e5e5]" />
           {userReviewStanding(item.userLastReviewDecision)}
         </div>
         <Button
           asChild
-          className="h-9 bg-[#d0a24c] text-[#191916] hover:bg-[#e0b45f]"
+          className="h-9 bg-[#e5e5e5] text-[#171717] hover:bg-[#fafafa]"
         >
           <a href={item.url} target="_blank" rel="noreferrer">
             Open in GitHub
@@ -383,13 +383,13 @@ function DetailFact({
 }) {
   return (
     <div className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-2">
-      <div className="font-mono text-[9.5px] tracking-[0.1em] text-[#77736a] uppercase">
+      <div className="font-mono text-[9.5px] tracking-[0.1em] text-[#525252] uppercase">
         {label}
       </div>
       <div
         className={cn(
-          "mt-1 font-mono text-[12px] text-[#c9c5ba]",
-          hot && "font-semibold text-[#d0a24c]"
+          "mt-1 font-mono text-[12px] text-[#d4d4d4]",
+          hot && "font-semibold text-[#e5e5e5]"
         )}
       >
         {value}
@@ -464,9 +464,9 @@ function ContextBand({
 
   return (
     <section className="px-7 py-5">
-      <div className="rounded-lg border border-white/10 bg-[#1f1f1c] p-5">
-        <div className="flex items-center gap-2 font-mono text-[10.5px] tracking-[0.12em] text-[#8e8b82] uppercase">
-          <RotateCcw className="h-3.5 w-3.5 text-[#d0a24c]" />
+      <div className="rounded-lg border border-white/10 bg-[#1f1f1f] p-5">
+        <div className="flex items-center gap-2 font-mono text-[10.5px] tracking-[0.12em] text-[#737373] uppercase">
+          <RotateCcw className="h-3.5 w-3.5 text-[#e5e5e5]" />
           Review context
           <span className="text-white/20">·</span>
           {item.lastSeenAt}
@@ -514,17 +514,17 @@ function ContextBand({
             ))}
           </div>
         ) : (
-          <div className="mt-4 rounded-md border border-white/10 bg-white/[0.03] px-4 py-3 text-[13px] leading-5 text-[#d8d3c8]">
+          <div className="mt-4 rounded-md border border-white/10 bg-white/[0.03] px-4 py-3 text-[13px] leading-5 text-[#d4d4d4]">
             No unseen review activity since your last visit.
           </div>
         )}
-        <div className="mt-4 grid gap-2 text-[13px] leading-5 text-[#d8d3c8]">
+        <div className="mt-4 grid gap-2 text-[13px] leading-5 text-[#d4d4d4]">
           {item.activityEvents
             .filter((event) => event.isNew)
             .slice(0, 3)
             .map((event) => (
               <div key={event.id} className="flex gap-2">
-                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#d0a24c]" />
+                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#e5e5e5]" />
                 <span>
                   <b>{event.actor}</b> {event.action}
                   {event.detail ? ` - ${event.detail}` : ""}
@@ -532,7 +532,7 @@ function ContextBand({
               </div>
             ))}
         </div>
-        <div className="mt-4 font-mono text-[11px] text-[#8e8b82]">
+        <div className="mt-4 font-mono text-[11px] text-[#737373]">
           {timelineEventSummary(newEventCount)}
         </div>
       </div>
@@ -551,13 +551,13 @@ function ContextFact({
 }) {
   return (
     <div className="min-w-0 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2">
-      <div className="font-mono text-[9.5px] tracking-[0.1em] text-[#77736a] uppercase">
+      <div className="font-mono text-[9.5px] tracking-[0.1em] text-[#525252] uppercase">
         {label}
       </div>
       <div
         className={cn(
-          "mt-1 truncate font-mono text-[11px] text-[#c9c5ba]",
-          hot && "font-semibold text-[#d0a24c]"
+          "mt-1 truncate font-mono text-[11px] text-[#d4d4d4]",
+          hot && "font-semibold text-[#e5e5e5]"
         )}
       >
         {value}
@@ -581,14 +581,14 @@ function ChangeCard({
     <div className="rounded-md border border-white/10 bg-white/[0.03] px-4 py-3">
       <div
         className={cn(
-          "flex items-center gap-2 font-mono text-[22px] font-semibold text-[#f0ede4]",
-          hot && "text-[#d0a24c]"
+          "flex items-center gap-2 font-mono text-[22px] font-semibold text-[#f5f5f5]",
+          hot && "text-[#e5e5e5]"
         )}
       >
         {Icon ? <Icon className="h-5 w-5" /> : null}
         {value}
       </div>
-      <div className="mt-1 font-mono text-[10px] tracking-[0.1em] text-[#77736a] uppercase">
+      <div className="mt-1 font-mono text-[10px] tracking-[0.1em] text-[#525252] uppercase">
         {label}
       </div>
     </div>
@@ -614,7 +614,7 @@ function Timeline({
         {newEvents.length > 0 && (
           <div className="relative flex items-center gap-3 py-1 pl-7">
             <span className="h-px flex-1 bg-white/10" />
-            <span className="font-mono text-[10.5px] tracking-[0.08em] text-[#d0a24c] uppercase">
+            <span className="font-mono text-[10.5px] tracking-[0.08em] text-[#e5e5e5] uppercase">
               everything above is new since you last looked · {lastSeenAt}
             </span>
             <span className="h-px flex-1 bg-white/10" />
@@ -639,17 +639,17 @@ function TimelineItem({
     <div className="relative grid grid-cols-[112px_1fr] gap-5 pl-7">
       <span
         className={cn(
-          "absolute top-1.5 left-0 h-3.5 w-3.5 rounded-full border border-white/20 bg-[#242420]",
-          isNew && "border-[#d0a24c] bg-[#d0a24c]"
+          "absolute top-1.5 left-0 h-3.5 w-3.5 rounded-full border border-white/20 bg-[#1f1f1f]",
+          isNew && "border-[#e5e5e5] bg-[#e5e5e5]"
         )}
       />
-      <div className="font-mono text-[11px] text-[#77736a]">{event.occurredAt}</div>
+      <div className="font-mono text-[11px] text-[#525252]">{event.occurredAt}</div>
       <div>
-        <div className="text-[13.5px] leading-5 text-[#ded9ce]">
+        <div className="text-[13.5px] leading-5 text-[#d4d4d4]">
           <b>{event.actor}</b> {event.action}
         </div>
         {event.detail ? (
-          <div className="mt-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-[12.5px] leading-5 text-[#bdb8ad]">
+          <div className="mt-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-[12.5px] leading-5 text-[#a3a3a3]">
             {event.detail}
           </div>
         ) : null}
@@ -696,17 +696,17 @@ function DetailSideRail({
   )
 
   return (
-    <aside className="border-t border-white/10 bg-[#20201d] px-5 py-6 xl:border-l xl:border-t-0">
+    <aside className="border-t border-white/10 bg-[#171717] px-5 py-6 xl:border-l xl:border-t-0">
       <RailCard title="Catch up">
         <div className="grid gap-2">
           {caughtUpError ? (
-            <div className="rounded-md border border-[#d0a24c]/30 bg-[#d0a24c]/10 px-3 py-2 text-[12px] leading-5 text-[#d8d3c8]">
+            <div className="rounded-md border border-[#e5e5e5]/30 bg-[#e5e5e5]/10 px-3 py-2 text-[12px] leading-5 text-[#d4d4d4]">
               Could not save caught-up state. Try again.
             </div>
           ) : null}
           <Button
             asChild
-            className="h-9 justify-center bg-[#d0a24c] text-[#191916] hover:bg-[#e0b45f]"
+            className="h-9 justify-center bg-[#e5e5e5] text-[#171717] hover:bg-[#fafafa]"
           >
             <a href={item.url} target="_blank" rel="noreferrer">
               {newEventCount > 0
@@ -720,7 +720,7 @@ function DetailSideRail({
             variant="outline"
             disabled={!canMarkCaughtUp}
             onClick={onCaughtUp}
-            className="h-9 justify-center border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+            className="h-9 justify-center border-white/10 bg-transparent text-[#d4d4d4] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
           >
             <Check className="h-4 w-4" />
             {isMarkingSeen
@@ -735,7 +735,7 @@ function DetailSideRail({
               variant="outline"
               disabled={isMuted}
               onClick={isSnoozed ? onRestore : onSnooze}
-              className="h-9 justify-center border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+              className="h-9 justify-center border-white/10 bg-transparent text-[#d4d4d4] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
             >
               {isSnoozed ? (
                 <RotateCcw className="h-4 w-4" />
@@ -750,7 +750,7 @@ function DetailSideRail({
               disabled={isSnoozed || isMuted}
               aria-pressed={isPinned}
               onClick={onTogglePin}
-              className="h-9 justify-center border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+              className="h-9 justify-center border-white/10 bg-transparent text-[#d4d4d4] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
             >
               <Pin className="h-4 w-4" />
               {isPinned ? "Unpin" : "Pin"}
@@ -760,7 +760,7 @@ function DetailSideRail({
               variant="outline"
               disabled={isSnoozed}
               onClick={isMuted ? onRestore : onMute}
-              className="col-span-2 h-9 justify-center border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+              className="col-span-2 h-9 justify-center border-white/10 bg-transparent text-[#d4d4d4] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
             >
               <BellOff className="h-4 w-4" />
               {isMuted ? "Unmute" : "Mute"}
@@ -803,10 +803,10 @@ function DetailSideRail({
             {item.changedFilesSinceLastSeen.map((file) => (
               <div
                 key={file.path}
-                className="flex items-center justify-between gap-3 rounded-[4px] px-1 py-1 font-mono text-[11px] text-[#bdb8ad]"
+                className="flex items-center justify-between gap-3 rounded-[4px] px-1 py-1 font-mono text-[11px] text-[#a3a3a3]"
               >
                 <span className="truncate">{file.path}</span>
-                <span className="text-[#8e8b82]">
+                <span className="text-[#737373]">
                   +{file.additions} / -{file.deletions}
                 </span>
               </div>
@@ -827,7 +827,7 @@ function RailCard({
 }) {
   return (
     <section className="mb-4 rounded-lg border border-white/10 bg-white/[0.03] p-4">
-      <div className="mb-3 font-mono text-[10.5px] tracking-[0.12em] text-[#9f9a91] uppercase">
+      <div className="mb-3 font-mono text-[10.5px] tracking-[0.12em] text-[#a3a3a3] uppercase">
         {title}
       </div>
       {children}
@@ -839,8 +839,8 @@ function RailKeyValue({ label, value }: { label: string; value: string }) {
   return (
     <>
       <div className="flex items-center justify-between gap-4 py-2 font-mono text-[11px]">
-        <span className="text-[#8e8b82]">{label}</span>
-        <span className="text-[#d8d3c8]">{value}</span>
+        <span className="text-[#737373]">{label}</span>
+        <span className="text-[#d4d4d4]">{value}</span>
       </div>
       <Separator className="bg-white/10 last:hidden" />
     </>

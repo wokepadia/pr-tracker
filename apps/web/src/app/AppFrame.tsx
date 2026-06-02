@@ -13,7 +13,7 @@ export function AppFrame() {
       </header>
 
       <main className="px-5 pt-[68px] pb-7">
-        <div className="mx-auto min-h-[760px] max-w-[1156px] overflow-hidden rounded-[10px] border border-white/10 bg-[#1f1f1c] shadow-2xl shadow-black/30">
+        <div className="mx-auto min-h-[760px] max-w-[1156px] overflow-hidden rounded-[10px] border border-white/10 bg-[#1f1f1f] shadow-2xl shadow-black/30">
           <Outlet />
         </div>
       </main>
