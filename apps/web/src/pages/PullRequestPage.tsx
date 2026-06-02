@@ -161,7 +161,8 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
         <h1 className="mt-2 text-[28px] font-semibold leading-9 tracking-tight text-[#f0ede4]">
           {item.title}
         </h1>
-        <div className="mt-4 grid max-w-[760px] grid-cols-1 gap-2 md:grid-cols-3">
+        <div className="mt-4 grid max-w-[860px] grid-cols-1 gap-2 md:grid-cols-4">
+          <DetailFact label="Updated" value={item.updatedAt} />
           <DetailFact
             label={detailQueueLabel(item)}
             value={item.waitingAge}
@@ -260,15 +261,55 @@ function ContextBand({
       hot: true,
     },
   ].filter((card) => card.show)
+  const otherReviewerState =
+    item.otherReviewers.length > 0
+      ? item.otherReviewers
+          .map((reviewer) => `${reviewer.login}: ${reviewDecisionLabel(reviewer.decision)}`)
+          .join(" · ")
+      : "no other reviewer state"
+  const authorActivity = [
+    item.newCommitCount > 0 ? `+${item.newCommitCount} commits` : undefined,
+    item.newReplyCount > 0 ? `${item.newReplyCount} replies` : undefined,
+  ].filter(Boolean)
 
   return (
     <section className="px-7 py-5">
       <div className="rounded-lg border border-white/10 bg-[#1f1f1c] p-5">
         <div className="flex items-center gap-2 font-mono text-[10.5px] tracking-[0.12em] text-[#8e8b82] uppercase">
           <RotateCcw className="h-3.5 w-3.5 text-[#d0a24c]" />
-          Deterministic context since last visit
+          Review context
           <span className="text-white/20">·</span>
           {item.lastSeenAt}
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <ContextFact
+            label="your last review"
+            value={
+              item.userLastReviewAt
+                ? `${reviewDecisionLabel(item.userLastReviewDecision)} · ${item.userLastReviewAt}`
+                : reviewDecisionLabel(item.userLastReviewDecision)
+            }
+            hot={item.userLastReviewDecision === "pending"}
+          />
+          <ContextFact
+            label="author activity"
+            value={authorActivity.length > 0 ? authorActivity.join(" · ") : "none since last look"}
+            hot={item.newCommitCount > 0 || item.newReplyCount > 0}
+          />
+          <ContextFact
+            label="review request"
+            value={reReviewRequested ? "requested again" : requestStateLabel(item)}
+            hot={reReviewRequested || item.workflowState === "needs_review"}
+          />
+          <ContextFact
+            label="open threads"
+            value={`${item.unresolvedThreadCount}/${item.totalThreadCount}`}
+            hot={item.unresolvedThreadCount > 0}
+          />
+          <ContextFact
+            label="other reviewers"
+            value={otherReviewerState}
+          />
         </div>
         {changeCards.length > 0 ? (
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -306,6 +347,32 @@ function ContextBand({
         </div>
       </div>
     </section>
+  )
+}
+
+function ContextFact({
+  label,
+  value,
+  hot,
+}: {
+  label: string
+  value: string
+  hot?: boolean
+}) {
+  return (
+    <div className="min-w-0 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2">
+      <div className="font-mono text-[9.5px] tracking-[0.1em] text-[#77736a] uppercase">
+        {label}
+      </div>
+      <div
+        className={cn(
+          "mt-1 truncate font-mono text-[11px] text-[#c9c5ba]",
+          hot && "font-semibold text-[#d0a24c]"
+        )}
+      >
+        {value}
+      </div>
+    </div>
   )
 }
 
@@ -563,4 +630,12 @@ function detailMergeableLabel(item: ReviewQueueItemView): string {
   if (item.laneId === "approved") return "approved · watching"
   if (item.laneId === "stale") return "stale · watching"
   return "watching"
+}
+
+function requestStateLabel(item: ReviewQueueItemView): string {
+  if (item.workflowState === "needs_review") return "requested"
+  if (item.workflowState === "updated_since_review") return "changed after review"
+  if (item.workflowState === "waiting_on_author") return "not requested"
+  if (item.workflowState === "needs_thread_attention") return "thread attention"
+  return "not requested"
 }
