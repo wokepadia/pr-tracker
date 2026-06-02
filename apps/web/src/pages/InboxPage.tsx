@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
 import { Separator } from "@/components/ui/separator"
 import { getReviewerInbox, markPullRequestSeen } from "@/api"
+import { formatCount } from "@/lib/copy"
 import { cn } from "@/lib/utils"
 import {
   buildInboxView,
@@ -884,12 +885,12 @@ function QuickPeekPanel({
   const factRows = [
     {
       id: "commits",
-      label: `+${item.newCommitCount} new commits`,
+      label: `+${formatCount(item.newCommitCount, "new commit")}`,
       show: item.newCommitCount > 0,
     },
     {
       id: "replies",
-      label: `${item.newReplyCount} new replies on threads you opened`,
+      label: `${formatCount(item.newReplyCount, "new reply", "new replies")} on threads you opened`,
       show: item.newReplyCount > 0,
     },
     {

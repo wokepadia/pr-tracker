@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { getPullRequest, markPullRequestSeen } from "@/api"
+import { formatCount, pluralize } from "@/lib/copy"
 import { cn } from "@/lib/utils"
 import {
   toReviewQueueItemView,
@@ -236,14 +237,14 @@ function ContextBand({
       id: "commits",
       icon: GitCommitHorizontal,
       value: `+${item.newCommitCount}`,
-      label: "new commits",
+      label: pluralize(item.newCommitCount, "new commit"),
       show: item.newCommitCount > 0,
     },
     {
       id: "replies",
       icon: MessageSquareText,
       value: String(item.newReplyCount),
-      label: "new replies",
+      label: pluralize(item.newReplyCount, "new reply", "new replies"),
       show: item.newReplyCount > 0,
     },
     {
@@ -268,8 +269,12 @@ function ContextBand({
           .join(" · ")
       : "no other reviewer state"
   const authorActivity = [
-    item.newCommitCount > 0 ? `+${item.newCommitCount} commits` : undefined,
-    item.newReplyCount > 0 ? `${item.newReplyCount} replies` : undefined,
+    item.newCommitCount > 0
+      ? `+${formatCount(item.newCommitCount, "commit")}`
+      : undefined,
+    item.newReplyCount > 0
+      ? formatCount(item.newReplyCount, "reply", "replies")
+      : undefined,
   ].filter(Boolean)
 
   return (
@@ -343,7 +348,7 @@ function ContextBand({
             ))}
         </div>
         <div className="mt-4 font-mono text-[11px] text-[#8e8b82]">
-          {newEventCount} new events, all shown in the timeline below.
+          {timelineEventSummary(newEventCount)}
         </div>
       </div>
     </section>
@@ -505,7 +510,7 @@ function DetailSideRail({
           >
             <a href={item.url} target="_blank" rel="noreferrer">
               {newEventCount > 0
-                ? `Review the ${newEventCount} new events`
+                ? `Review ${formatCount(newEventCount, "new event")}`
                 : "Review in GitHub"}
               <ExternalLink className="h-4 w-4" />
             </a>
@@ -638,4 +643,12 @@ function requestStateLabel(item: ReviewQueueItemView): string {
   if (item.workflowState === "waiting_on_author") return "not requested"
   if (item.workflowState === "needs_thread_attention") return "thread attention"
   return "not requested"
+}
+
+function timelineEventSummary(newEventCount: number): string {
+  if (newEventCount === 0) {
+    return "No new events to show in the timeline."
+  }
+
+  return `${formatCount(newEventCount, "new event")} shown in the timeline below.`
 }
