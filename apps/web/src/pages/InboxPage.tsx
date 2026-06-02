@@ -1248,7 +1248,7 @@ function QueueRow({
               active={item.unresolvedThreadCount > 0}
             />
           ) : null}
-          {reReviewRequested ? <FactChip icon={Eye} text="review req" active /> : null}
+          {reReviewRequested ? <FactChip icon={Eye} text="review requested" active /> : null}
         </span>
       </span>
       <span className="flex min-w-[74px] flex-col items-end gap-1">
