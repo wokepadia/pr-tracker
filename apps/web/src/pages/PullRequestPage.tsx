@@ -81,6 +81,128 @@ export function PullRequestPage() {
     saveLocalQueueState(window.localStorage, localQueueState)
   }, [localQueueState])
 
+  function updateLocalItemState(
+    itemId: string,
+    update: (current: LocalPullRequestQueueState) => LocalPullRequestQueueState
+  ) {
+    setLocalQueueState((current) => {
+      const next = { ...current }
+      const nextItemState = update(current[itemId] ?? {})
+
+      if (hasLocalQueueState(nextItemState)) {
+        next[itemId] = nextItemState
+      } else {
+        delete next[itemId]
+      }
+
+      return next
+    })
+  }
+
+  function snoozePullRequestById(itemId: string) {
+    const itemState = localQueueState[itemId] ?? {}
+    if (itemState.snoozed || itemState.muted) return
+    updateLocalItemState(itemId, (current) => ({
+      ...current,
+      muted: undefined,
+      snoozed: true,
+    }))
+  }
+
+  function restorePullRequestById(itemId: string) {
+    const itemState = localQueueState[itemId] ?? {}
+    if (!itemState.snoozed && !itemState.muted) return
+    updateLocalItemState(itemId, (current) => {
+      const next = { ...current }
+      delete next.snoozed
+      delete next.muted
+      return next
+    })
+  }
+
+  function togglePinPullRequestById(itemId: string) {
+    const itemState = localQueueState[itemId] ?? {}
+    if (itemState.snoozed || itemState.muted) return
+    updateLocalItemState(itemId, (current) => ({
+      ...current,
+      pinned: current.pinned ? undefined : true,
+    }))
+  }
+
+  function mutePullRequestById(itemId: string) {
+    const itemState = localQueueState[itemId] ?? {}
+    if (itemState.muted) return
+    updateLocalItemState(itemId, () => ({ muted: true }))
+  }
+
+  async function markCaughtUpById(itemId: string) {
+    setCaughtUpError(false)
+    markSeenMutation.reset()
+    await markSeenMutation.mutateAsync(itemId).catch(() => {
+      setCaughtUpError(true)
+    })
+  }
+
+  useEffect(() => {
+    if (!item) return
+    const shortcutItem = item
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented) return
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      if (!["e", "s", "p", "m", "c"].includes(event.key)) return
+
+      const activeElement = document.activeElement
+      const activeTag = activeElement?.tagName
+      const isEditingText =
+        activeTag === "INPUT" ||
+        activeTag === "TEXTAREA" ||
+        activeTag === "SELECT" ||
+        activeElement?.getAttribute("contenteditable") === "true"
+      if (isEditingText) return
+      if (activeTag === "BUTTON" || activeTag === "A") return
+
+      event.preventDefault()
+
+      if (event.key === "e") {
+        window.open(shortcutItem.url, "_blank", "noreferrer")
+        return
+      }
+
+      if (event.key === "s") {
+        const itemState = localQueueState[shortcutItem.id] ?? {}
+        if (itemState.snoozed) {
+          restorePullRequestById(shortcutItem.id)
+        } else if (!itemState.muted) {
+          snoozePullRequestById(shortcutItem.id)
+        }
+        return
+      }
+
+      if (event.key === "p") {
+        togglePinPullRequestById(shortcutItem.id)
+        return
+      }
+
+      if (event.key === "m") {
+        const itemState = localQueueState[shortcutItem.id] ?? {}
+        if (itemState.muted) {
+          restorePullRequestById(shortcutItem.id)
+        } else {
+          mutePullRequestById(shortcutItem.id)
+        }
+        return
+      }
+
+      if (shortcutItem.unseenEventCount > 0 && !markSeenMutation.isPending) {
+        void markCaughtUpById(shortcutItem.id)
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [item, localQueueState, markSeenMutation])
+
   if (detailQuery.isLoading) {
     return <DetailStatusPanel title="Loading pull request" />
   }
@@ -105,61 +227,24 @@ export function PullRequestPage() {
   const isSnoozed = Boolean(loadedItemLocalState.snoozed)
   const isMuted = Boolean(loadedItemLocalState.muted)
 
-  function updateLocalItemState(
-    update: (current: LocalPullRequestQueueState) => LocalPullRequestQueueState
-  ) {
-    setLocalQueueState((current) => {
-      const next = { ...current }
-      const nextItemState = update(current[loadedItem.id] ?? {})
-
-      if (hasLocalQueueState(nextItemState)) {
-        next[loadedItem.id] = nextItemState
-      } else {
-        delete next[loadedItem.id]
-      }
-
-      return next
-    })
-  }
-
   function snoozePullRequest() {
-    if (isSnoozed || isMuted) return
-    updateLocalItemState((current) => ({
-      ...current,
-      muted: undefined,
-      snoozed: true,
-    }))
+    snoozePullRequestById(loadedItem.id)
   }
 
   function restorePullRequest() {
-    if (!isSnoozed && !isMuted) return
-    updateLocalItemState((current) => {
-      const next = { ...current }
-      delete next.snoozed
-      delete next.muted
-      return next
-    })
+    restorePullRequestById(loadedItem.id)
   }
 
   function togglePinPullRequest() {
-    if (isSnoozed || isMuted) return
-    updateLocalItemState((current) => ({
-      ...current,
-      pinned: current.pinned ? undefined : true,
-    }))
+    togglePinPullRequestById(loadedItem.id)
   }
 
   function mutePullRequest() {
-    if (isMuted) return
-    updateLocalItemState(() => ({ muted: true }))
+    mutePullRequestById(loadedItem.id)
   }
 
   async function markCaughtUp() {
-    setCaughtUpError(false)
-    markSeenMutation.reset()
-    await markSeenMutation.mutateAsync(loadedItem.id).catch(() => {
-      setCaughtUpError(true)
-    })
+    await markCaughtUpById(loadedItem.id)
   }
 
   return (
