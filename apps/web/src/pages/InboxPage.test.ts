@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { filterQueueItems, resolveVisibleQueueItem } from "./InboxPage"
+import {
+  filterQueueItems,
+  getEmptyPeekCopy,
+  resolveVisibleQueueItem,
+} from "./InboxPage"
 import type { ReviewQueueItemView } from "@/reviewer/view-model"
 
 describe("inbox queue search", () => {
@@ -81,6 +85,30 @@ describe("inbox queue selection", () => {
     expect(resolveVisibleQueueItem(items, "pr_2")?.id).toBe("pr_2")
     expect(resolveVisibleQueueItem(items, "missing")?.id).toBe("pr_1")
     expect(resolveVisibleQueueItem([], "pr_1")).toBeUndefined()
+  })
+})
+
+describe("inbox empty state copy", () => {
+  it("keeps stashed empty states specific to the selected view", () => {
+    expect(getEmptyPeekCopy("pinned", "")).toEqual({
+      title: "No pinned PRs",
+      detail: "Nothing is pinned right now.",
+    })
+    expect(getEmptyPeekCopy("snoozed", "")).toEqual({
+      title: "No snoozed PRs",
+      detail: "Nothing is snoozed right now.",
+    })
+    expect(getEmptyPeekCopy("muted", "")).toEqual({
+      title: "No muted PRs",
+      detail: "Nothing is muted right now.",
+    })
+  })
+
+  it("uses search copy before view-specific empty copy", () => {
+    expect(getEmptyPeekCopy("pinned", "author")).toEqual({
+      title: "No matching review items",
+      detail: "No items match the current search in this view.",
+    })
   })
 })
 

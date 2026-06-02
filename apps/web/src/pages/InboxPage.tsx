@@ -385,10 +385,24 @@ export function InboxPage() {
   function togglePinSelected() {
     if (!selectedItem || selectedItemIsSnoozed || selectedItemIsMuted) return
     const itemId = selectedItem.id
+    const wasPinned = selectedItemIsPinned
     updateLocalItemState(itemId, (current) => ({
       ...current,
       pinned: current.pinned ? undefined : true,
     }))
+
+    if (wasPinned && groupMode === "pinned") {
+      setGroupMode("action")
+      setOpenLaneIds((current) => {
+        const next = new Set(current)
+        const restoredBucketId = bucketIdForItem(selectedItem)
+        if (restoredBucketId) {
+          next.add(restoredBucketId)
+        }
+        return next
+      })
+      setSelectedId(itemId)
+    }
   }
 
   function muteSelected() {
@@ -658,7 +672,7 @@ export function InboxPage() {
               onCaughtUp={() => void markSelectedCaughtUp()}
             />
           ) : (
-            <EmptyPeekPanel hasSearchQuery={searchQuery.trim().length > 0} />
+            <EmptyPeekPanel groupMode={groupMode} searchQuery={searchQuery} />
           )}
         </div>
       </section>
@@ -1576,20 +1590,71 @@ function toggleOpenGroup<T extends string>(current: Set<T>, id: T): Set<T> {
   return next
 }
 
-function EmptyPeekPanel({ hasSearchQuery }: { hasSearchQuery: boolean }) {
+function EmptyPeekPanel({
+  groupMode,
+  searchQuery,
+}: {
+  groupMode: QueueGroupMode
+  searchQuery: string
+}) {
+  const copy = getEmptyPeekCopy(groupMode, searchQuery)
+
   return (
     <aside className="flex min-w-0 flex-col items-center justify-center bg-[#20201d] px-8 text-center">
       <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-[#d0a24c]">
         <Check className="h-5 w-5" />
       </div>
       <h2 className="mt-5 text-[18px] font-semibold tracking-tight text-[#f0ede4]">
-        {hasSearchQuery ? "No matching review items" : "No active review items"}
+        {copy.title}
       </h2>
       <p className="mt-2 max-w-[300px] text-sm leading-6 text-[#9f9a91]">
-        {hasSearchQuery
-          ? "Adjust the search query to bring matching review items back into view."
-          : "There are no active review items in the current view."}
+        {copy.detail}
       </p>
     </aside>
   )
+}
+
+export function getEmptyPeekCopy(
+  groupMode: QueueGroupMode,
+  searchQuery: string
+): { title: string; detail: string } {
+  if (searchQuery.trim().length > 0) {
+    return {
+      title: "No matching review items",
+      detail: "No items match the current search in this view.",
+    }
+  }
+
+  if (groupMode === "pinned") {
+    return {
+      title: "No pinned PRs",
+      detail: "Nothing is pinned right now.",
+    }
+  }
+
+  if (groupMode === "snoozed") {
+    return {
+      title: "No snoozed PRs",
+      detail: "Nothing is snoozed right now.",
+    }
+  }
+
+  if (groupMode === "muted") {
+    return {
+      title: "No muted PRs",
+      detail: "Nothing is muted right now.",
+    }
+  }
+
+  if (groupMode === "repository") {
+    return {
+      title: "No repository groups",
+      detail: "No repository groups are visible in this view.",
+    }
+  }
+
+  return {
+    title: "No active review items",
+    detail: "There are no active review items in the current view.",
+  }
 }
