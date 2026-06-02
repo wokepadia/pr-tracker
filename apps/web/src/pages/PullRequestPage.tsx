@@ -8,7 +8,6 @@ import type { ComponentType, ReactNode } from "react"
 import {
   ArrowLeft,
   Check,
-  Clock3,
   ExternalLink,
   GitCommitHorizontal,
   MessageSquareText,
@@ -131,7 +130,7 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
         asChild
         variant="ghost"
         size="sm"
-        className="mt-1 h-8 text-[#bdb8ad] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+        className="mt-1 h-8 w-fit justify-self-start text-[#bdb8ad] hover:bg-white/[0.04] hover:text-[#f0ede4]"
       >
         <Link to="/">
           <ArrowLeft className="h-4 w-4" />
@@ -483,17 +482,6 @@ function DetailSideRail({
           </div>
         </RailCard>
       ) : null}
-
-      <RailCard title="Stay on it">
-        <Button
-          type="button"
-          variant="outline"
-          className="h-9 w-full justify-center border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
-        >
-          <Clock3 className="h-4 w-4" />
-          Snooze 1 day
-        </Button>
-      </RailCard>
     </aside>
   )
 }

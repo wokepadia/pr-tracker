@@ -13,7 +13,16 @@ import { InboxPage } from "./pages/InboxPage";
 import { PullRequestPage } from "./pages/PullRequestPage";
 import "./index.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: false,
+    },
+    mutations: {
+      retry: false,
+    },
+  },
+});
 
 const rootRoute = createRootRoute({
   component: AppFrame

@@ -174,6 +174,20 @@ export function InboxPage() {
     window.open(selectedItem.url, "_blank", "noreferrer")
   }
 
+  function focusLane(laneId: LaneId) {
+    setOpenLaneIds((current) => {
+      if (current.has(laneId)) return current
+      const next = new Set(current)
+      next.add(laneId)
+      return next
+    })
+
+    const firstLaneItem = laneItems[laneId][0]
+    if (firstLaneItem) {
+      setSelectedId(firstLaneItem.id)
+    }
+  }
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented) return
@@ -246,6 +260,7 @@ export function InboxPage() {
     <div className="grid min-h-[760px] grid-cols-1 sm:grid-cols-[190px_1fr] lg:grid-cols-[212px_1fr]">
       <InboxSidebar
         laneItems={laneItems}
+        activeLaneId={lanes.find((lane) => lane.id === selectedItem?.laneId)?.id}
         approvedCount={inboxView.approvedCount}
         watchingCount={inboxView.watchingCount}
         snoozedCount={
@@ -253,6 +268,7 @@ export function InboxPage() {
             (item) => localQueueState[item.id] === "snoozed"
           ).length
         }
+        onSelectLane={focusLane}
       />
 
       <section className="flex min-w-0 flex-col bg-[#242420]">
@@ -301,14 +317,18 @@ export function InboxPage() {
 
 function InboxSidebar({
   laneItems,
+  activeLaneId,
   approvedCount,
   watchingCount,
   snoozedCount,
+  onSelectLane,
 }: {
   laneItems: Record<LaneId, ReviewQueueItemView[]>
+  activeLaneId?: LaneId
   approvedCount: number
   watchingCount: number
   snoozedCount: number
+  onSelectLane: (laneId: LaneId) => void
 }) {
   return (
     <aside className="flex flex-col border-b border-white/10 bg-[#191916] px-3 py-4 sm:border-r sm:border-b-0">
@@ -322,18 +342,25 @@ function InboxSidebar({
       </div>
       <SidebarSection label="Review buckets">
         <SidebarItem
-          active
-          attention
+          active={activeLaneId === "needs_review"}
+          attention={laneItems.needs_review.length > 0}
           label={workflowLabels.needs_review}
           count={laneItems.needs_review.length}
+          onClick={() => onSelectLane("needs_review")}
         />
         <SidebarItem
+          active={activeLaneId === "updated_since_review"}
+          attention={laneItems.updated_since_review.length > 0}
           label={workflowLabels.updated_since_review}
           count={laneItems.updated_since_review.length}
+          onClick={() => onSelectLane("updated_since_review")}
         />
         <SidebarItem
+          active={activeLaneId === "waiting_on_author"}
+          attention={laneItems.waiting_on_author.length > 0}
           label={workflowLabels.waiting_on_author}
           count={laneItems.waiting_on_author.length}
+          onClick={() => onSelectLane("waiting_on_author")}
         />
         <SidebarItem label="Approved · recent" count={approvedCount} />
       </SidebarSection>
@@ -395,21 +422,23 @@ function SidebarItem({
   count,
   active,
   attention,
+  onClick,
 }: {
   label: string
   count: number
   active?: boolean
   attention?: boolean
+  onClick?: () => void
 }) {
-  return (
-    <button
-      type="button"
-      className={cn(
-        "grid w-full grid-cols-[7px_1fr_auto] items-center gap-2 rounded-md px-2 py-2 text-left text-[13px] text-[#a5a299]",
-        active && "bg-white/[0.07] text-[#f0ede4]",
-        !active && "hover:bg-white/[0.04]"
-      )}
-    >
+  const itemClassName = cn(
+    "grid w-full grid-cols-[7px_1fr_auto] items-center gap-2 rounded-md px-2 py-2 text-left text-[13px] text-[#a5a299]",
+    active && "bg-white/[0.07] text-[#f0ede4]",
+    onClick && !active && "hover:bg-white/[0.04]",
+    !onClick && "cursor-default"
+  )
+
+  const content = (
+    <>
       <span
         className={cn(
           "h-[7px] w-[7px] rounded-full bg-white/20",
@@ -426,6 +455,21 @@ function SidebarItem({
       >
         {count}
       </span>
+    </>
+  )
+
+  if (!onClick) {
+    return <div className={itemClassName}>{content}</div>
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      className={itemClassName}
+    >
+      {content}
     </button>
   )
 }
@@ -437,14 +481,9 @@ function InboxHeader() {
       <span className="ml-4 font-mono text-[11px] text-[#8e8b82]">
         · synced 2m ago
       </span>
-      <Button
-        variant="outline"
-        size="sm"
-        className="ml-auto h-8 border-white/10 bg-transparent font-mono text-[11px] text-[#c9c5ba] hover:bg-white/[0.04] hover:text-[#f0ede4]"
-      >
+      <div className="ml-auto inline-flex h-8 items-center rounded-md border border-white/10 px-3 font-mono text-[11px] text-[#c9c5ba]">
         group: action
-        <ChevronDown className="h-3.5 w-3.5" />
-      </Button>
+      </div>
       <div className="ml-3 hidden items-center gap-1.5 font-mono text-[10px] tracking-[0.08em] text-[#8e8b82] uppercase lg:flex">
         <Kbd>j</Kbd>
         <span>/</span>
