@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { loadLocalQueueState, saveLocalQueueState } from "./local-queue-state"
+import {
+  canMuteLocalQueueItem,
+  canPinLocalQueueItem,
+  canSnoozeLocalQueueItem,
+  loadLocalQueueState,
+  saveLocalQueueState,
+} from "./local-queue-state"
 
 describe("local queue state", () => {
   it("loads persisted snoozed pull requests", () => {
@@ -71,5 +77,19 @@ describe("local queue state", () => {
     expect(writes).toEqual([
       JSON.stringify({ pr_1: { snoozed: true, pinned: true } }),
     ])
+  })
+
+  it("allows only one hiding state to control local triage", () => {
+    expect(canSnoozeLocalQueueItem(undefined)).toBe(true)
+    expect(canPinLocalQueueItem({ pinned: true })).toBe(true)
+    expect(canMuteLocalQueueItem(undefined)).toBe(true)
+
+    expect(canSnoozeLocalQueueItem({ snoozed: true })).toBe(false)
+    expect(canPinLocalQueueItem({ snoozed: true })).toBe(false)
+    expect(canMuteLocalQueueItem({ snoozed: true })).toBe(false)
+
+    expect(canSnoozeLocalQueueItem({ muted: true })).toBe(false)
+    expect(canPinLocalQueueItem({ muted: true })).toBe(false)
+    expect(canMuteLocalQueueItem({ muted: true })).toBe(false)
   })
 })

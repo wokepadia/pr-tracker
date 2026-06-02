@@ -71,6 +71,24 @@ export function hasLocalQueueState(
   return Boolean(state.snoozed || state.pinned || state.muted)
 }
 
+export function canSnoozeLocalQueueItem(
+  state: LocalPullRequestQueueState | undefined
+): boolean {
+  return !state?.snoozed && !state?.muted
+}
+
+export function canPinLocalQueueItem(
+  state: LocalPullRequestQueueState | undefined
+): boolean {
+  return !state?.snoozed && !state?.muted
+}
+
+export function canMuteLocalQueueItem(
+  state: LocalPullRequestQueueState | undefined
+): boolean {
+  return !state?.snoozed && !state?.muted
+}
+
 function readBooleanProperty(
   value: object,
   property: keyof LocalPullRequestQueueState

@@ -33,6 +33,9 @@ import {
   type ReviewQueueItemView,
 } from "@/reviewer/view-model"
 import {
+  canMuteLocalQueueItem,
+  canPinLocalQueueItem,
+  canSnoozeLocalQueueItem,
   hasLocalQueueState,
   loadLocalQueueState,
   saveLocalQueueState,
@@ -102,7 +105,7 @@ export function PullRequestPage() {
 
   function snoozePullRequestById(itemId: string) {
     const itemState = localQueueState[itemId] ?? {}
-    if (itemState.snoozed || itemState.muted) return
+    if (!canSnoozeLocalQueueItem(itemState)) return
     updateLocalItemState(itemId, (current) => ({
       ...current,
       muted: undefined,
@@ -123,7 +126,7 @@ export function PullRequestPage() {
 
   function togglePinPullRequestById(itemId: string) {
     const itemState = localQueueState[itemId] ?? {}
-    if (itemState.snoozed || itemState.muted) return
+    if (!canPinLocalQueueItem(itemState)) return
     updateLocalItemState(itemId, (current) => ({
       ...current,
       pinned: current.pinned ? undefined : true,
@@ -132,7 +135,7 @@ export function PullRequestPage() {
 
   function mutePullRequestById(itemId: string) {
     const itemState = localQueueState[itemId] ?? {}
-    if (itemState.muted) return
+    if (!canMuteLocalQueueItem(itemState)) return
     updateLocalItemState(itemId, () => ({ muted: true }))
   }
 

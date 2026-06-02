@@ -42,6 +42,9 @@ import {
   type ReviewQueueItemView,
 } from "@/reviewer/view-model"
 import {
+  canMuteLocalQueueItem,
+  canPinLocalQueueItem,
+  canSnoozeLocalQueueItem,
   hasLocalQueueState,
   loadLocalQueueState,
   saveLocalQueueState,
@@ -351,7 +354,7 @@ export function InboxPage() {
   }
 
   function snoozeSelected() {
-    if (!selectedItem || selectedItemIsSnoozed) return
+    if (!selectedItem || !canSnoozeLocalQueueItem(selectedItemLocalState)) return
     const itemId = selectedItem.id
     updateLocalItemState(itemId, (current) => ({
       ...current,
@@ -383,7 +386,7 @@ export function InboxPage() {
   }
 
   function togglePinSelected() {
-    if (!selectedItem || selectedItemIsSnoozed || selectedItemIsMuted) return
+    if (!selectedItem || !canPinLocalQueueItem(selectedItemLocalState)) return
     const itemId = selectedItem.id
     const wasPinned = selectedItemIsPinned
     updateLocalItemState(itemId, (current) => ({
@@ -406,7 +409,7 @@ export function InboxPage() {
   }
 
   function muteSelected() {
-    if (!selectedItem || selectedItemIsMuted) return
+    if (!selectedItem || !canMuteLocalQueueItem(selectedItemLocalState)) return
     const itemId = selectedItem.id
     updateLocalItemState(itemId, () => ({ muted: true }))
     moveSelectionAfterHiding(itemId)
