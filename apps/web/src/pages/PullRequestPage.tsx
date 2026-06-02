@@ -4,7 +4,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query"
-import type { ComponentType, ReactNode } from "react"
+import { useState, type ComponentType, type ReactNode } from "react"
 import {
   ArrowLeft,
   Check,
@@ -33,6 +33,7 @@ const reviewDecisionLabels: Record<ReviewDecision, string> = {
 export function PullRequestPage() {
   const { pullRequestId } = useParams({ from: "/pull-requests/$pullRequestId" })
   const queryClient = useQueryClient()
+  const [caughtUpError, setCaughtUpError] = useState(false)
   const inboxQuery = useQuery({
     queryKey: ["reviewer-inbox"],
     queryFn: getReviewerInbox,
@@ -73,8 +74,11 @@ export function PullRequestPage() {
     event.isNew && event.action.toLowerCase().includes("requested your review")
   )
   async function markCaughtUp() {
+    setCaughtUpError(false)
     markSeenMutation.reset()
-    await markSeenMutation.mutateAsync(loadedItem.id).catch(() => undefined)
+    await markSeenMutation.mutateAsync(loadedItem.id).catch(() => {
+      setCaughtUpError(true)
+    })
   }
 
   return (
@@ -100,7 +104,7 @@ export function PullRequestPage() {
           item={loadedItem}
           newEventCount={newEvents.length}
           isMarkingSeen={markSeenMutation.isPending}
-          caughtUpError={markSeenMutation.isError}
+          caughtUpError={caughtUpError}
           onCaughtUp={() => void markCaughtUp()}
         />
       </div>

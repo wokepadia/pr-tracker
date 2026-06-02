@@ -99,6 +99,7 @@ export function InboxPage() {
   const [localQueueState, setLocalQueueState] = useState<
     Partial<Record<string, LocalQueueState>>
   >({})
+  const [failedCaughtUpItemId, setFailedCaughtUpItemId] = useState<string>()
   const inboxView = useMemo(
     () => (inboxQuery.data ? buildInboxView(inboxQuery.data) : undefined),
     [inboxQuery.data]
@@ -153,8 +154,12 @@ export function InboxPage() {
 
   async function markSelectedCaughtUp() {
     if (!selectedItem) return
+    const itemId = selectedItem.id
+    setFailedCaughtUpItemId(undefined)
     markSeenMutation.reset()
-    await markSeenMutation.mutateAsync(selectedItem.id).catch(() => undefined)
+    await markSeenMutation.mutateAsync(itemId).catch(() => {
+      setFailedCaughtUpItemId(itemId)
+    })
   }
 
   function snoozeSelected() {
@@ -311,7 +316,7 @@ export function InboxPage() {
             <QuickPeekPanel
               item={selectedItem}
               isMarkingSeen={markSeenMutation.isPending}
-              caughtUpError={markSeenMutation.isError}
+              caughtUpError={failedCaughtUpItemId === selectedItem.id}
               onSnooze={snoozeSelected}
               onCaughtUp={() => void markSelectedCaughtUp()}
             />
