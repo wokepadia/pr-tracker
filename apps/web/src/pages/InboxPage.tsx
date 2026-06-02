@@ -94,6 +94,12 @@ const laneToneClasses: Record<LaneDefinition["tone"], string> = {
   quiet: "bg-white/20",
 }
 
+const primaryQueueLaneIds: LaneId[] = [
+  "needs_review",
+  "updated_since_review",
+  "waiting_on_author",
+]
+
 const workflowLabels: Record<LaneId, string> = {
   needs_review: "Needs you",
   updated_since_review: "Changed since",
@@ -147,12 +153,22 @@ export function InboxPage() {
   const [openLaneIds, setOpenLaneIds] = useState<Set<LaneId>>(
     () => new Set(lanes.filter((lane) => lane.defaultOpen).map((lane) => lane.id))
   )
-  const visibleItems = useMemo(
+  const actionQueueGroups = useMemo(
     () =>
-      lanes.flatMap((lane) =>
-        openLaneIds.has(lane.id) ? laneItems[lane.id] : []
+      lanes.filter(
+        (lane) =>
+          primaryQueueLaneIds.includes(lane.id) ||
+          laneItems[lane.id].length > 0 ||
+          openLaneIds.has(lane.id)
       ),
     [laneItems, openLaneIds]
+  )
+  const visibleItems = useMemo(
+    () =>
+      actionQueueGroups.flatMap((lane) =>
+        openLaneIds.has(lane.id) ? laneItems[lane.id] : []
+      ),
+    [actionQueueGroups, laneItems, openLaneIds]
   )
   const repositoryGroups = useMemo(
     () => buildRepositoryGroups(activeItems),
@@ -364,7 +380,7 @@ export function InboxPage() {
           <div className="min-w-0 border-b border-white/10 xl:border-r xl:border-b-0">
             <div className="h-full overflow-y-auto pt-2 pb-7">
               {groupMode === "action"
-                ? lanes.map((lane) => (
+                ? actionQueueGroups.map((lane) => (
                     <QueueLane
                       key={lane.id}
                       group={lane}
@@ -440,37 +456,57 @@ function InboxSidebar({
           attention={laneItems.needs_review.length > 0}
           label={workflowLabels.needs_review}
           count={laneItems.needs_review.length}
-          onClick={() => onSelectLane("needs_review")}
+          onClick={
+            laneItems.needs_review.length > 0
+              ? () => onSelectLane("needs_review")
+              : undefined
+          }
         />
         <SidebarItem
           active={activeLaneId === "updated_since_review"}
           attention={laneItems.updated_since_review.length > 0}
           label={workflowLabels.updated_since_review}
           count={laneItems.updated_since_review.length}
-          onClick={() => onSelectLane("updated_since_review")}
+          onClick={
+            laneItems.updated_since_review.length > 0
+              ? () => onSelectLane("updated_since_review")
+              : undefined
+          }
         />
         <SidebarItem
           active={activeLaneId === "waiting_on_author"}
           attention={laneItems.waiting_on_author.length > 0}
           label={workflowLabels.waiting_on_author}
           count={laneItems.waiting_on_author.length}
-          onClick={() => onSelectLane("waiting_on_author")}
+          onClick={
+            laneItems.waiting_on_author.length > 0
+              ? () => onSelectLane("waiting_on_author")
+              : undefined
+          }
         />
         <SidebarItem
           active={activeLaneId === "approved"}
           label={workflowLabels.approved}
           count={laneItems.approved.length}
-          onClick={() => onSelectLane("approved")}
-        />
-        <SidebarItem
-          active={activeLaneId === "watching"}
-          label={workflowLabels.watching}
-          count={laneItems.watching.length}
-          onClick={() => onSelectLane("watching")}
+          onClick={
+            laneItems.approved.length > 0
+              ? () => onSelectLane("approved")
+              : undefined
+          }
         />
       </SidebarSection>
       <SidebarSection label="Stashed">
         <SidebarItem label="Snoozed" count={snoozedCount} />
+        <SidebarItem
+          active={activeLaneId === "watching"}
+          label="Watching"
+          count={laneItems.watching.length}
+          onClick={
+            laneItems.watching.length > 0
+              ? () => onSelectLane("watching")
+              : undefined
+          }
+        />
       </SidebarSection>
       <div className="mt-4 rounded-md border border-white/10 bg-white/[0.03] p-3 text-[11px] leading-5 text-[#8e8b82] sm:mt-auto">
         Review decisions still happen in GitHub. This surface only tracks where
