@@ -62,7 +62,9 @@ function parsePullRequestQueueState(
     muted: readBooleanProperty(value, "muted"),
   }
 
-  return hasLocalQueueState(state) ? state : undefined
+  const normalizedState = normalizeLocalQueueState(state)
+
+  return hasLocalQueueState(normalizedState) ? normalizedState : undefined
 }
 
 export function hasLocalQueueState(
@@ -87,6 +89,24 @@ export function canMuteLocalQueueItem(
   state: LocalPullRequestQueueState | undefined
 ): boolean {
   return !state?.snoozed && !state?.muted
+}
+
+function normalizeLocalQueueState(
+  state: LocalPullRequestQueueState
+): LocalPullRequestQueueState {
+  if (state.snoozed) {
+    return { snoozed: true }
+  }
+
+  if (state.muted) {
+    return { muted: true }
+  }
+
+  if (state.pinned) {
+    return { pinned: true }
+  }
+
+  return {}
 }
 
 function readBooleanProperty(

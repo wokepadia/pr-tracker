@@ -30,14 +30,29 @@ describe("local queue state", () => {
         JSON.stringify({
           pr_1: { pinned: true },
           pr_2: { muted: true },
-          pr_3: { pinned: true, muted: true },
         }),
     }
 
     expect(loadLocalQueueState(storage)).toEqual({
       pr_1: { pinned: true },
       pr_2: { muted: true },
-      pr_3: { pinned: true, muted: true },
+    })
+  })
+
+  it("normalizes conflicting persisted local states", () => {
+    const storage = {
+      getItem: () =>
+        JSON.stringify({
+          pr_1: { snoozed: true, pinned: true, muted: true },
+          pr_2: { pinned: true, muted: true },
+          pr_3: { pinned: true },
+        }),
+    }
+
+    expect(loadLocalQueueState(storage)).toEqual({
+      pr_1: { snoozed: true },
+      pr_2: { muted: true },
+      pr_3: { pinned: true },
     })
   })
 
