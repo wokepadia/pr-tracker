@@ -38,6 +38,8 @@ import {
 
 type LaneId = ReviewQueueBucketId
 
+type QueueGroupMode = "action" | "repository"
+
 type LocalQueueState = "snoozed"
 
 interface LaneDefinition {
@@ -45,6 +47,12 @@ interface LaneDefinition {
   label: string
   tone: "hot" | "changed" | "quiet"
   defaultOpen: boolean
+}
+
+interface QueueGroupDefinition {
+  id: string
+  label: string
+  tone: LaneDefinition["tone"]
 }
 
 const lanes: LaneDefinition[] = [
@@ -114,6 +122,7 @@ export function InboxPage() {
     Partial<Record<string, LocalQueueState>>
   >({})
   const [failedCaughtUpItemId, setFailedCaughtUpItemId] = useState<string>()
+  const [groupMode, setGroupMode] = useState<QueueGroupMode>("action")
   const inboxView = useMemo(
     () => (inboxQuery.data ? buildInboxView(inboxQuery.data) : undefined),
     [inboxQuery.data]
@@ -145,14 +154,31 @@ export function InboxPage() {
       ),
     [laneItems, openLaneIds]
   )
+  const repositoryGroups = useMemo(
+    () => buildRepositoryGroups(activeItems),
+    [activeItems]
+  )
+  const [openRepositoryIds, setOpenRepositoryIds] = useState<Set<string>>(
+    () => new Set()
+  )
+  const visibleRepositoryItems = useMemo(
+    () =>
+      repositoryGroups.flatMap((group) =>
+        openRepositoryIds.has(group.id) ? group.items : []
+      ),
+    [openRepositoryIds, repositoryGroups]
+  )
+  const visibleQueueItems =
+    groupMode === "action" ? visibleItems : visibleRepositoryItems
   const [selectedId, setSelectedId] = useState<string>(
-    () => visibleItems[0]?.id ?? activeItems[0]?.id ?? ""
+    () => visibleQueueItems[0]?.id ?? activeItems[0]?.id ?? ""
   )
   const selectedItem =
     activeItems.find((item) => item.id === selectedId) ?? activeItems[0]
 
   useEffect(() => {
-    if (visibleItems.length > 0 || activeItems.length === 0) return
+    if (groupMode !== "action") return
+    if (visibleQueueItems.length > 0 || activeItems.length === 0) return
 
     const firstNonEmptyLane = lanes.find((lane) => laneItems[lane.id].length > 0)
     if (!firstNonEmptyLane) return
@@ -163,17 +189,33 @@ export function InboxPage() {
       next.add(firstNonEmptyLane.id)
       return next
     })
-  }, [activeItems.length, laneItems, visibleItems.length])
+  }, [activeItems.length, groupMode, laneItems, visibleQueueItems.length])
 
   useEffect(() => {
-    if (!visibleItems.some((item) => item.id === selectedId)) {
-      setSelectedId(visibleItems[0]?.id ?? activeItems[0]?.id ?? "")
+    if (groupMode !== "repository") return
+    if (repositoryGroups.length === 0) return
+
+    setOpenRepositoryIds((current) => {
+      const repositoryIds = new Set(repositoryGroups.map((group) => group.id))
+      const retainedIds = [...current].filter((id) => repositoryIds.has(id))
+      const hasEveryRepositoryOpen =
+        retainedIds.length === repositoryGroups.length &&
+        retainedIds.every((id) => current.has(id))
+
+      if (hasEveryRepositoryOpen) return current
+      return new Set(repositoryGroups.map((group) => group.id))
+    })
+  }, [groupMode, repositoryGroups])
+
+  useEffect(() => {
+    if (!visibleQueueItems.some((item) => item.id === selectedId)) {
+      setSelectedId(visibleQueueItems[0]?.id ?? activeItems[0]?.id ?? "")
     }
-  }, [activeItems, selectedId, visibleItems])
+  }, [activeItems, selectedId, visibleQueueItems])
 
   function moveSelectionAfterHiding(itemId: string) {
-    const currentIndex = visibleItems.findIndex((item) => item.id === itemId)
-    const remainingVisible = visibleItems.filter((item) => item.id !== itemId)
+    const currentIndex = visibleQueueItems.findIndex((item) => item.id === itemId)
+    const remainingVisible = visibleQueueItems.filter((item) => item.id !== itemId)
     const nextVisible =
       remainingVisible[Math.min(currentIndex, remainingVisible.length - 1)]
     const nextActive = activeItems.find((item) => item.id !== itemId)
@@ -211,6 +253,7 @@ export function InboxPage() {
   }
 
   function focusLane(laneId: LaneId) {
+    setGroupMode("action")
     setOpenLaneIds((current) => {
       if (current.has(laneId)) return current
       const next = new Set(current)
@@ -248,16 +291,17 @@ export function InboxPage() {
 
       if (event.key === "j" || event.key === "k") {
         setSelectedId((currentId) => {
-          const currentIndex = visibleItems.findIndex(
+          const keyboardItems = visibleQueueItems
+          const currentIndex = keyboardItems.findIndex(
             (item) => item.id === currentId
           )
-          if (currentIndex < 0) return visibleItems[0]?.id ?? currentId
+          if (currentIndex < 0) return keyboardItems[0]?.id ?? currentId
           const direction = event.key === "j" ? 1 : -1
           const nextIndex = Math.min(
-            visibleItems.length - 1,
+            keyboardItems.length - 1,
             Math.max(0, currentIndex + direction)
           )
-          return visibleItems[nextIndex]?.id ?? currentId
+          return keyboardItems[nextIndex]?.id ?? currentId
         })
         return
       }
@@ -282,7 +326,7 @@ export function InboxPage() {
 
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [openSelectedDetail, selectedItem, visibleItems, markSeenMutation])
+  }, [openSelectedDetail, selectedItem, visibleQueueItems, markSeenMutation])
 
   if (inboxQuery.isLoading) {
     return <InboxStatusPanel title="Loading review inbox" />
@@ -311,31 +355,45 @@ export function InboxPage() {
       />
 
       <section className="flex min-w-0 flex-col bg-[#242420]">
-        <InboxHeader syncLabel={formatSyncLabel(inboxQuery.dataUpdatedAt)} />
+        <InboxHeader
+          groupMode={groupMode}
+          syncLabel={formatSyncLabel(inboxQuery.dataUpdatedAt)}
+          onGroupModeChange={setGroupMode}
+        />
         <div className="grid min-h-[697px] grid-cols-1 xl:grid-cols-[58fr_42fr]">
           <div className="min-w-0 border-b border-white/10 xl:border-r xl:border-b-0">
             <div className="h-full overflow-y-auto pt-2 pb-7">
-              {lanes.map((lane) => (
-                <QueueLane
-                  key={lane.id}
-                  lane={lane}
-                  isOpen={openLaneIds.has(lane.id)}
-                  items={laneItems[lane.id]}
-                  selectedId={selectedItem?.id ?? ""}
-                  onToggle={() => {
-                    setOpenLaneIds((current) => {
-                      const next = new Set(current)
-                      if (next.has(lane.id)) {
-                        next.delete(lane.id)
-                      } else {
-                        next.add(lane.id)
-                      }
-                      return next
-                    })
-                  }}
-                  onSelect={setSelectedId}
-                />
-              ))}
+              {groupMode === "action"
+                ? lanes.map((lane) => (
+                    <QueueLane
+                      key={lane.id}
+                      group={lane}
+                      isOpen={openLaneIds.has(lane.id)}
+                      items={laneItems[lane.id]}
+                      selectedId={selectedItem?.id ?? ""}
+                      onToggle={() => {
+                        setOpenLaneIds((current) =>
+                          toggleOpenGroup(current, lane.id)
+                        )
+                      }}
+                      onSelect={setSelectedId}
+                    />
+                  ))
+                : repositoryGroups.map((group) => (
+                    <QueueLane
+                      key={group.id}
+                      group={group}
+                      isOpen={openRepositoryIds.has(group.id)}
+                      items={group.items}
+                      selectedId={selectedItem?.id ?? ""}
+                      onToggle={() => {
+                        setOpenRepositoryIds((current) =>
+                          toggleOpenGroup(current, group.id)
+                        )
+                      }}
+                      onSelect={setSelectedId}
+                    />
+                  ))}
             </div>
           </div>
           {selectedItem ? (
@@ -520,15 +578,39 @@ function SidebarItem({
   )
 }
 
-function InboxHeader({ syncLabel }: { syncLabel: string }) {
+function InboxHeader({
+  groupMode,
+  syncLabel,
+  onGroupModeChange,
+}: {
+  groupMode: QueueGroupMode
+  syncLabel: string
+  onGroupModeChange: (mode: QueueGroupMode) => void
+}) {
   return (
     <div className="flex h-[62px] items-center border-b border-white/10 px-5">
       <h1 className="text-[17px] font-semibold tracking-tight">Review Inbox</h1>
       <span className="ml-4 font-mono text-[11px] text-[#8e8b82]">
         · {syncLabel}
       </span>
-      <div className="ml-auto inline-flex h-8 items-center rounded-md border border-white/10 px-3 font-mono text-[11px] text-[#c9c5ba]">
-        group: action
+      <div
+        className="ml-auto inline-flex h-8 items-center gap-1 rounded-md border border-white/10 p-1 font-mono text-[11px] text-[#c9c5ba]"
+        role="group"
+        aria-label="Group pull requests"
+      >
+        <span className="px-2 text-[#8e8b82]">group:</span>
+        <GroupModeButton
+          active={groupMode === "action"}
+          onClick={() => onGroupModeChange("action")}
+        >
+          action
+        </GroupModeButton>
+        <GroupModeButton
+          active={groupMode === "repository"}
+          onClick={() => onGroupModeChange("repository")}
+        >
+          repo
+        </GroupModeButton>
       </div>
       <div className="ml-3 hidden items-center gap-1.5 font-mono text-[10px] tracking-[0.08em] text-[#8e8b82] uppercase lg:flex">
         <Kbd>j</Kbd>
@@ -537,6 +619,30 @@ function InboxHeader({ syncLabel }: { syncLabel: string }) {
         <span>to move</span>
       </div>
     </div>
+  )
+}
+
+function GroupModeButton({
+  active,
+  children,
+  onClick,
+}: {
+  active: boolean
+  children: ReactNode
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        "h-6 rounded-[4px] px-2 text-[#8e8b82] hover:bg-white/[0.04] hover:text-[#f0ede4]",
+        active && "bg-[#d0a24c] font-semibold text-[#191916] hover:bg-[#d0a24c] hover:text-[#191916]"
+      )}
+    >
+      {children}
+    </button>
   )
 }
 
@@ -555,14 +661,14 @@ function formatSyncLabel(dataUpdatedAt: number): string {
 }
 
 function QueueLane({
-  lane,
+  group,
   isOpen,
   items,
   selectedId,
   onToggle,
   onSelect,
 }: {
-  lane: LaneDefinition
+  group: QueueGroupDefinition
   isOpen: boolean
   items: ReviewQueueItemView[]
   selectedId: string
@@ -577,20 +683,20 @@ function QueueLane({
         aria-expanded={isOpen}
         className="flex w-full items-center gap-3 px-5 py-3 text-left"
       >
-        <span className={cn("h-5 w-1 rounded-full", laneToneClasses[lane.tone])} />
+        <span className={cn("h-5 w-1 rounded-full", laneToneClasses[group.tone])} />
         {isOpen ? (
           <ChevronDown className="h-3.5 w-3.5 text-[#77736a]" />
         ) : (
           <ChevronRight className="h-3.5 w-3.5 text-[#77736a]" />
         )}
         <span className="font-mono text-[11px] tracking-[0.12em] text-[#b7b2a7] uppercase">
-          {lane.label}
+          {group.label}
         </span>
         <Badge
           variant="outline"
           className={cn(
             "h-5 rounded-full border-white/10 bg-transparent px-2 font-mono text-[11px] text-[#8e8b82]",
-            lane.tone === "hot" && "border-[#d0a24c] bg-[#d0a24c] text-[#191916]"
+            group.tone === "hot" && "border-[#d0a24c] bg-[#d0a24c] text-[#191916]"
           )}
         >
           {items.length}
@@ -990,6 +1096,59 @@ function itemBelongsToBucket(
   }
 
   return item.laneId === bucketId
+}
+
+function buildRepositoryGroups(
+  items: ReviewQueueItemView[]
+): Array<QueueGroupDefinition & { items: ReviewQueueItemView[] }> {
+  const groups = new Map<
+    string,
+    QueueGroupDefinition & { items: ReviewQueueItemView[] }
+  >()
+
+  for (const item of items) {
+    const existingGroup = groups.get(item.repository)
+
+    if (existingGroup) {
+      existingGroup.items.push(item)
+      existingGroup.tone = strongerTone(existingGroup.tone, toneForItem(item))
+      continue
+    }
+
+    groups.set(item.repository, {
+      id: item.repository,
+      label: item.repository,
+      tone: toneForItem(item),
+      items: [item],
+    })
+  }
+
+  return [...groups.values()]
+}
+
+function toneForItem(item: ReviewQueueItemView): LaneDefinition["tone"] {
+  if (item.waitingOn === "you") return "hot"
+  if (item.laneId === "updated_since_review") return "changed"
+  return "quiet"
+}
+
+function strongerTone(
+  current: LaneDefinition["tone"],
+  next: LaneDefinition["tone"]
+): LaneDefinition["tone"] {
+  if (current === "hot" || next === "hot") return "hot"
+  if (current === "changed" || next === "changed") return "changed"
+  return "quiet"
+}
+
+function toggleOpenGroup<T extends string>(current: Set<T>, id: T): Set<T> {
+  const next = new Set(current)
+  if (next.has(id)) {
+    next.delete(id)
+  } else {
+    next.add(id)
+  }
+  return next
 }
 
 function EmptyPeekPanel() {
