@@ -1,5 +1,7 @@
 import type { ReviewQueueItemView } from "@/reviewer/view-model"
 
+const SELECTED_QUEUE_ITEM_KEY = "pr-tracker:selected-review-queue-item:v1"
+
 export type QueueGroupMode =
   | "action"
   | "repository"
@@ -24,6 +26,24 @@ export function resolveVisibleQueueItem(
   selectedId: string
 ): ReviewQueueItemView | undefined {
   return visibleItems.find((item) => item.id === selectedId) ?? visibleItems[0]
+}
+
+export function loadStoredSelectedQueueItemId(
+  storage: Pick<Storage, "getItem">
+): string {
+  const value = storage.getItem(SELECTED_QUEUE_ITEM_KEY)
+  return value ?? ""
+}
+
+export function saveStoredSelectedQueueItemId(
+  storage: Pick<Storage, "removeItem" | "setItem">,
+  selectedId: string
+): void {
+  if (selectedId) {
+    storage.setItem(SELECTED_QUEUE_ITEM_KEY, selectedId)
+  } else {
+    storage.removeItem(SELECTED_QUEUE_ITEM_KEY)
+  }
 }
 
 export function getEmptyPeekCopy(

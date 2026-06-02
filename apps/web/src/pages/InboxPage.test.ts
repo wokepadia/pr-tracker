@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest"
 import {
   filterQueueItems,
   getEmptyPeekCopy,
+  loadStoredSelectedQueueItemId,
   resolveVisibleQueueItem,
+  saveStoredSelectedQueueItemId,
 } from "./inbox-helpers"
 import type { ReviewQueueItemView } from "@/reviewer/view-model"
 
@@ -109,6 +111,43 @@ describe("inbox empty state copy", () => {
       title: "No matching review items",
       detail: "No items match the current search in this view.",
     })
+  })
+})
+
+describe("inbox selected item storage", () => {
+  it("loads and saves the session selected queue item", () => {
+    const reads = {
+      getItem: () => "pr_2",
+    }
+    const writes: Array<[string, string]> = []
+    const storage = {
+      setItem: (key: string, value: string) => {
+        writes.push([key, value])
+      },
+      removeItem: (_key: string) => undefined,
+    }
+
+    expect(loadStoredSelectedQueueItemId(reads)).toBe("pr_2")
+
+    saveStoredSelectedQueueItemId(storage, "pr_3")
+
+    expect(writes).toEqual([
+      ["pr-tracker:selected-review-queue-item:v1", "pr_3"],
+    ])
+  })
+
+  it("clears the stored selected queue item for empty selections", () => {
+    const removals: string[] = []
+    const storage = {
+      setItem: (_key: string, _value: string) => undefined,
+      removeItem: (key: string) => {
+        removals.push(key)
+      },
+    }
+
+    saveStoredSelectedQueueItemId(storage, "")
+
+    expect(removals).toEqual(["pr-tracker:selected-review-queue-item:v1"])
   })
 })
 

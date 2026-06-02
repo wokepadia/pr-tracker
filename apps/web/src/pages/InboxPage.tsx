@@ -54,7 +54,9 @@ import {
 import {
   filterQueueItems,
   getEmptyPeekCopy,
+  loadStoredSelectedQueueItemId,
   resolveVisibleQueueItem,
+  saveStoredSelectedQueueItemId,
   type QueueGroupMode,
 } from "./inbox-helpers"
 
@@ -256,7 +258,13 @@ export function InboxPage() {
             ? searchedSnoozedItems
             : searchedMutedItems
   const [selectedId, setSelectedId] = useState<string>(
-    () => visibleQueueItems[0]?.id ?? activeItems[0]?.id ?? ""
+    () =>
+      (typeof window !== "undefined"
+        ? loadStoredSelectedQueueItemId(window.sessionStorage)
+        : "") ||
+      visibleQueueItems[0]?.id ||
+      activeItems[0]?.id ||
+      ""
   )
   const selectedItem = resolveVisibleQueueItem(visibleQueueItems, selectedId)
   const selectedItemLocalState = selectedItem
@@ -269,6 +277,10 @@ export function InboxPage() {
   useEffect(() => {
     saveLocalQueueState(window.localStorage, localQueueState)
   }, [localQueueState])
+
+  useEffect(() => {
+    saveStoredSelectedQueueItemId(window.sessionStorage, selectedId)
+  }, [selectedId])
 
   useEffect(() => {
     if (groupMode !== "action") return
