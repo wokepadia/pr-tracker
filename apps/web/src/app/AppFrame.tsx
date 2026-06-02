@@ -5,7 +5,9 @@ export function AppFrame() {
     <div className="min-h-screen bg-[#f6f7f8] text-foreground">
       <header className="fixed inset-x-0 top-0 z-20 flex h-[48px] items-center border-b border-border bg-white/95 px-5 text-xs text-muted-foreground backdrop-blur">
         <Link to="/" className="mr-auto inline-flex items-center gap-2 font-medium text-foreground">
-          <span className="h-2.5 w-2.5 rounded-full bg-amber-500 shadow-[0_0_0_3px_rgb(245_158_11_/_0.16)]" />
+          <span className="flex h-4 w-4 items-center justify-center rounded-[3px] bg-foreground text-[9px] font-bold text-background">
+            R
+          </span>
           Review Queue
         </Link>
         <div className="ml-auto hidden text-right md:block">
