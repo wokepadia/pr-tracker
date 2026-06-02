@@ -3,7 +3,7 @@ import {
   filterQueueItems,
   getEmptyPeekCopy,
   resolveVisibleQueueItem,
-} from "./InboxPage"
+} from "./inbox-helpers"
 import type { ReviewQueueItemView } from "@/reviewer/view-model"
 
 describe("inbox queue search", () => {

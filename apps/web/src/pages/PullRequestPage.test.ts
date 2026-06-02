@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { detailAttentionLabel } from "./PullRequestPage"
+import { detailAttentionLabel } from "./pull-request-helpers"
 import type { ReviewQueueItemView } from "@/reviewer/view-model"
 
 describe("pull request detail attention label", () => {

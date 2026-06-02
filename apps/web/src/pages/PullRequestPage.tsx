@@ -42,6 +42,7 @@ import {
   type LocalPullRequestQueueState,
   type LocalQueueStateByPullRequestId,
 } from "@/reviewer/local-queue-state"
+import { detailAttentionLabel } from "./pull-request-helpers"
 import type { ReviewDecision } from "@pr-tracker/core"
 
 const reviewDecisionLabels: Record<ReviewDecision, string> = {
@@ -864,17 +865,6 @@ function detailQueueLabel(item: ReviewQueueItemView): string {
   if (item.laneId === "caught_up") return "Caught up"
   if (item.laneId === "stale") return "Stale"
   return "Watching"
-}
-
-export function detailAttentionLabel(
-  item: Pick<ReviewQueueItemView, "waitingOn" | "laneId">
-): string {
-  if (item.waitingOn === "you") return "waiting on you"
-  if (item.waitingOn === "author") return "waiting on author"
-  if (item.laneId === "approved") return "approved"
-  if (item.laneId === "caught_up") return "caught up"
-  if (item.laneId === "stale") return "stale"
-  return "watching"
 }
 
 function requestStateLabel(item: ReviewQueueItemView): string {
