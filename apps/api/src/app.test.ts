@@ -139,6 +139,18 @@ describe("api app", () => {
     });
   });
 
+  it("does not create caught-up state for unknown pull requests", async () => {
+    const seenResponse = await app.request("/api/pull-requests/missing/seen", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ lastSeenAt: "2026-06-01T12:00:00.000Z" })
+    });
+    const body = await seenResponse.json();
+
+    expect(seenResponse.status).toBe(404);
+    expect(body).toEqual({ error: "Pull request not found." });
+  });
+
   it("accepts unsigned local webhook payloads when GitHub env is absent", async () => {
     const response = await app.request("/webhooks/github", {
       method: "POST",

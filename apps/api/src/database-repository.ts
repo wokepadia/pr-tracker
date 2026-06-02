@@ -118,6 +118,16 @@ export function createDatabaseRepository(
     async markSeen(input) {
       const orm = await getOrm();
       const now = new Date().toISOString();
+      const [pullRequest] = await orm.em
+        .getConnection()
+        .execute<Array<{ id: string }>>(
+          `select id from pull_requests where id = ? limit 1`,
+          [input.pullRequestId]
+        );
+
+      if (!pullRequest) {
+        return undefined;
+      }
 
       await orm.em.getConnection().execute(
         `

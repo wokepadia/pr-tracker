@@ -22,7 +22,7 @@ export interface ReviewerInboxRepository {
   markSeen(input: {
     pullRequestId: string;
     lastSeenAt: string;
-  }): Promise<{ pullRequestId: string; lastSeenAt: string }>;
+  }): Promise<{ pullRequestId: string; lastSeenAt: string } | undefined>;
   close?(): Promise<void>;
 }
 
@@ -70,6 +70,13 @@ export function createSampleRepository(): ReviewerInboxRepository {
     },
 
     async markSeen(input) {
+      const pullRequest = samplePullRequests.find(
+        (item) => item.id === input.pullRequestId
+      );
+      if (!pullRequest) {
+        return undefined;
+      }
+
       lastSeenAtByPullRequestId[input.pullRequestId] = input.lastSeenAt;
       return input;
     }

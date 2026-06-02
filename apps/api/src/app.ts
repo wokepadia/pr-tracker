@@ -62,14 +62,19 @@ export function createApp(options?: {
   app.post("/api/pull-requests/:id/seen", async (c) => {
     const id = c.req.param("id");
     const body = await c.req.json().catch(() => ({}));
-
-    return c.json(await repository.markSeen({
+    const result = await repository.markSeen({
       pullRequestId: id,
       lastSeenAt:
         typeof body.lastSeenAt === "string"
           ? body.lastSeenAt
           : new Date().toISOString()
-    }));
+    });
+
+    if (!result) {
+      return c.json({ error: "Pull request not found." }, 404);
+    }
+
+    return c.json(result);
   });
 
   app.post("/webhooks/github", async (c) => {
