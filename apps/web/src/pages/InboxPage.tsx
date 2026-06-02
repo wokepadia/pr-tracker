@@ -243,7 +243,7 @@ export function InboxPage() {
   }
 
   return (
-    <div className="grid min-h-[760px] grid-cols-1 lg:grid-cols-[212px_1fr]">
+    <div className="grid min-h-[760px] grid-cols-1 sm:grid-cols-[190px_1fr] lg:grid-cols-[212px_1fr]">
       <InboxSidebar
         laneItems={laneItems}
         approvedCount={inboxView.approvedCount}
@@ -311,7 +311,7 @@ function InboxSidebar({
   snoozedCount: number
 }) {
   return (
-    <aside className="flex flex-col border-b border-white/10 bg-[#191916] px-3 py-4 lg:border-r lg:border-b-0">
+    <aside className="flex flex-col border-b border-white/10 bg-[#191916] px-3 py-4 sm:border-r sm:border-b-0">
       <div className="flex items-center gap-2 px-2 pt-1 pb-4">
         <div className="flex h-4 w-4 items-center justify-center rounded-[3px] bg-[#d0a24c] text-[9px] font-bold text-[#191916]">
           R
@@ -341,7 +341,7 @@ function InboxSidebar({
         <SidebarItem label="Snoozed" count={snoozedCount} />
         <SidebarItem label="Watching" count={watchingCount} />
       </SidebarSection>
-      <div className="mt-4 rounded-md border border-white/10 bg-white/[0.03] p-3 text-[11px] leading-5 text-[#8e8b82] lg:mt-auto">
+      <div className="mt-4 rounded-md border border-white/10 bg-white/[0.03] p-3 text-[11px] leading-5 text-[#8e8b82] sm:mt-auto">
         Review decisions still happen in GitHub. This surface only tracks where
         your attention belongs.
       </div>
@@ -569,10 +569,20 @@ function QueueRow({
           </span>
           <span className="text-white/20">·</span>
           <span>{item.authorLogin}</span>
-          <FactChip icon={GitCommitHorizontal} text={`+${item.newCommitCount}`} active={item.newCommitCount > 0} />
-          <FactChip icon={MessageSquareText} text={`${item.newReplyCount}`} active={item.newReplyCount > 0} />
-          <FactChip icon={Inbox} text={`${item.unresolvedThreadCount}/${item.totalThreadCount}`} active={item.unresolvedThreadCount > 0} />
-          {reReviewRequested && <FactChip icon={Eye} text="re-review" active />}
+          {item.newCommitCount > 0 ? (
+            <FactChip icon={GitCommitHorizontal} text={`+${item.newCommitCount}`} active />
+          ) : null}
+          {item.newReplyCount > 0 ? (
+            <FactChip icon={MessageSquareText} text={`${item.newReplyCount}`} active />
+          ) : null}
+          {item.totalThreadCount > 0 ? (
+            <FactChip
+              icon={Inbox}
+              text={`${item.unresolvedThreadCount}/${item.totalThreadCount}`}
+              active={item.unresolvedThreadCount > 0}
+            />
+          ) : null}
+          {reReviewRequested ? <FactChip icon={Eye} text="review req" active /> : null}
         </span>
       </span>
       <span className="flex min-w-[74px] flex-col items-end gap-1 font-mono">

@@ -219,6 +219,37 @@ function ContextBand({
   newEventCount: number
   reReviewRequested: boolean
 }) {
+  const changeCards = [
+    {
+      id: "commits",
+      icon: GitCommitHorizontal,
+      value: `+${item.newCommitCount}`,
+      label: "new commits",
+      show: item.newCommitCount > 0,
+    },
+    {
+      id: "replies",
+      icon: MessageSquareText,
+      value: String(item.newReplyCount),
+      label: "new replies",
+      show: item.newReplyCount > 0,
+    },
+    {
+      id: "threads",
+      value: `${item.unresolvedThreadCount}/${item.totalThreadCount}`,
+      label: "threads open",
+      show: item.totalThreadCount > 0,
+      hot: item.unresolvedThreadCount > 0,
+    },
+    {
+      id: "review",
+      value: "yes",
+      label: "re-review asked",
+      show: reReviewRequested,
+      hot: true,
+    },
+  ].filter((card) => card.show)
+
   return (
     <section className="px-7 py-5">
       <div className="rounded-lg border border-white/10 bg-[#1f1f1c] p-5">
@@ -228,27 +259,23 @@ function ContextBand({
           <span className="text-white/20">·</span>
           {item.lastSeenAt}
         </div>
-        <div className="mt-4 grid grid-cols-4 gap-3">
-          <ChangeCard
-            icon={GitCommitHorizontal}
-            value={`+${item.newCommitCount}`}
-            label="new commits"
-          />
-          <ChangeCard
-            icon={MessageSquareText}
-            value={String(item.newReplyCount)}
-            label="new replies"
-          />
-          <ChangeCard
-            value={`${item.unresolvedThreadCount}/${item.totalThreadCount}`}
-            label="threads open"
-          />
-          <ChangeCard
-            value={reReviewRequested ? "yes" : "no"}
-            label="re-review asked"
-            hot={reReviewRequested}
-          />
-        </div>
+        {changeCards.length > 0 ? (
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {changeCards.map((card) => (
+              <ChangeCard
+                key={card.id}
+                icon={card.icon}
+                value={card.value}
+                label={card.label}
+                hot={card.hot}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="mt-4 rounded-md border border-white/10 bg-white/[0.03] px-4 py-3 text-[13px] leading-5 text-[#d8d3c8]">
+            No unseen review activity since your last visit.
+          </div>
+        )}
         <div className="mt-4 grid gap-2 text-[13px] leading-5 text-[#d8d3c8]">
           {item.activityEvents
             .filter((event) => event.isNew)
@@ -392,7 +419,9 @@ function DetailSideRail({
             className="h-9 justify-center bg-[#d0a24c] text-[#191916] hover:bg-[#e0b45f]"
           >
             <a href={item.url} target="_blank" rel="noreferrer">
-              Review the {newEventCount} new events
+              {newEventCount > 0
+                ? `Review the ${newEventCount} new events`
+                : "Review in GitHub"}
               <ExternalLink className="h-4 w-4" />
             </a>
           </Button>
@@ -429,7 +458,12 @@ function DetailSideRail({
           label="mergeable"
           value={item.waitingOn === "you" ? "blocked · you" : "waiting · author"}
         />
-        <RailKeyValue label="size" value={`+${totalAdditions} / -${totalDeletions}`} />
+        {item.changedFilesSinceLastSeen.length > 0 ? (
+          <RailKeyValue
+            label="size"
+            value={`+${totalAdditions} / -${totalDeletions}`}
+          />
+        ) : null}
       </RailCard>
 
       {item.changedFilesSinceLastSeen.length > 0 ? (
