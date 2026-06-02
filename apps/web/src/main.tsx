@@ -44,8 +44,6 @@ const routeTree = rootRoute.addChildren([inboxRoute, pullRequestRoute]);
 
 const router = createRouter({ routeTree });
 
-document.documentElement.classList.add("dark");
-
 declare module "@tanstack/react-router" {
   interface Register {
     router: typeof router;

@@ -253,16 +253,16 @@ export function PullRequestPage() {
   }
 
   return (
-    <div className="min-h-[760px] bg-[#1f1f1f]">
+    <div className="min-h-[760px] bg-background">
       <DetailHeader item={loadedItem} />
       <ContextBand
         item={loadedItem}
         newEventCount={newEvents.length}
         reReviewRequested={reReviewRequested}
       />
-      <div className="grid grid-cols-1 gap-0 border-t border-white/10 xl:grid-cols-[62fr_38fr]">
+      <div className="grid grid-cols-1 gap-0 border-t border-border xl:grid-cols-[62fr_38fr]">
         <main className="min-w-0 px-7 py-6">
-          <div className="mb-4 text-xs text-[#737373]">
+          <div className="mb-4 text-xs text-muted-foreground">
             Activity · newest first
           </div>
           <Timeline
@@ -298,13 +298,13 @@ function DetailStatusPanel({
   detail?: string
 }) {
   return (
-    <div className="grid min-h-[760px] place-items-center bg-[#1f1f1f] px-6">
-      <div className="max-w-sm rounded-lg border border-white/10 bg-[#171717] p-6 text-center">
-        <h1 className="text-lg font-semibold tracking-tight text-[#f5f5f5]">
+    <div className="grid min-h-[760px] place-items-center bg-background px-6">
+      <div className="max-w-sm rounded-lg border border-border bg-card p-6 text-center">
+        <h1 className="text-lg font-semibold tracking-tight text-foreground">
           {title}
         </h1>
         {detail ? (
-          <p className="mt-2 text-sm leading-6 text-[#a3a3a3]">{detail}</p>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">{detail}</p>
         ) : null}
       </div>
     </div>
@@ -313,12 +313,12 @@ function DetailStatusPanel({
 
 function DetailHeader({ item }: { item: ReviewQueueItemView }) {
   return (
-    <header className="grid grid-cols-1 gap-5 border-b border-white/10 px-7 py-6 lg:grid-cols-[auto_1fr_auto]">
+    <header className="grid grid-cols-1 gap-5 border-b border-border px-7 py-6 lg:grid-cols-[auto_1fr_auto]">
       <Button
         asChild
         variant="ghost"
         size="sm"
-        className="mt-1 h-8 w-fit justify-self-start text-[#a3a3a3] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
+        className="mt-1 h-8 w-fit justify-self-start text-muted-foreground hover:bg-muted/40 hover:text-foreground"
       >
         <Link to="/">
           <ArrowLeft className="h-4 w-4" />
@@ -327,14 +327,14 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
       </Button>
 
       <div className="min-w-0">
-        <div className="text-xs text-[#737373]">
+        <div className="text-xs text-muted-foreground">
           {item.repository} / #{item.number}
-          <span className="mx-2 text-white/20">·</span>
+          <span className="mx-2 text-muted-foreground/40">·</span>
           opened by {item.authorLogin}
-          <span className="mx-2 text-white/20">·</span>
+          <span className="mx-2 text-muted-foreground/40">·</span>
           {item.openedAt}
         </div>
-        <h1 className="mt-2 text-3xl font-semibold leading-9 tracking-tight text-[#f5f5f5]">
+        <h1 className="mt-2 text-3xl font-semibold leading-9 tracking-tight text-foreground">
           {item.title}
         </h1>
         <div className="mt-4 grid max-w-[860px] grid-cols-1 gap-2 md:grid-cols-4">
@@ -354,8 +354,8 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
       </div>
 
       <div className="flex min-w-[190px] flex-col items-stretch gap-3">
-        <div className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-[#d4d4d4]">
-          <span className="mr-2 inline-block h-2 w-2 rounded-full bg-[#e5e5e5]" />
+        <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-foreground">
+          <span className="mr-2 inline-block h-2 w-2 rounded-full bg-foreground" />
           {userReviewStanding(item.userLastReviewDecision)}
         </div>
         <Button asChild className="h-9">
@@ -379,14 +379,14 @@ function DetailFact({
   hot?: boolean
 }) {
   return (
-    <div className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-2">
-      <div className="text-xs text-[#525252]">
+    <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+      <div className="text-xs text-muted-foreground/70">
         {label}
       </div>
       <div
         className={cn(
-          "mt-1 text-xs text-[#d4d4d4]",
-          hot && "font-semibold text-[#e5e5e5]"
+          "mt-1 text-xs text-foreground",
+          hot && "font-semibold text-foreground"
         )}
       >
         {value}
@@ -461,11 +461,11 @@ function ContextBand({
 
   return (
     <section className="px-7 py-5">
-      <div className="rounded-lg border border-white/10 bg-[#1f1f1f] p-5">
-        <div className="flex items-center gap-2 text-xs text-[#737373]">
-          <RotateCcw className="h-3.5 w-3.5 text-[#e5e5e5]" />
+      <div className="rounded-lg border border-border bg-background p-5">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <RotateCcw className="h-3.5 w-3.5 text-foreground" />
           Review context
-          <span className="text-white/20">·</span>
+          <span className="text-muted-foreground/40">·</span>
           {item.lastSeenAt}
         </div>
         <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
@@ -511,17 +511,17 @@ function ContextBand({
             ))}
           </div>
         ) : (
-          <div className="mt-4 rounded-md border border-white/10 bg-white/[0.03] px-4 py-3 text-sm leading-5 text-[#d4d4d4]">
+          <div className="mt-4 rounded-md border border-border bg-muted/30 px-4 py-3 text-sm leading-5 text-foreground">
             No unseen review activity since your last visit.
           </div>
         )}
-        <div className="mt-4 grid gap-2 text-sm leading-5 text-[#d4d4d4]">
+        <div className="mt-4 grid gap-2 text-sm leading-5 text-foreground">
           {item.activityEvents
             .filter((event) => event.isNew)
             .slice(0, 3)
             .map((event) => (
               <div key={event.id} className="flex gap-2">
-                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#e5e5e5]" />
+                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-foreground" />
                 <span>
                   <b>{event.actor}</b> {event.action}
                   {event.detail ? ` - ${event.detail}` : ""}
@@ -529,7 +529,7 @@ function ContextBand({
               </div>
             ))}
         </div>
-        <div className="mt-4 text-xs text-[#737373]">
+        <div className="mt-4 text-xs text-muted-foreground">
           {timelineEventSummary(newEventCount)}
         </div>
       </div>
@@ -547,14 +547,14 @@ function ContextFact({
   hot?: boolean
 }) {
   return (
-    <div className="min-w-0 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2">
-      <div className="text-xs text-[#525252]">
+    <div className="min-w-0 rounded-md border border-border bg-muted/30 px-3 py-2">
+      <div className="text-xs text-muted-foreground/70">
         {label}
       </div>
       <div
         className={cn(
-          "mt-1 truncate text-xs text-[#d4d4d4]",
-          hot && "font-semibold text-[#e5e5e5]"
+          "mt-1 truncate text-xs text-foreground",
+          hot && "font-semibold text-foreground"
         )}
       >
         {value}
@@ -575,17 +575,17 @@ function ChangeCard({
   hot?: boolean
 }) {
   return (
-    <div className="rounded-md border border-white/10 bg-white/[0.03] px-4 py-3">
+    <div className="rounded-md border border-border bg-muted/30 px-4 py-3">
       <div
         className={cn(
-          "flex items-center gap-2 text-2xl font-semibold text-[#f5f5f5]",
-          hot && "text-[#e5e5e5]"
+          "flex items-center gap-2 text-2xl font-semibold text-foreground",
+          hot && "text-foreground"
         )}
       >
         {Icon ? <Icon className="h-5 w-5" /> : null}
         {value}
       </div>
-      <div className="mt-1 text-xs text-[#525252]">
+      <div className="mt-1 text-xs text-muted-foreground/70">
         {label}
       </div>
     </div>
@@ -603,18 +603,18 @@ function Timeline({
 }) {
   return (
     <div className="relative">
-      <div className="absolute top-2 bottom-2 left-[7px] w-px bg-white/10" />
+      <div className="absolute top-2 bottom-2 left-[7px] w-px bg-border" />
       <div className="space-y-5">
         {newEvents.map((event) => (
           <TimelineItem key={event.id} event={event} isNew />
         ))}
         {newEvents.length > 0 && (
           <div className="relative flex items-center gap-3 py-1 pl-7">
-            <span className="h-px flex-1 bg-white/10" />
-            <span className="text-xs text-[#e5e5e5]">
+            <span className="h-px flex-1 bg-border" />
+            <span className="text-xs text-foreground">
               everything above is new since you last looked · {lastSeenAt}
             </span>
-            <span className="h-px flex-1 bg-white/10" />
+            <span className="h-px flex-1 bg-border" />
           </div>
         )}
         {oldEvents.map((event) => (
@@ -636,17 +636,17 @@ function TimelineItem({
     <div className="relative grid grid-cols-[112px_1fr] gap-5 pl-7">
       <span
         className={cn(
-          "absolute top-1.5 left-0 h-3.5 w-3.5 rounded-full border border-white/20 bg-[#1f1f1f]",
-          isNew && "border-[#e5e5e5] bg-[#e5e5e5]"
+          "absolute top-1.5 left-0 h-3.5 w-3.5 rounded-full border border-border bg-background",
+          isNew && "border-foreground bg-foreground"
         )}
       />
-      <div className="text-xs text-[#525252]">{event.occurredAt}</div>
+      <div className="text-xs text-muted-foreground/70">{event.occurredAt}</div>
       <div>
-        <div className="text-sm leading-5 text-[#d4d4d4]">
+        <div className="text-sm leading-5 text-foreground">
           <b>{event.actor}</b> {event.action}
         </div>
         {event.detail ? (
-          <div className="mt-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-sm leading-5 text-[#a3a3a3]">
+          <div className="mt-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm leading-5 text-muted-foreground">
             {event.detail}
           </div>
         ) : null}
@@ -693,11 +693,11 @@ function DetailSideRail({
   )
 
   return (
-    <aside className="border-t border-white/10 bg-[#171717] px-5 py-6 xl:border-l xl:border-t-0">
+    <aside className="border-t border-border bg-card px-5 py-6 xl:border-l xl:border-t-0">
       <RailCard title="Catch up">
         <div className="grid gap-2">
           {caughtUpError ? (
-            <div className="rounded-md border border-[#e5e5e5]/30 bg-[#e5e5e5]/10 px-3 py-2 text-xs leading-5 text-[#d4d4d4]">
+            <div className="rounded-md border border-foreground/30 bg-foreground/10 px-3 py-2 text-xs leading-5 text-foreground">
               Could not save caught-up state. Try again.
             </div>
           ) : null}
@@ -797,10 +797,10 @@ function DetailSideRail({
             {item.changedFilesSinceLastSeen.map((file) => (
               <div
                 key={file.path}
-                className="flex items-center justify-between gap-3 rounded-[4px] px-1 py-1 text-xs text-[#a3a3a3]"
+                className="flex items-center justify-between gap-3 rounded-[4px] px-1 py-1 text-xs text-muted-foreground"
               >
                 <span className="truncate">{file.path}</span>
-                <span className="text-[#737373]">
+                <span className="text-muted-foreground">
                   +{file.additions} / -{file.deletions}
                 </span>
               </div>
@@ -820,8 +820,8 @@ function RailCard({
   children: ReactNode
 }) {
   return (
-    <section className="mb-4 rounded-lg border border-white/10 bg-white/[0.03] p-4">
-      <div className="mb-3 text-xs text-[#a3a3a3]">
+    <section className="mb-4 rounded-lg border border-border bg-muted/30 p-4">
+      <div className="mb-3 text-xs text-muted-foreground">
         {title}
       </div>
       {children}
@@ -833,10 +833,10 @@ function RailKeyValue({ label, value }: { label: string; value: string }) {
   return (
     <>
       <div className="flex items-center justify-between gap-4 py-2 text-xs">
-        <span className="text-[#737373]">{label}</span>
-        <span className="text-[#d4d4d4]">{value}</span>
+        <span className="text-muted-foreground">{label}</span>
+        <span className="text-foreground">{value}</span>
       </div>
-      <Separator className="bg-white/10 last:hidden" />
+      <Separator className="bg-border last:hidden" />
     </>
   )
 }

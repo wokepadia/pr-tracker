@@ -111,9 +111,9 @@ const lanes: LaneDefinition[] = [
 ]
 
 const laneToneClasses: Record<LaneDefinition["tone"], string> = {
-  hot: "bg-[#e5e5e5]",
-  changed: "bg-[#a3a3a3]",
-  quiet: "bg-white/20",
+  hot: "bg-foreground",
+  changed: "bg-muted-foreground",
+  quiet: "bg-muted-foreground/30",
 }
 
 const primaryQueueLaneIds: LaneId[] = [
@@ -610,7 +610,7 @@ export function InboxPage() {
         onSelectMuted={focusMuted}
       />
 
-      <section className="flex min-w-0 flex-col bg-[#1f1f1f]">
+      <section className="flex min-w-0 flex-col bg-background">
         <InboxHeader
           groupMode={groupMode}
           searchQuery={searchQuery}
@@ -619,7 +619,7 @@ export function InboxPage() {
           onSearchQueryChange={setSearchQuery}
         />
         <div className="grid min-h-[697px] grid-cols-1 xl:grid-cols-[58fr_42fr]">
-          <div className="min-w-0 border-b border-white/10 xl:border-r xl:border-b-0">
+          <div className="min-w-0 border-b border-border xl:border-r xl:border-b-0">
             <div className="h-full overflow-y-auto pt-2 pb-7">
               {groupMode === "action" ? (
                 actionQueueGroups.map((lane) => (
@@ -734,12 +734,12 @@ function InboxSidebar({
   onSelectMuted: () => void
 }) {
   return (
-    <aside className="flex flex-col border-b border-white/10 bg-[#171717] px-3 py-3 sm:border-r sm:border-b-0 sm:py-4">
+    <aside className="flex flex-col border-b border-border bg-card px-3 py-3 sm:border-r sm:border-b-0 sm:py-4">
       <div className="flex items-center gap-2 px-2 pt-1 pb-2 sm:pb-4">
-        <div className="flex h-4 w-4 items-center justify-center rounded-[3px] bg-[#e5e5e5] text-[9px] font-bold text-[#171717]">
+        <div className="flex h-4 w-4 items-center justify-center rounded-[3px] bg-foreground text-[9px] font-bold text-background">
           R
         </div>
-        <div className="text-xs text-[#f5f5f5]">
+        <div className="text-xs text-foreground">
           Review Q
         </div>
       </div>
@@ -820,7 +820,7 @@ function InboxSidebar({
           }
         />
       </SidebarSection>
-      <div className="mt-4 hidden rounded-md border border-white/10 bg-white/[0.03] p-3 text-xs leading-5 text-[#737373] sm:mt-auto sm:block">
+      <div className="mt-4 hidden rounded-md border border-border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground sm:mt-auto sm:block">
         Review decisions still happen in GitHub. This surface only tracks where
         your attention belongs.
       </div>
@@ -836,16 +836,16 @@ function InboxStatusPanel({
   detail?: string
 }) {
   return (
-    <div className="grid min-h-[760px] place-items-center bg-[#1f1f1f] px-6">
-      <div className="max-w-sm rounded-lg border border-white/10 bg-[#171717] p-6 text-center">
-        <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-[#e5e5e5]">
+    <div className="grid min-h-[760px] place-items-center bg-background px-6">
+      <div className="max-w-sm rounded-lg border border-border bg-card p-6 text-center">
+        <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-muted/40 text-foreground">
           <Inbox className="h-5 w-5" />
         </div>
-        <h1 className="text-lg font-semibold tracking-tight text-[#f5f5f5]">
+        <h1 className="text-lg font-semibold tracking-tight text-foreground">
           {title}
         </h1>
         {detail ? (
-          <p className="mt-2 text-sm leading-6 text-[#a3a3a3]">{detail}</p>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">{detail}</p>
         ) : null}
       </div>
     </div>
@@ -861,7 +861,7 @@ function SidebarSection({
 }) {
   return (
     <div className="mb-2 sm:mb-5">
-      <div className="px-2 pb-2 pt-2 text-xs text-[#525252] sm:pt-3">
+      <div className="px-2 pb-2 pt-2 text-xs text-muted-foreground/70 sm:pt-3">
         {label}
       </div>
       <div className="grid grid-cols-2 gap-1 sm:block sm:space-y-1">{children}</div>
@@ -883,9 +883,9 @@ function SidebarItem({
   onClick?: () => void
 }) {
   const itemClassName = cn(
-    "grid w-full grid-cols-[7px_1fr_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-[#a3a3a3] sm:py-2 sm:text-sm",
-    active && "bg-white/[0.07] text-[#f5f5f5]",
-    onClick && !active && "hover:bg-white/[0.04]",
+    "grid w-full grid-cols-[7px_1fr_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground sm:py-2 sm:text-sm",
+    active && "bg-muted text-foreground",
+    onClick && !active && "hover:bg-muted/40",
     !onClick && "cursor-default"
   )
 
@@ -893,16 +893,16 @@ function SidebarItem({
     <>
       <span
         className={cn(
-          "h-[7px] w-[7px] rounded-full bg-white/20",
-          attention && "bg-[#e5e5e5]"
+          "h-[7px] w-[7px] rounded-full bg-muted-foreground/30",
+          attention && "bg-foreground"
         )}
       />
-      <span className={cn(attention && "font-medium text-[#f5f5f5]")}>{label}</span>
+      <span className={cn(attention && "font-medium text-foreground")}>{label}</span>
       <span
         className={cn(
-          "text-xs text-[#525252]",
+          "text-xs text-muted-foreground/70",
           attention &&
-            "rounded-full bg-[#e5e5e5] px-2 py-[1px] font-semibold text-[#171717]"
+            "rounded-full bg-foreground px-2 py-[1px] font-semibold text-background"
         )}
       >
         {count}
@@ -940,20 +940,20 @@ function InboxHeader({
   onSearchQueryChange: (query: string) => void
 }) {
   return (
-    <div className="flex min-h-[62px] flex-wrap items-center gap-3 border-b border-white/10 px-5 py-2">
+    <div className="flex min-h-[62px] flex-wrap items-center gap-3 border-b border-border px-5 py-2">
       <h1 className="text-lg font-semibold tracking-tight">Review Inbox</h1>
       <span className="text-xs text-muted-foreground">· {syncLabel}</span>
-      <div className="relative min-w-0 flex-[1_1_100%] sm:ml-auto sm:min-w-[220px] sm:max-w-[360px] sm:flex-1">
+      <div className="relative min-w-0 flex-[1_1_100%] lg:ml-auto lg:min-w-[220px] lg:max-w-[360px] lg:flex-1">
         <Input
           id="review-inbox-search"
           type="search"
           value={searchQuery}
           onChange={(event) => onSearchQueryChange(event.target.value)}
           placeholder="Search PRs, repos, authors, files"
-          className="h-8 rounded-lg bg-[#171717] pr-3 pl-8 text-sm sm:pr-9"
+          className="h-8 rounded-lg bg-card pr-3 pl-8 text-sm lg:pr-9"
         />
         <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Kbd className="absolute top-1/2 right-2 hidden -translate-y-1/2 sm:inline-flex">
+        <Kbd className="absolute top-1/2 right-2 hidden -translate-y-1/2 lg:inline-flex">
           /
         </Kbd>
       </div>
@@ -1011,7 +1011,7 @@ function QueueLane({
   onSelect: (id: string) => void
 }) {
   return (
-    <section className="border-b border-white/10 last:border-b-0">
+    <section className="border-b border-border last:border-b-0">
       <button
         type="button"
         onClick={onToggle}
@@ -1020,18 +1020,18 @@ function QueueLane({
       >
         <span className={cn("h-5 w-1 rounded-full", laneToneClasses[group.tone])} />
         {isOpen ? (
-          <ChevronDown className="h-3.5 w-3.5 text-[#525252]" />
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/70" />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 text-[#525252]" />
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/70" />
         )}
-        <span className="text-xs text-[#a3a3a3]">
+        <span className="text-xs text-muted-foreground">
           {group.label}
         </span>
         <Badge
           variant="outline"
           className={cn(
-            "h-5 rounded-full border-white/10 bg-transparent px-2 text-xs text-[#737373]",
-            group.tone === "hot" && "border-[#e5e5e5] bg-[#e5e5e5] text-[#171717]"
+            "h-5 rounded-full border-border bg-transparent px-2 text-xs text-muted-foreground",
+            group.tone === "hot" && "border-foreground bg-foreground text-background"
           )}
         >
           {items.length}
@@ -1073,41 +1073,41 @@ function QueueRow({
       onClick={onSelect}
       aria-pressed={selected}
       className={cn(
-        "relative grid w-full grid-cols-[26px_1fr_auto] items-center gap-3 border-t border-white/10 px-5 py-3 text-left transition-colors hover:bg-white/[0.04]",
-        selected && "bg-white/[0.07] shadow-[inset_3px_0_0_#e5e5e5]"
+        "relative grid w-full grid-cols-[26px_1fr_auto] items-center gap-3 border-t border-border px-5 py-3 text-left transition-colors hover:bg-muted/40",
+        selected && "bg-muted shadow-[inset_3px_0_0_#171717]"
       )}
     >
       <span
         className={cn(
           "absolute inset-y-0 left-0 w-[3px]",
-          item.waitingOn === "you" && "bg-[#e5e5e5]",
-          item.waitingOn === "author" && "bg-white/20",
-          selected && "bg-[#e5e5e5]"
+          item.waitingOn === "you" && "bg-foreground",
+          item.waitingOn === "author" && "bg-muted-foreground/30",
+          selected && "bg-foreground"
         )}
       />
-      <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-xs text-[#a3a3a3]">
+      <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-border bg-muted/50 text-xs text-muted-foreground">
         {initials}
       </span>
       <span className="min-w-0">
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-sm font-medium text-[#f5f5f5]">
+        <span className="flex min-w-0 items-start gap-2 sm:items-center">
+          <span className="line-clamp-2 min-w-0 flex-1 text-sm font-medium text-foreground sm:truncate sm:line-clamp-1">
             {item.title}
           </span>
           <span
             className={cn(
-              "rounded-full border border-white/10 px-2 py-[1px] text-xs text-[#737373]",
+              "shrink-0 rounded-full border border-border px-2 py-[1px] text-xs text-muted-foreground",
               item.waitingOn === "you" &&
-                "border-[#e5e5e5]/70 bg-[#e5e5e5]/15 text-[#e5e5e5]"
+                "border-foreground/70 bg-foreground/15 text-foreground"
             )}
           >
             {queuePillLabel(item)}
           </span>
         </span>
-        <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#737373]">
-          <span className="text-[#a3a3a3]">
+        <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <span className="text-muted-foreground">
             {item.repository} / #{item.number}
           </span>
-          <span className="text-white/20">·</span>
+          <span className="text-muted-foreground/40">·</span>
           <span>{item.authorLogin}</span>
           {item.newCommitCount > 0 ? (
             <FactChip icon={GitCommitHorizontal} text={`+${item.newCommitCount}`} active />
@@ -1128,13 +1128,13 @@ function QueueRow({
       <span className="flex min-w-[74px] flex-col items-end gap-1">
         <span
           className={cn(
-            "text-xs text-[#a3a3a3]",
-            item.waitingOn === "you" && "font-semibold text-[#e5e5e5]"
+            "text-xs text-muted-foreground",
+            item.waitingOn === "you" && "font-semibold text-foreground"
           )}
         >
           {item.waitingAge}
         </span>
-        <span className="text-xs text-[#525252]">
+        <span className="text-xs text-muted-foreground/70">
           {queueTimingLabel(item)}
         </span>
       </span>
@@ -1154,8 +1154,8 @@ function FactChip({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-[4px] border border-white/10 bg-[#171717] px-1.5 py-[1px] text-xs text-[#737373]",
-        active && "border-[#e5e5e5]/50 bg-[#e5e5e5]/12 text-[#e5e5e5]"
+        "inline-flex items-center gap-1 rounded-[4px] border border-border bg-card px-1.5 py-[1px] text-xs text-muted-foreground",
+        active && "border-foreground/50 bg-foreground/12 text-foreground"
       )}
     >
       <Icon className="h-3 w-3" />
@@ -1211,53 +1211,53 @@ function QuickPeekPanel({
     },
   ].filter((row) => row.show)
   return (
-    <aside className="flex min-h-[520px] min-w-0 flex-col bg-[#171717]">
-      <div className="border-b border-white/10 px-5 py-5">
-        <div className="flex items-center gap-2 text-xs text-[#737373]">
+    <aside className="flex min-h-[520px] min-w-0 flex-col bg-card">
+      <div className="border-b border-border px-5 py-5">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <PanelRight className="h-3.5 w-3.5" />
           Quick peek · no need to open
         </div>
-        <h2 className="mt-3 text-xl font-semibold leading-7 tracking-tight text-[#f5f5f5]">
+        <h2 className="mt-3 text-xl font-semibold leading-7 tracking-tight text-foreground">
           {item.title}
         </h2>
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[#737373]">
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span>
             {item.repository} / #{item.number}
           </span>
-          <span className="text-white/20">·</span>
+          <span className="text-muted-foreground/40">·</span>
           <span>{item.authorLogin}</span>
-          <span className="text-white/20">·</span>
-          <span className={cn(item.waitingOn === "you" && "text-[#e5e5e5]")}>
+          <span className="text-muted-foreground/40">·</span>
+          <span className={cn(item.waitingOn === "you" && "text-foreground")}>
             {queueTimingLabel(item)} {item.waitingAge}
           </span>
         </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-        <section className="rounded-md border border-[#e5e5e5]/30 bg-[#e5e5e5]/10 p-4">
-          <div className="flex items-center gap-2 text-xs text-[#e5e5e5]">
+        <section className="rounded-md border border-foreground/30 bg-foreground/10 p-4">
+          <div className="flex items-center gap-2 text-xs text-foreground">
             <Clock3 className="h-3.5 w-3.5" />
             Since your last visit · {item.lastSeenAt}
           </div>
-          <ul className="mt-3 space-y-2 text-sm leading-5 text-[#d4d4d4]">
+          <ul className="mt-3 space-y-2 text-sm leading-5 text-foreground">
             {factRows.length > 0 ? factRows.map((row) => (
               <li key={row.id} className="flex gap-2">
-                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#e5e5e5]" />
+                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-foreground" />
                 <span>{row.label}</span>
               </li>
             )) : (
               <li className="flex gap-2">
-                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-white/30" />
+                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
                 <span>No unseen activity since your last visit.</span>
               </li>
             )}
           </ul>
         </section>
 
-        <Separator className="my-5 bg-white/10" />
+        <Separator className="my-5 bg-border" />
 
         <section>
-          <div className="text-xs text-[#a3a3a3]">
+          <div className="text-xs text-muted-foreground">
             Open threads · {item.unresolvedThreadCount} of{" "}
             {item.totalThreadCount} unresolved
           </div>
@@ -1265,21 +1265,21 @@ function QuickPeekPanel({
             {item.reviewThreads.length > 0 ? item.reviewThreads.map((thread) => (
               <div
                 key={thread.id}
-                className="grid grid-cols-[30px_1fr] gap-3 rounded-md border border-white/10 bg-white/[0.03] p-3"
+                className="grid grid-cols-[30px_1fr] gap-3 rounded-md border border-border bg-muted/30 p-3"
               >
-                <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-xs text-[#a3a3a3]">
+                <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-border bg-muted/40 text-xs text-muted-foreground">
                   {thread.author.slice(0, 2).toUpperCase()}
                 </span>
                 <div className="min-w-0">
-                  <div className="line-clamp-2 text-sm leading-5 text-[#d4d4d4]">
+                  <div className="line-clamp-2 text-sm leading-5 text-foreground">
                     {thread.excerpt}
                   </div>
                   <div
                     className={cn(
                       "mt-1.5 text-xs",
                       thread.status === "unresolved"
-                        ? "text-[#e5e5e5]"
-                        : "text-[#525252]"
+                        ? "text-foreground"
+                        : "text-muted-foreground/70"
                     )}
                   >
                     {thread.status}
@@ -1288,7 +1288,7 @@ function QuickPeekPanel({
                 </div>
               </div>
             )) : (
-              <div className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-sm leading-5 text-[#737373]">
+              <div className="rounded-md border border-border bg-muted/30 p-3 text-sm leading-5 text-muted-foreground">
                 No open review threads.
               </div>
             )}
@@ -1296,22 +1296,22 @@ function QuickPeekPanel({
         </section>
 
         {item.changedFilesSinceLastSeen.length > 0 ? (
-          <Separator className="my-5 bg-white/10" />
+          <Separator className="my-5 bg-border" />
         ) : null}
 
         {item.changedFilesSinceLastSeen.length > 0 ? (
           <section>
-            <div className="text-xs text-[#a3a3a3]">
+            <div className="text-xs text-muted-foreground">
               Files touched since last look · {item.changedFilesSinceLastSeen.length}
             </div>
             <div className="mt-3 space-y-1">
               {item.changedFilesSinceLastSeen.map((file) => (
                 <div
                   key={file.path}
-                  className="flex items-center justify-between gap-4 rounded-[4px] px-2 py-1.5 text-xs text-[#a3a3a3] hover:bg-white/[0.03]"
+                  className="flex items-center justify-between gap-4 rounded-[4px] px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted/30"
                 >
                   <span className="truncate">{file.path}</span>
-                  <span className="text-[#737373]">
+                  <span className="text-muted-foreground">
                     +{file.additions} / -{file.deletions}
                   </span>
                 </div>
@@ -1320,34 +1320,34 @@ function QuickPeekPanel({
           </section>
         ) : null}
 
-        <Separator className="my-5 bg-white/10" />
+        <Separator className="my-5 bg-border" />
 
         <section>
-          <div className="text-xs text-[#a3a3a3]">
+          <div className="text-xs text-muted-foreground">
             Queue reason
           </div>
-          <div className="mt-3 rounded-md border border-white/10 bg-white/[0.03] p-3 text-sm leading-5 text-[#d4d4d4]">
+          <div className="mt-3 rounded-md border border-border bg-muted/30 p-3 text-sm leading-5 text-foreground">
             {item.reason}
           </div>
         </section>
 
         {item.activityEvents.length > 0 ? (
           <>
-            <Separator className="my-5 bg-white/10" />
+            <Separator className="my-5 bg-border" />
             <section>
-              <div className="text-xs text-[#a3a3a3]">
+              <div className="text-xs text-muted-foreground">
                 Latest activity
               </div>
               <div className="mt-3 space-y-2">
                 {item.activityEvents.slice(0, 3).map((event) => (
                   <div
                     key={event.id}
-                    className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-sm leading-5 text-[#d4d4d4]"
+                    className="rounded-md border border-border bg-muted/30 p-3 text-sm leading-5 text-foreground"
                   >
                     <div>
                       <b>{event.actor}</b> {event.action}
                     </div>
-                    <div className="mt-1 text-xs text-[#525252]">
+                    <div className="mt-1 text-xs text-muted-foreground/70">
                       {event.occurredAt}
                       {event.isNew ? " · new" : ""}
                     </div>
@@ -1359,9 +1359,9 @@ function QuickPeekPanel({
         ) : null}
       </div>
 
-      <div className="mt-auto grid grid-cols-2 gap-2 border-t border-white/10 px-5 py-4">
+      <div className="mt-auto grid grid-cols-2 gap-2 border-t border-border px-5 py-4">
         {caughtUpError ? (
-          <div className="col-span-2 rounded-md border border-[#e5e5e5]/30 bg-[#e5e5e5]/10 px-3 py-2 text-xs leading-5 text-[#d4d4d4]">
+          <div className="col-span-2 rounded-md border border-foreground/30 bg-foreground/10 px-3 py-2 text-xs leading-5 text-foreground">
             Could not save caught-up state. Try again.
           </div>
         ) : null}
@@ -1545,14 +1545,14 @@ function EmptyPeekPanel({
   const copy = getEmptyPeekCopy(groupMode, searchQuery)
 
   return (
-    <aside className="flex min-w-0 flex-col items-center justify-center bg-[#171717] px-8 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-[#e5e5e5]">
+    <aside className="flex min-w-0 flex-col items-center justify-center bg-card px-8 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-muted/30 text-foreground">
         <Check className="h-5 w-5" />
       </div>
-      <h2 className="mt-5 text-lg font-semibold tracking-tight text-[#f5f5f5]">
+      <h2 className="mt-5 text-lg font-semibold tracking-tight text-foreground">
         {copy.title}
       </h2>
-      <p className="mt-2 max-w-[300px] text-sm leading-6 text-[#a3a3a3]">
+      <p className="mt-2 max-w-[300px] text-sm leading-6 text-muted-foreground">
         {copy.detail}
       </p>
     </aside>
