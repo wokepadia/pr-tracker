@@ -23,13 +23,38 @@ describe("api app", () => {
   it("serves the sample reviewer inbox", async () => {
     const response = await app.request("/api/reviewer-inbox");
     const body = (await response.json()) as {
-      items: unknown[];
+      items: Array<{
+        pullRequest: {
+          id: string;
+          changedFiles?: Array<{
+            path: string;
+            additions?: number;
+            deletions?: number;
+            changedAt?: string;
+          }>;
+        };
+      }>;
       sections: { needs_review: unknown[] };
     };
+    const changedAfterReview = body.items.find((item) => item.pullRequest.id === "pr_2");
 
     expect(response.status).toBe(200);
     expect(body.items).toHaveLength(3);
     expect(body.sections.needs_review).toHaveLength(1);
+    expect(changedAfterReview?.pullRequest.changedFiles).toEqual([
+      {
+        path: "apps/web/src/reviewer/local-queue-state.ts",
+        additions: 54,
+        deletions: 8,
+        changedAt: "2026-06-01T09:12:00.000Z"
+      },
+      {
+        path: "apps/web/src/pages/InboxPage.tsx",
+        additions: 31,
+        deletions: 12,
+        changedAt: "2026-06-01T09:12:00.000Z"
+      }
+    ]);
   });
 
   it("serves pull request detail", async () => {

@@ -1206,9 +1206,6 @@ function QuickPeekPanel({
       show: reReviewRequested,
     },
   ].filter((row) => row.show)
-  const hasBodySections =
-    item.totalThreadCount > 0 || item.changedFilesSinceLastSeen.length > 0
-
   return (
     <aside className="flex min-h-[520px] min-w-0 flex-col bg-[#20201d]">
       <div className="border-b border-white/10 px-5 py-5">
@@ -1253,46 +1250,48 @@ function QuickPeekPanel({
           </ul>
         </section>
 
-        {hasBodySections ? <Separator className="my-5 bg-white/10" /> : null}
+        <Separator className="my-5 bg-white/10" />
 
-        {item.totalThreadCount > 0 ? (
-          <section>
-            <div className="font-mono text-[11px] tracking-[0.1em] text-[#9f9a91] uppercase">
-              Open threads · {item.unresolvedThreadCount} of{" "}
-              {item.totalThreadCount} unresolved
-            </div>
-            <div className="mt-3 space-y-2">
-              {item.reviewThreads.map((thread) => (
-                <div
-                  key={thread.id}
-                  className="grid grid-cols-[30px_1fr] gap-3 rounded-md border border-white/10 bg-white/[0.03] p-3"
-                >
-                  <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-white/10 bg-white/[0.04] font-mono text-[10px] text-[#9f9a91]">
-                    {thread.author.slice(0, 2).toUpperCase()}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="line-clamp-2 text-[12.5px] leading-5 text-[#d8d3c8]">
-                      {thread.excerpt}
-                    </div>
-                    <div
-                      className={cn(
-                        "mt-1.5 font-mono text-[10px] tracking-[0.06em] uppercase",
-                        thread.status === "unresolved"
-                          ? "text-[#d0a24c]"
-                          : "text-[#77736a]"
-                      )}
-                    >
-                      {thread.status}
-                      {thread.authorReplied ? " · author replied" : ""}
-                    </div>
+        <section>
+          <div className="font-mono text-[11px] tracking-[0.1em] text-[#9f9a91] uppercase">
+            Open threads · {item.unresolvedThreadCount} of{" "}
+            {item.totalThreadCount} unresolved
+          </div>
+          <div className="mt-3 space-y-2">
+            {item.reviewThreads.length > 0 ? item.reviewThreads.map((thread) => (
+              <div
+                key={thread.id}
+                className="grid grid-cols-[30px_1fr] gap-3 rounded-md border border-white/10 bg-white/[0.03] p-3"
+              >
+                <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-white/10 bg-white/[0.04] font-mono text-[10px] text-[#9f9a91]">
+                  {thread.author.slice(0, 2).toUpperCase()}
+                </span>
+                <div className="min-w-0">
+                  <div className="line-clamp-2 text-[12.5px] leading-5 text-[#d8d3c8]">
+                    {thread.excerpt}
+                  </div>
+                  <div
+                    className={cn(
+                      "mt-1.5 font-mono text-[10px] tracking-[0.06em] uppercase",
+                      thread.status === "unresolved"
+                        ? "text-[#d0a24c]"
+                        : "text-[#77736a]"
+                    )}
+                  >
+                    {thread.status}
+                    {thread.authorReplied ? " · author replied" : ""}
                   </div>
                 </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
+              </div>
+            )) : (
+              <div className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-[12.5px] leading-5 text-[#8e8b82]">
+                No open review threads.
+              </div>
+            )}
+          </div>
+        </section>
 
-        {item.totalThreadCount > 0 && item.changedFilesSinceLastSeen.length > 0 ? (
+        {item.changedFilesSinceLastSeen.length > 0 ? (
           <Separator className="my-5 bg-white/10" />
         ) : null}
 

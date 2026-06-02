@@ -3,6 +3,7 @@ import { createOrm } from "@pr-tracker/db";
 import type {
   Actor,
   PullRequestActivity,
+  PullRequestChangedFile,
   PullRequestItem,
   ReviewDecision,
   ReviewDecisionEvent,
@@ -26,6 +27,7 @@ interface PullRequestRow {
   created_at: Date | string;
   updated_at: Date | string;
   latest_commit_sha: string;
+  raw_payload: unknown;
 }
 
 interface ReviewRow {
@@ -211,7 +213,8 @@ async function loadPullRequests(
         requestedReviewerIds: reviewerRows.map((reviewer) => reviewer.reviewer_login),
         reviews: reviewRows.map(toReview),
         threads: threadRows.map(toThread),
-        activity: activityRows.map(toActivity)
+        activity: activityRows.map(toActivity),
+        changedFiles: toChangedFiles(row.raw_payload)
       };
     })
   );
@@ -301,6 +304,38 @@ function toActivity(row: ActivityRow): PullRequestActivity {
     title: row.title,
     body: row.body ?? undefined
   };
+}
+
+function toChangedFiles(rawPayload: unknown): PullRequestChangedFile[] | undefined {
+  const payload =
+    typeof rawPayload === "string" ? parseJson(rawPayload) : rawPayload;
+
+  if (!isObject(payload) || !Array.isArray(payload.changedFiles)) {
+    return undefined;
+  }
+
+  return payload.changedFiles.flatMap((file) => {
+    if (!isObject(file) || typeof file.path !== "string") return [];
+
+    return {
+      path: file.path,
+      additions: typeof file.additions === "number" ? file.additions : undefined,
+      deletions: typeof file.deletions === "number" ? file.deletions : undefined,
+      changedAt: typeof file.changedAt === "string" ? file.changedAt : undefined
+    };
+  });
+}
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function toIso(value: Date | string): string {

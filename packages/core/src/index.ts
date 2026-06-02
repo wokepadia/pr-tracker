@@ -44,6 +44,13 @@ export interface PullRequestActivity {
   body?: string;
 }
 
+export interface PullRequestChangedFile {
+  path: string;
+  additions?: number;
+  deletions?: number;
+  changedAt?: string;
+}
+
 export interface PullRequestItem {
   id: string;
   repository: string;
@@ -60,6 +67,7 @@ export interface PullRequestItem {
   reviews: ReviewDecisionEvent[];
   threads: ReviewThread[];
   activity: PullRequestActivity[];
+  changedFiles?: PullRequestChangedFile[];
 }
 
 export interface ViewerContext {
@@ -100,7 +108,8 @@ export const samplePullRequests: PullRequestItem[] = [
         occurredAt: "2026-06-01T11:30:00.000Z",
         title: "Maya requested your review"
       }
-    ]
+    ],
+    changedFiles: []
   },
   {
     id: "pr_2",
@@ -139,6 +148,20 @@ export const samplePullRequests: PullRequestItem[] = [
         actorId: "ari",
         occurredAt: "2026-06-01T09:12:00.000Z",
         title: "Ari pushed 1 commit"
+      }
+    ],
+    changedFiles: [
+      {
+        path: "apps/web/src/reviewer/local-queue-state.ts",
+        additions: 54,
+        deletions: 8,
+        changedAt: "2026-06-01T09:12:00.000Z"
+      },
+      {
+        path: "apps/web/src/pages/InboxPage.tsx",
+        additions: 31,
+        deletions: 12,
+        changedAt: "2026-06-01T09:12:00.000Z"
       }
     ]
   },
@@ -182,6 +205,14 @@ export const samplePullRequests: PullRequestItem[] = [
         actorId: "viewer",
         occurredAt: "2026-05-30T10:05:00.000Z",
         title: "You requested changes"
+      }
+    ],
+    changedFiles: [
+      {
+        path: "src/webhooks.ts",
+        additions: 19,
+        deletions: 4,
+        changedAt: "2026-05-30T10:05:00.000Z"
       }
     ]
   }

@@ -1,6 +1,7 @@
 import type {
   Actor,
   PullRequestActivity,
+  PullRequestChangedFile,
   PullRequestItem,
   ReviewDecision,
 } from "@pr-tracker/core"
@@ -141,6 +142,10 @@ export function toReviewQueueItemView(
   const latestViewerReview = viewerReviews[0]
   const authorLogin = actorLogin(actorById, pullRequest.authorId)
   const waitingOn = getWaitingOn(item.workflowState)
+  const changedFilesSinceLastSeen = buildChangedFilesSinceLastSeen(
+    pullRequest.changedFiles,
+    lastSeenAt
+  )
   const lastMeaningfulAt =
     latestNewActivity?.occurredAt ??
     latestViewerReview?.submittedAt ??
@@ -174,7 +179,7 @@ export function toReviewQueueItemView(
     unresolvedThreadCount: pullRequest.threads.filter((thread) => !thread.isResolved)
       .length,
     totalThreadCount: pullRequest.threads.length,
-    changedFilesSinceLastSeen: [],
+    changedFilesSinceLastSeen,
     reviewThreads: pullRequest.threads.map((thread) => ({
       id: thread.id,
       author: thread.participantIds
@@ -193,6 +198,21 @@ export function toReviewQueueItemView(
     isPinned: false,
     isMuted: item.workflowState === "watching",
   }
+}
+
+function buildChangedFilesSinceLastSeen(
+  changedFiles: PullRequestChangedFile[] | undefined,
+  lastSeenAt: string | undefined
+): ChangedFile[] {
+  if (!changedFiles?.length) return []
+
+  return changedFiles
+    .filter((file) => !file.changedAt || isNewerThan(file.changedAt, lastSeenAt))
+    .map((file) => ({
+      path: file.path,
+      additions: file.additions,
+      deletions: file.deletions,
+    }))
 }
 
 export function actorLogin(

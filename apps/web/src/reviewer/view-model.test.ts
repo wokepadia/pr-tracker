@@ -91,6 +91,27 @@ describe("reviewer view model", () => {
     })
   })
 
+  it("exposes files touched since the reviewer last looked", () => {
+    const view = buildInboxView(buildSampleInbox())
+
+    const updatedAfterApproval = view.items.find((item) => item.id === "pr_2")
+    const waitingOnAuthor = view.items.find((item) => item.id === "pr_3")
+
+    expect(updatedAfterApproval?.changedFilesSinceLastSeen).toEqual([
+      {
+        path: "apps/web/src/reviewer/local-queue-state.ts",
+        additions: 54,
+        deletions: 8,
+      },
+      {
+        path: "apps/web/src/pages/InboxPage.tsx",
+        additions: 31,
+        deletions: 12,
+      },
+    ])
+    expect(waitingOnAuthor?.changedFilesSinceLastSeen).toEqual([])
+  })
+
   it("normalizes activity text without duplicating the actor", () => {
     const view = buildInboxView(buildSampleInbox())
 
