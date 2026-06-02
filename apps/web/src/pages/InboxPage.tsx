@@ -857,10 +857,10 @@ function QuickPeekPanel({
         </section> : null}
       </div>
 
-      <div className="mt-auto flex items-center gap-2 border-t border-white/10 px-5 py-4">
+      <div className="mt-auto grid grid-cols-[1fr_1fr_auto] gap-2 border-t border-white/10 px-5 py-4">
         <Button
           asChild
-          className="h-9 flex-1 bg-[#d0a24c] text-[#191916] hover:bg-[#e0b45f]"
+          className="col-span-3 h-9 bg-[#d0a24c] text-[#191916] hover:bg-[#e0b45f]"
         >
           <a href={item.url} target="_blank" rel="noreferrer">
             Open in GitHub to review
