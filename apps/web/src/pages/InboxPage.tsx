@@ -1546,7 +1546,7 @@ function QuickPeekPanel({
             ? "Saving"
             : item.unseenEventCount === 0
               ? "All caught up"
-              : "Caught up"}
+              : "Mark caught up"}
         </Button>
         <Button
           asChild
