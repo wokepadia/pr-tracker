@@ -1079,10 +1079,20 @@ function HeaderMetric({
   tone: LaneDefinition["tone"]
 }) {
   return (
-    <div className={cn("rounded-lg border px-3 py-2", laneBadgeToneClasses[tone])}>
+    <div className="rounded-lg border border-border bg-card px-3 py-2 shadow-[0_1px_0_rgba(0,0,0,0.02)]">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-medium">{label}</span>
-        <span className="text-base font-semibold tabular-nums">{value}</span>
+        <span className="inline-flex min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground">
+          <span className={cn("h-1.5 w-1.5 rounded-full", laneToneClasses[tone])} />
+          <span className="truncate">{label}</span>
+        </span>
+        <span
+          className={cn(
+            "text-base font-semibold tabular-nums text-foreground",
+            value === 0 && "text-muted-foreground"
+          )}
+        >
+          {value}
+        </span>
       </div>
     </div>
   )
