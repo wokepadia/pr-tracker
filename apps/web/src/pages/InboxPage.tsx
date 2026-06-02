@@ -12,6 +12,11 @@ import {
 } from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
 import {
+  Group as ResizablePanelGroup,
+  Panel as ResizablePanel,
+  Separator as ResizablePanelResizeHandle,
+} from "react-resizable-panels"
+import {
   Check,
   ChevronDown,
   ChevronRight,
@@ -64,6 +69,13 @@ import {
 
 type LaneId = ReviewQueueBucketId
 type ActionQueueTabId = "home" | LaneId
+
+const REVIEW_QUEUE_MIN_WIDTH = 520
+const QUICK_PEEK_MIN_WIDTH = 360
+const REVIEW_SPLIT_HANDLE_WIDTH = 8
+const REVIEW_WORKSPACE_MIN_WIDTH =
+  REVIEW_QUEUE_MIN_WIDTH + QUICK_PEEK_MIN_WIDTH + REVIEW_SPLIT_HANDLE_WIDTH
+const REVIEW_SIDEBAR_WIDTH = 212
 
 interface LaneDefinition {
   id: LaneId
@@ -584,7 +596,12 @@ export function InboxPage() {
   }
 
   return (
-    <div className="grid min-h-[calc(100vh-48px)] grid-cols-1 sm:grid-cols-[190px_1fr] lg:grid-cols-[212px_1fr]">
+    <div
+      className="grid min-h-[calc(100vh-48px)] overflow-x-auto"
+      style={{
+        gridTemplateColumns: `${REVIEW_SIDEBAR_WIDTH}px minmax(${REVIEW_WORKSPACE_MIN_WIDTH}px, 1fr)`,
+      }}
+    >
       <InboxSidebar
         laneItems={laneItems}
         activeActionTabId={groupMode === "action" ? activeActionTabId : undefined}
@@ -601,91 +618,121 @@ export function InboxPage() {
         onSelectMuted={focusMuted}
       />
 
-      <section className="grid min-w-0 bg-background xl:grid-cols-[58fr_42fr]">
-        <div className="flex min-w-0 flex-col border-b border-border xl:border-r xl:border-b-0">
-          <InboxHeader
-            groupMode={groupMode}
-            activeCount={searchedActiveItems.length}
-            searchQuery={searchQuery}
-            syncLabel={formatSyncLabel(inboxQuery.dataUpdatedAt)}
-            onGroupModeChange={setGroupMode}
-            onSearchQueryChange={setSearchQuery}
-          />
-          <div className="min-h-0 flex-1 overflow-y-auto pt-2 pb-7">
-            {groupMode === "action" ? (
-              <ActionQueueList
-                items={visibleActionItems}
-                selectedId={selectedItem?.id ?? ""}
-                onOpenDetail={openItemDetail}
-                onSelect={setSelectedId}
+      <section className="min-w-0 bg-background">
+        <ResizablePanelGroup
+          id="review-inbox-split"
+          orientation="horizontal"
+          defaultLayout={{ reviewQueue: 58, quickPeek: 42 }}
+          resizeTargetMinimumSize={{ fine: 12, coarse: 36 }}
+          className="h-full min-h-[calc(100vh-48px)]"
+          style={{ minWidth: REVIEW_WORKSPACE_MIN_WIDTH }}
+        >
+          <ResizablePanel
+            id="reviewQueue"
+            defaultSize="58%"
+            minSize={REVIEW_QUEUE_MIN_WIDTH}
+            className="min-w-0"
+          >
+            <div className="flex h-full min-w-0 flex-col border-b border-border">
+              <InboxHeader
+                groupMode={groupMode}
+                activeCount={searchedActiveItems.length}
+                searchQuery={searchQuery}
+                syncLabel={formatSyncLabel(inboxQuery.dataUpdatedAt)}
+                onGroupModeChange={setGroupMode}
+                onSearchQueryChange={setSearchQuery}
               />
-            ) : groupMode === "repository" ? (
-              repositoryGroups.map((group) => (
-                <QueueLane
-                  key={group.id}
-                  group={group}
-                  isOpen={openRepositoryIds.has(group.id)}
-                  items={group.items}
-                  selectedId={selectedItem?.id ?? ""}
-                  onOpenDetail={openItemDetail}
-                  onToggle={() => {
-                    setOpenRepositoryIds((current) =>
-                      toggleOpenGroup(current, group.id)
-                    )
-                  }}
-                  onSelect={setSelectedId}
-                />
-              ))
-            ) : groupMode === "pinned" ? (
-              <QueueLane
-                group={{ id: "pinned", label: "Pinned", tone: "changed" }}
-                isOpen
-                items={searchedPinnedItems}
-                selectedId={selectedItem?.id ?? ""}
-                onOpenDetail={openItemDetail}
-                onToggle={() => undefined}
-                onSelect={setSelectedId}
-              />
-            ) : groupMode === "snoozed" ? (
-              <QueueLane
-                group={{ id: "snoozed", label: "Snoozed", tone: "quiet" }}
-                isOpen
-                items={searchedSnoozedItems}
-                selectedId={selectedItem?.id ?? ""}
-                onOpenDetail={openItemDetail}
-                onToggle={() => undefined}
-                onSelect={setSelectedId}
+              <div className="min-h-0 flex-1 overflow-y-auto pt-2 pb-7">
+                {groupMode === "action" ? (
+                  <ActionQueueList
+                    items={visibleActionItems}
+                    selectedId={selectedItem?.id ?? ""}
+                    onOpenDetail={openItemDetail}
+                    onSelect={setSelectedId}
+                  />
+                ) : groupMode === "repository" ? (
+                  repositoryGroups.map((group) => (
+                    <QueueLane
+                      key={group.id}
+                      group={group}
+                      isOpen={openRepositoryIds.has(group.id)}
+                      items={group.items}
+                      selectedId={selectedItem?.id ?? ""}
+                      onOpenDetail={openItemDetail}
+                      onToggle={() => {
+                        setOpenRepositoryIds((current) =>
+                          toggleOpenGroup(current, group.id)
+                        )
+                      }}
+                      onSelect={setSelectedId}
+                    />
+                  ))
+                ) : groupMode === "pinned" ? (
+                  <QueueLane
+                    group={{ id: "pinned", label: "Pinned", tone: "changed" }}
+                    isOpen
+                    items={searchedPinnedItems}
+                    selectedId={selectedItem?.id ?? ""}
+                    onOpenDetail={openItemDetail}
+                    onToggle={() => undefined}
+                    onSelect={setSelectedId}
+                  />
+                ) : groupMode === "snoozed" ? (
+                  <QueueLane
+                    group={{ id: "snoozed", label: "Snoozed", tone: "quiet" }}
+                    isOpen
+                    items={searchedSnoozedItems}
+                    selectedId={selectedItem?.id ?? ""}
+                    onOpenDetail={openItemDetail}
+                    onToggle={() => undefined}
+                    onSelect={setSelectedId}
+                  />
+                ) : (
+                  <QueueLane
+                    group={{ id: "muted", label: "Muted", tone: "quiet" }}
+                    isOpen
+                    items={searchedMutedItems}
+                    selectedId={selectedItem?.id ?? ""}
+                    onOpenDetail={openItemDetail}
+                    onToggle={() => undefined}
+                    onSelect={setSelectedId}
+                  />
+                )}
+              </div>
+            </div>
+          </ResizablePanel>
+          <ResizablePanelResizeHandle
+            id="review-inbox-resize-handle"
+            aria-label="Resize quick peek"
+            className="group relative w-2 cursor-col-resize bg-background outline-none transition-colors hover:bg-muted/70 focus-visible:bg-muted data-[separator=active]:bg-muted"
+          >
+            <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-foreground/30 group-focus-visible:bg-foreground/40" />
+          </ResizablePanelResizeHandle>
+          <ResizablePanel
+            id="quickPeek"
+            defaultSize="42%"
+            minSize={QUICK_PEEK_MIN_WIDTH}
+            className="min-w-0"
+          >
+            {selectedItem ? (
+              <QuickPeekPanel
+                item={selectedItem}
+                isPinned={selectedItemIsPinned}
+                isSnoozed={selectedItemIsSnoozed}
+                isMuted={selectedItemIsMuted}
+                isMarkingSeen={markSeenMutation.isPending}
+                caughtUpError={failedCaughtUpItemId === selectedItem.id}
+                onSnooze={snoozeSelected}
+                onRestore={restoreSelected}
+                onTogglePin={togglePinSelected}
+                onMute={muteSelected}
+                onCaughtUp={() => void markSelectedCaughtUp()}
               />
             ) : (
-              <QueueLane
-                group={{ id: "muted", label: "Muted", tone: "quiet" }}
-                isOpen
-                items={searchedMutedItems}
-                selectedId={selectedItem?.id ?? ""}
-                onOpenDetail={openItemDetail}
-                onToggle={() => undefined}
-                onSelect={setSelectedId}
-              />
+              <EmptyPeekPanel groupMode={groupMode} searchQuery={searchQuery} />
             )}
-          </div>
-        </div>
-        {selectedItem ? (
-          <QuickPeekPanel
-            item={selectedItem}
-            isPinned={selectedItemIsPinned}
-            isSnoozed={selectedItemIsSnoozed}
-            isMuted={selectedItemIsMuted}
-            isMarkingSeen={markSeenMutation.isPending}
-            caughtUpError={failedCaughtUpItemId === selectedItem.id}
-            onSnooze={snoozeSelected}
-            onRestore={restoreSelected}
-            onTogglePin={togglePinSelected}
-            onMute={muteSelected}
-            onCaughtUp={() => void markSelectedCaughtUp()}
-          />
-        ) : (
-          <EmptyPeekPanel groupMode={groupMode} searchQuery={searchQuery} />
-        )}
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </section>
     </div>
   )
@@ -1284,7 +1331,7 @@ function QuickPeekPanel({
     },
   ].filter((row) => row.show)
   return (
-    <aside className="flex min-h-[520px] min-w-0 flex-col bg-card">
+    <aside className="flex h-full min-h-[520px] min-w-0 flex-col bg-card">
       <div className="border-b border-border px-5 py-5">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <PanelRight className="h-3.5 w-3.5" />
@@ -1621,7 +1668,7 @@ function EmptyPeekPanel({
   const copy = getEmptyPeekCopy(groupMode, searchQuery)
 
   return (
-    <aside className="flex min-w-0 flex-col items-center justify-center bg-card px-8 text-center">
+    <aside className="flex h-full min-w-0 flex-col items-center justify-center bg-card px-8 text-center">
       <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-muted/30 text-foreground">
         <Check className="h-5 w-5" />
       </div>
