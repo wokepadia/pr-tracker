@@ -15,6 +15,7 @@ export type WorkflowState =
   | "waiting_on_author"
   | "needs_thread_attention"
   | "approved"
+  | "caught_up"
   | "stale"
   | "watching"
   | "inactive";
@@ -40,6 +41,7 @@ const activeStates: WorkflowState[] = [
   "waiting_on_author",
   "needs_thread_attention",
   "approved",
+  "caught_up",
   "stale",
   "watching",
   "inactive"
@@ -82,12 +84,24 @@ export function classifyPullRequest(
   const reviewedDifferentHead =
     hasKnownReviewedHead &&
     latestViewerReview.commitSha !== pullRequest.latestCommitSha;
+  const isCaughtUpWithLatestActivity =
+    unseenActivityCount === 0 && isSeenAtOrAfterUpdate(lastSeenAt, pullRequest.updatedAt);
   const hasOpenViewerThread = pullRequest.threads.some(
     (thread) => !thread.isResolved && thread.participantIds.includes(viewer.viewerId)
   );
 
   if (latestViewerReview?.decision === "changes_requested") {
     if (reviewedDifferentHead) {
+      if (isCaughtUpWithLatestActivity) {
+        return {
+          pullRequest,
+          workflowState: "caught_up",
+          reason: "You marked the latest author activity caught up.",
+          lastSeenAt,
+          unseenActivityCount
+        };
+      }
+
       return {
         pullRequest,
         workflowState: "updated_since_review",
@@ -119,6 +133,16 @@ export function classifyPullRequest(
   }
 
   if (latestViewerReview && reviewedDifferentHead) {
+    if (isCaughtUpWithLatestActivity) {
+      return {
+        pullRequest,
+        workflowState: "caught_up",
+        reason: "You marked the latest author activity caught up.",
+        lastSeenAt,
+        unseenActivityCount
+      };
+    }
+
     return {
       pullRequest,
       workflowState: "updated_since_review",
@@ -252,4 +276,20 @@ function stateRank(state: WorkflowState): number {
 function isStale(updatedAt: string, now: string, staleAfterDays: number): boolean {
   const staleAfterMs = staleAfterDays * 24 * 60 * 60 * 1000;
   return Date.parse(now) - Date.parse(updatedAt) >= staleAfterMs;
+}
+
+function isSeenAtOrAfterUpdate(
+  lastSeenAt: string | undefined,
+  updatedAt: string
+): boolean {
+  if (!lastSeenAt) return false;
+
+  const lastSeenTime = Date.parse(lastSeenAt);
+  const updatedTime = Date.parse(updatedAt);
+
+  return (
+    !Number.isNaN(lastSeenTime) &&
+    !Number.isNaN(updatedTime) &&
+    lastSeenTime >= updatedTime
+  );
 }

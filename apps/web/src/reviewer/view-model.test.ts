@@ -29,6 +29,7 @@ describe("reviewer view model", () => {
       ],
       items: [
         classifiedItem("pr_approved", "approved"),
+        classifiedItem("pr_caught_up", "caught_up"),
         classifiedItem("pr_watching", "watching"),
         classifiedItem("pr_stale", "stale"),
       ],
@@ -38,6 +39,7 @@ describe("reviewer view model", () => {
         waiting_on_author: [],
         needs_thread_attention: [],
         approved: [classifiedItem("pr_approved", "approved")],
+        caught_up: [classifiedItem("pr_caught_up", "caught_up")],
         stale: [classifiedItem("pr_stale", "stale")],
         watching: [classifiedItem("pr_watching", "watching")],
         inactive: [],
@@ -50,11 +52,12 @@ describe("reviewer view model", () => {
       "pr_approved",
     ])
     expect(view.laneItems.watching.map((item) => item.id)).toEqual([
+      "pr_caught_up",
       "pr_watching",
       "pr_stale",
     ])
     expect(view.approvedCount).toBe(1)
-    expect(view.watchingCount).toBe(2)
+    expect(view.watchingCount).toBe(3)
   })
 
   it("counts only unseen deterministic activity facts", () => {

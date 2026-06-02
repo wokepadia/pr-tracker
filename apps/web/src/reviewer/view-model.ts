@@ -56,7 +56,7 @@ export interface ReviewQueueItemView {
   authorLogin: string
   url: string
   workflowState: WorkflowState
-  laneId: ReviewLaneId | "approved" | "watching" | "stale"
+  laneId: ReviewLaneId | "approved" | "caught_up" | "watching" | "stale"
   reason: string
   waitingOn: WaitingOn
   waitingAge: string
@@ -106,12 +106,18 @@ export function buildInboxView(inbox: ReviewerInbox): ReviewerInboxView {
       ),
       approved: items.filter((item) => item.laneId === "approved"),
       watching: items.filter(
-        (item) => item.laneId === "watching" || item.laneId === "stale"
+        (item) =>
+          item.laneId === "caught_up" ||
+          item.laneId === "watching" ||
+          item.laneId === "stale"
       ),
     },
     approvedCount: items.filter((item) => item.laneId === "approved").length,
     watchingCount: items.filter(
-      (item) => item.laneId === "watching" || item.laneId === "stale"
+      (item) =>
+        item.laneId === "caught_up" ||
+        item.laneId === "watching" ||
+        item.laneId === "stale"
     ).length,
     actorById,
     viewerId: inbox.viewer.id,
@@ -237,6 +243,7 @@ function getLaneId(
     return "updated_since_review"
   }
   if (workflowState === "approved") return "approved"
+  if (workflowState === "caught_up") return "caught_up"
   if (workflowState === "stale") return "stale"
   return "watching"
 }

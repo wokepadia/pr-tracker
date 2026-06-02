@@ -21,6 +21,34 @@ describe("reviewer workflow classification", () => {
     expect(item.workflowState).toBe("updated_since_review");
   });
 
+  it("classifies changed-after-review pull requests as caught up after the latest activity is seen", () => {
+    const item = classifyPullRequest(samplePullRequests[1]!, {
+      viewerId: "viewer",
+      now: "2026-06-01T12:00:00.000Z",
+      staleAfterDays: 7,
+      lastSeenAtByPullRequestId: {
+        pr_2: "2026-06-01T12:00:00.000Z"
+      }
+    });
+
+    expect(item.workflowState).toBe("caught_up");
+    expect(item.unseenActivityCount).toBe(0);
+  });
+
+  it("keeps directly requested pull requests in needs_review even after they are seen", () => {
+    const item = classifyPullRequest(samplePullRequests[0]!, {
+      viewerId: "viewer",
+      now: "2026-06-01T12:00:00.000Z",
+      staleAfterDays: 7,
+      lastSeenAtByPullRequestId: {
+        pr_1: "2026-06-01T12:00:00.000Z"
+      }
+    });
+
+    expect(item.workflowState).toBe("needs_review");
+    expect(item.unseenActivityCount).toBe(0);
+  });
+
   it("detects requested changes waiting on the author", () => {
     const item = classifyPullRequest(samplePullRequests[2]!, {
       viewerId: "viewer",

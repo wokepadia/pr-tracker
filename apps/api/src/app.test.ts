@@ -66,7 +66,11 @@ describe("api app", () => {
 
     const inboxResponse = await app.request("/api/reviewer-inbox");
     const inbox = (await inboxResponse.json()) as {
-      items: Array<{ pullRequest: { id: string }; unseenActivityCount: number }>;
+      items: Array<{
+        pullRequest: { id: string };
+        workflowState: string;
+        unseenActivityCount: number;
+      }>;
     };
     const item = inbox.items.find((entry) => entry.pullRequest.id === "pr_1");
 
@@ -80,6 +84,32 @@ describe("api app", () => {
     expect(detailResponse.status).toBe(200);
     expect(detail.item).toMatchObject({
       pullRequest: { id: "pr_1" },
+      unseenActivityCount: 0
+    });
+  });
+
+  it("moves changed-after-review items to caught up when marked seen", async () => {
+    const seenResponse = await app.request("/api/pull-requests/pr_2/seen", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ lastSeenAt: "2026-06-01T12:00:00.000Z" })
+    });
+
+    expect(seenResponse.status).toBe(200);
+
+    const inboxResponse = await app.request("/api/reviewer-inbox");
+    const inbox = (await inboxResponse.json()) as {
+      items: Array<{
+        pullRequest: { id: string };
+        workflowState: string;
+        unseenActivityCount: number;
+      }>;
+    };
+    const item = inbox.items.find((entry) => entry.pullRequest.id === "pr_2");
+
+    expect(item).toMatchObject({
+      pullRequest: { id: "pr_2" },
+      workflowState: "caught_up",
       unseenActivityCount: 0
     });
   });

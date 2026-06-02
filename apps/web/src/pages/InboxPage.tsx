@@ -1440,6 +1440,7 @@ function queuePillLabel(item: ReviewQueueItemView): string {
   if (item.waitingOn === "you") return "you"
   if (item.waitingOn === "author") return "author"
   if (item.laneId === "approved") return "approved"
+  if (item.laneId === "caught_up") return "caught up"
   if (item.laneId === "stale") return "stale"
   return "watching"
 }
@@ -1448,6 +1449,7 @@ function queueTimingLabel(item: ReviewQueueItemView): string {
   if (item.waitingOn === "you") return "waiting on you"
   if (item.waitingOn === "author") return "on author"
   if (item.laneId === "approved") return "approved"
+  if (item.laneId === "caught_up") return "caught up"
   if (item.laneId === "stale") return "stale"
   return "watching"
 }
@@ -1456,7 +1458,10 @@ function bucketIdForItem(
   item: ReviewQueueItemView | undefined
 ): LaneId | undefined {
   if (!item) return undefined
-  return item.laneId === "stale" ? "watching" : item.laneId
+  if (item.laneId === "caught_up" || item.laneId === "stale") {
+    return "watching"
+  }
+  return item.laneId
 }
 
 function isStashedGroupMode(groupMode: QueueGroupMode): boolean {
@@ -1468,7 +1473,11 @@ function itemBelongsToBucket(
   bucketId: LaneId
 ): boolean {
   if (bucketId === "watching") {
-    return item.laneId === "watching" || item.laneId === "stale"
+    return (
+      item.laneId === "caught_up" ||
+      item.laneId === "watching" ||
+      item.laneId === "stale"
+    )
   }
 
   return item.laneId === bucketId

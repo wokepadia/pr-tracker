@@ -761,6 +761,7 @@ function detailQueueLabel(item: ReviewQueueItemView): string {
   if (item.waitingOn === "you") return "Waiting on you"
   if (item.waitingOn === "author") return "Waiting on author"
   if (item.laneId === "approved") return "Already approved"
+  if (item.laneId === "caught_up") return "Caught up"
   if (item.laneId === "stale") return "Stale"
   return "Watching"
 }
@@ -769,6 +770,7 @@ function detailMergeableLabel(item: ReviewQueueItemView): string {
   if (item.waitingOn === "you") return "blocked · you"
   if (item.waitingOn === "author") return "waiting · author"
   if (item.laneId === "approved") return "approved · watching"
+  if (item.laneId === "caught_up") return "caught up · watching"
   if (item.laneId === "stale") return "stale · watching"
   return "watching"
 }
@@ -778,6 +780,7 @@ function requestStateLabel(item: ReviewQueueItemView): string {
   if (item.workflowState === "updated_since_review") return "changed after review"
   if (item.workflowState === "waiting_on_author") return "not requested"
   if (item.workflowState === "needs_thread_attention") return "thread attention"
+  if (item.workflowState === "caught_up") return "caught up"
   return "not requested"
 }
 
