@@ -36,14 +36,11 @@ export function loadStoredSelectedQueueItemId(
 }
 
 export function saveStoredSelectedQueueItemId(
-  storage: Pick<Storage, "removeItem" | "setItem">,
+  storage: Pick<Storage, "setItem">,
   selectedId: string
 ): void {
-  if (selectedId) {
-    storage.setItem(SELECTED_QUEUE_ITEM_KEY, selectedId)
-  } else {
-    storage.removeItem(SELECTED_QUEUE_ITEM_KEY)
-  }
+  if (!selectedId) return
+  storage.setItem(SELECTED_QUEUE_ITEM_KEY, selectedId)
 }
 
 export function getEmptyPeekCopy(

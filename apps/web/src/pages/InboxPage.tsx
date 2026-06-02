@@ -314,10 +314,15 @@ export function InboxPage() {
   }, [groupMode, repositoryGroups])
 
   useEffect(() => {
+    if (!inboxView) return
     if (!visibleQueueItems.some((item) => item.id === selectedId)) {
-      setSelectedId(visibleQueueItems[0]?.id ?? "")
+      const storedSelectedId = loadStoredSelectedQueueItemId(window.sessionStorage)
+      const storedVisibleItem = visibleQueueItems.find(
+        (item) => item.id === storedSelectedId
+      )
+      setSelectedId(storedVisibleItem?.id ?? visibleQueueItems[0]?.id ?? "")
     }
-  }, [selectedId, visibleQueueItems])
+  }, [inboxView, selectedId, visibleQueueItems])
 
   function moveSelectionAfterHiding(itemId: string) {
     const currentIndex = visibleQueueItems.findIndex((item) => item.id === itemId)

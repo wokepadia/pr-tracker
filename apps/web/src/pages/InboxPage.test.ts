@@ -136,18 +136,17 @@ describe("inbox selected item storage", () => {
     ])
   })
 
-  it("clears the stored selected queue item for empty selections", () => {
-    const removals: string[] = []
+  it("keeps the last stored queue item for temporary empty filtered views", () => {
+    const writes: string[] = []
     const storage = {
-      setItem: (_key: string, _value: string) => undefined,
-      removeItem: (key: string) => {
-        removals.push(key)
+      setItem: (_key: string, value: string) => {
+        writes.push(value)
       },
     }
 
     saveStoredSelectedQueueItemId(storage, "")
 
-    expect(removals).toEqual(["pr-tracker:selected-review-queue-item:v1"])
+    expect(writes).toEqual([])
   })
 })
 
