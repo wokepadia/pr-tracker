@@ -54,10 +54,10 @@ const reviewDecisionLabels: Record<ReviewDecision, string> = {
 type DetailTone = "hot" | "changed" | "waiting" | "success" | "quiet"
 
 const detailToneClasses: Record<DetailTone, string> = {
-  hot: "border-amber-200 bg-amber-50 text-amber-800",
-  changed: "border-sky-200 bg-sky-50 text-sky-800",
-  waiting: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  success: "border-teal-200 bg-teal-50 text-teal-800",
+  hot: "border-amber-200 bg-amber-50/80 text-amber-800",
+  changed: "border-sky-200 bg-sky-50/75 text-sky-800",
+  waiting: "border-emerald-200 bg-emerald-50/75 text-emerald-800",
+  success: "border-teal-200 bg-teal-50/75 text-teal-800",
   quiet: "border-border bg-muted/40 text-muted-foreground",
 }
 
@@ -279,10 +279,15 @@ export function PullRequestPage() {
         newEventCount={newEvents.length}
         reviewRequestCount={reviewRequestCount}
       />
-      <div className="grid grid-cols-1 gap-0 border-t border-border xl:grid-cols-[62fr_38fr]">
-        <main className="min-w-0 px-7 py-6">
-          <div className="mb-4 text-xs text-muted-foreground">
+      <div className="grid grid-cols-1 gap-0 border-t border-border xl:grid-cols-[64fr_36fr]">
+        <main className="min-w-0 px-7 py-5">
+          <div className="mb-4 flex items-center justify-between text-xs text-muted-foreground">
+            <span>
             Activity · newest first
+            </span>
+            <span className="hidden sm:inline">
+              {timelineEventSummary(newEvents.length)}
+            </span>
           </div>
           <Timeline
             newEvents={newEvents}
@@ -335,7 +340,7 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
   const tone = detailToneForItem(item)
 
   return (
-    <header className="grid grid-cols-1 gap-5 border-b border-border px-7 py-6 lg:grid-cols-[auto_1fr_auto]">
+    <header className="grid grid-cols-1 gap-4 border-b border-border px-7 py-5 lg:grid-cols-[auto_1fr_auto]">
       <Button
         asChild
         variant="ghost"
@@ -356,7 +361,7 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
           <span className="mx-2 text-muted-foreground/40">·</span>
           {item.openedAt}
         </div>
-        <h1 className="mt-2 text-3xl font-semibold leading-9 tracking-tight text-foreground">
+        <h1 className="mt-2 max-w-[900px] text-2xl font-semibold leading-8 tracking-tight text-foreground">
           {item.title}
         </h1>
         <div className="mt-4 grid max-w-[860px] grid-cols-1 gap-2 md:grid-cols-4">
@@ -380,7 +385,7 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
           <span className={cn("mr-2 inline-block h-2 w-2 rounded-full", detailDotClasses[tone])} />
           {userReviewStanding(item.userLastReviewDecision)}
         </div>
-        <Button asChild className="h-9">
+        <Button asChild className="h-8">
           <a href={item.url} target="_blank" rel="noreferrer">
             Open in GitHub
             <ExternalLink className="h-4 w-4" />
@@ -404,7 +409,7 @@ function DetailFact({
     <div
       className={cn(
         "rounded-md border px-3 py-2",
-        hot ? "border-amber-200 bg-amber-50 text-amber-800" : "border-border bg-muted/30"
+        hot ? "border-amber-200 bg-amber-50/80 text-amber-800" : "border-border bg-muted/20"
       )}
     >
       <div className="text-xs text-muted-foreground/70">
@@ -489,15 +494,18 @@ function ContextBand({
   ].filter(Boolean)
 
   return (
-    <section className="px-7 py-5">
-      <div className={cn("rounded-lg border bg-background p-5", detailToneClasses[tone])}>
-        <div className="flex items-center gap-2 text-xs font-medium">
+    <section className="px-7 py-3">
+      <div className={cn("rounded-md border bg-background p-3", detailToneClasses[tone])}>
+        <div className="flex flex-wrap items-center gap-2 text-xs font-medium">
           <RotateCcw className="h-3.5 w-3.5" />
           Review context
           <span className="opacity-45">·</span>
           {item.lastSeenAt}
+          <span className="ml-auto hidden text-muted-foreground/80 md:inline">
+            {timelineEventSummary(newEventCount)}
+          </span>
         </div>
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5">
           <ContextFact
             label="your last review"
             value={
@@ -528,7 +536,7 @@ function ContextBand({
           />
         </div>
         {changeCards.length > 0 ? (
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-2 flex flex-wrap gap-2">
             {changeCards.map((card) => (
               <ChangeCard
                 key={card.id}
@@ -540,11 +548,11 @@ function ContextBand({
             ))}
           </div>
         ) : (
-          <div className="mt-4 rounded-md border border-border bg-muted/30 px-4 py-3 text-sm leading-5 text-foreground">
+          <div className="mt-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-sm leading-5 text-foreground">
             No unseen review activity since your last visit.
           </div>
         )}
-        <div className="mt-4 grid gap-2 text-sm leading-5 text-foreground">
+        <div className="mt-2 grid gap-1.5 text-sm leading-5 text-foreground">
           {item.activityEvents
             .filter((event) => event.isNew)
             .slice(0, 3)
@@ -558,7 +566,7 @@ function ContextBand({
               </div>
             ))}
         </div>
-        <div className="mt-4 text-xs text-muted-foreground">
+        <div className="mt-2 text-xs text-muted-foreground md:hidden">
           {timelineEventSummary(newEventCount)}
         </div>
       </div>
@@ -576,7 +584,7 @@ function ContextFact({
   hot?: boolean
 }) {
   return (
-    <div className="min-w-0 rounded-md border border-border bg-muted/30 px-3 py-2">
+    <div className="min-w-0 rounded-md border border-border bg-muted/20 px-3 py-1.5">
       <div className="text-xs text-muted-foreground/70">
         {label}
       </div>
@@ -604,14 +612,14 @@ function ChangeCard({
   hot?: boolean
 }) {
   return (
-    <div className="rounded-md border border-border bg-muted/30 px-4 py-3">
+    <div className="min-w-[132px] rounded-md border border-border bg-muted/20 px-3 py-1.5">
       <div
         className={cn(
-          "flex items-center gap-2 text-2xl font-semibold text-foreground",
+          "flex items-center gap-2 text-sm font-semibold text-foreground",
           hot && "text-foreground"
         )}
       >
-        {Icon ? <Icon className="h-5 w-5" /> : null}
+        {Icon ? <Icon className="h-3.5 w-3.5" /> : null}
         {value}
       </div>
       <div className="mt-1 text-xs text-muted-foreground/70">
@@ -635,7 +643,7 @@ function Timeline({
   return (
     <div className="relative">
       <div className="absolute top-2 bottom-2 left-[7px] w-px bg-border" />
-      <div className="space-y-5">
+      <div className="space-y-4">
         {newEvents.map((event) => (
           <TimelineItem key={event.id} event={event} isNew tone={tone} />
         ))}
@@ -682,7 +690,7 @@ function TimelineItem({
           <b>{event.actor}</b> {event.action}
         </div>
         {event.detail ? (
-          <div className="mt-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm leading-5 text-muted-foreground">
+          <div className="mt-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-sm leading-5 text-muted-foreground">
             {event.detail}
           </div>
         ) : null}
@@ -729,7 +737,7 @@ function DetailSideRail({
   )
 
   return (
-    <aside className="border-t border-border bg-card px-5 py-6 xl:border-l xl:border-t-0">
+    <aside className="border-t border-border bg-card px-5 py-5 xl:border-l xl:border-t-0">
       <RailCard title="Catch up">
         <div className="grid gap-2">
           {caughtUpError ? (
@@ -737,7 +745,7 @@ function DetailSideRail({
               Could not save caught-up state. Try again.
             </div>
           ) : null}
-          <Button asChild className="h-9 justify-center">
+          <Button asChild className="h-8 justify-center">
             <a href={item.url} target="_blank" rel="noreferrer">
               {newEventCount > 0
                 ? `Review ${formatCount(newEventCount, "new event")}`
@@ -750,7 +758,7 @@ function DetailSideRail({
             variant="outline"
             disabled={!canMarkCaughtUp}
             onClick={onCaughtUp}
-            className="h-9 justify-center"
+            className="h-8 justify-center"
           >
             <Check className="h-4 w-4" />
             {isMarkingSeen
@@ -765,7 +773,7 @@ function DetailSideRail({
               variant="outline"
               disabled={isMuted}
               onClick={isSnoozed ? onRestore : onSnooze}
-              className="h-9 justify-center"
+              className="h-8 justify-center"
             >
               {isSnoozed ? (
                 <RotateCcw className="h-4 w-4" />
@@ -780,7 +788,7 @@ function DetailSideRail({
               disabled={isSnoozed || isMuted}
               aria-pressed={isPinned}
               onClick={onTogglePin}
-              className="h-9 justify-center"
+              className="h-8 justify-center"
             >
               <Pin className="h-4 w-4" />
               {isPinned ? "Unpin" : "Pin"}
@@ -790,7 +798,7 @@ function DetailSideRail({
               variant="outline"
               disabled={isSnoozed}
               onClick={isMuted ? onRestore : onMute}
-              className="col-span-2 h-9 justify-center"
+              className="col-span-2 h-8 justify-center"
             >
               <BellOff className="h-4 w-4" />
               {isMuted ? "Unmute" : "Mute"}
@@ -856,8 +864,8 @@ function RailCard({
   children: ReactNode
 }) {
   return (
-    <section className="mb-4 rounded-lg border border-border bg-muted/30 p-4">
-      <div className="mb-3 text-xs text-muted-foreground">
+    <section className="mb-3 rounded-md border border-border bg-muted/20 p-3">
+      <div className="mb-2 text-xs text-muted-foreground">
         {title}
       </div>
       {children}
