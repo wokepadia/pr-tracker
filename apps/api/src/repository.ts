@@ -6,12 +6,14 @@ import {
 } from "@pr-tracker/core";
 import {
   buildReviewerInbox,
+  type ClassifiedPullRequest,
   type ReviewerInbox
 } from "@pr-tracker/reviewer-workflow";
 
 export interface PullRequestDetail {
-  pullRequest: PullRequestItem;
+  viewer: Actor;
   actors: Actor[];
+  item: ClassifiedPullRequest;
 }
 
 export interface ReviewerInboxRepository {
@@ -45,7 +47,26 @@ export function createSampleRepository(): ReviewerInboxRepository {
 
     async getPullRequest(id) {
       const pullRequest = samplePullRequests.find((item) => item.id === id);
-      return pullRequest ? { pullRequest, actors: sampleActors } : undefined;
+      if (!pullRequest) {
+        return undefined;
+      }
+
+      const inbox = buildReviewerInbox({
+        viewer,
+        actors: sampleActors,
+        pullRequests: [pullRequest],
+        now: new Date().toISOString(),
+        lastSeenAtByPullRequestId
+      });
+      const item = inbox.items[0];
+
+      return item
+        ? {
+            viewer,
+            actors: sampleActors,
+            item
+          }
+        : undefined;
     },
 
     async markSeen(input) {

@@ -35,13 +35,23 @@ describe("api app", () => {
   it("serves pull request detail", async () => {
     const response = await app.request("/api/pull-requests/pr_3");
     const body = (await response.json()) as {
-      pullRequest: { id: string; title: string };
+      item: {
+        pullRequest: { id: string; title: string };
+        workflowState: string;
+      };
+      viewer: { login: string };
     };
 
     expect(response.status).toBe(200);
-    expect(body.pullRequest).toMatchObject({
-      id: "pr_3",
-      title: "Handle duplicate webhook deliveries"
+    expect(body).toMatchObject({
+      viewer: { login: "you" },
+      item: {
+        workflowState: "waiting_on_author",
+        pullRequest: {
+          id: "pr_3",
+          title: "Handle duplicate webhook deliveries"
+        }
+      }
     });
   });
 

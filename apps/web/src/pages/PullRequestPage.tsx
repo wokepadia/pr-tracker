@@ -15,10 +15,10 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import { getPullRequest, getReviewerInbox, markPullRequestSeen } from "@/api"
+import { getPullRequest, markPullRequestSeen } from "@/api"
 import { cn } from "@/lib/utils"
 import {
-  buildInboxView,
+  toReviewQueueItemView,
   type ActivityEventView,
   type ReviewQueueItemView,
 } from "@/reviewer/view-model"
@@ -34,10 +34,6 @@ export function PullRequestPage() {
   const { pullRequestId } = useParams({ from: "/pull-requests/$pullRequestId" })
   const queryClient = useQueryClient()
   const [caughtUpError, setCaughtUpError] = useState(false)
-  const inboxQuery = useQuery({
-    queryKey: ["reviewer-inbox"],
-    queryFn: getReviewerInbox,
-  })
   const detailQuery = useQuery({
     queryKey: ["pull-request", pullRequestId],
     queryFn: () => getPullRequest(pullRequestId),
@@ -51,18 +47,24 @@ export function PullRequestPage() {
       ])
     },
   })
-  const inboxView = inboxQuery.data ? buildInboxView(inboxQuery.data) : undefined
-  const item = inboxView?.items.find((reviewItem) => reviewItem.id === pullRequestId)
+  const detail = detailQuery.data
+  const item = detail
+    ? toReviewQueueItemView(
+        detail.item,
+        new Map(detail.actors.map((actor) => [actor.id, actor])),
+        detail.viewer.id
+      )
+    : undefined
 
-  if (inboxQuery.isLoading || detailQuery.isLoading) {
+  if (detailQuery.isLoading) {
     return <DetailStatusPanel title="Loading pull request" />
   }
 
-  if (inboxQuery.isError || detailQuery.isError || !item) {
+  if (detailQuery.isError || !item) {
     return (
       <DetailStatusPanel
         title="Could not load pull request"
-        detail="The API did not return this reviewer item."
+        detail="The API did not return this reviewer pull request."
       />
     )
   }

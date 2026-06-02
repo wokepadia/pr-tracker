@@ -99,11 +99,22 @@ export function createDatabaseRepository(
       if (!pullRequest) {
         return undefined;
       }
+      const actors = buildActors(pullRequests, [viewerLogin]);
+      const viewer = ensureActor(actors, viewerLogin);
+      const lastSeenAtByPullRequestId = await loadLastSeen(
+        await getOrm(),
+        viewerLogin
+      );
+      const inbox = buildReviewerInbox({
+        viewer,
+        actors,
+        pullRequests,
+        now: new Date().toISOString(),
+        lastSeenAtByPullRequestId
+      });
+      const item = inbox.items[0];
 
-      return {
-        pullRequest,
-        actors: buildActors(pullRequests, [viewerLogin])
-      };
+      return item ? { viewer, actors, item } : undefined;
     },
 
     async markSeen(input) {

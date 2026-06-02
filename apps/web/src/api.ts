@@ -1,9 +1,13 @@
-import type { Actor, PullRequestItem } from "@pr-tracker/core"
-import type { ReviewerInbox } from "@pr-tracker/reviewer-workflow"
+import type { Actor } from "@pr-tracker/core"
+import type {
+  ClassifiedPullRequest,
+  ReviewerInbox,
+} from "@pr-tracker/reviewer-workflow"
 
 export interface PullRequestDetailResponse {
-  pullRequest: PullRequestItem
+  viewer: Actor
   actors: Actor[]
+  item: ClassifiedPullRequest
 }
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ""
