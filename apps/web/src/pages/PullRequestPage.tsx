@@ -359,7 +359,7 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
         <h1 className="mt-2 text-3xl font-semibold leading-9 tracking-tight text-foreground">
           {item.title}
         </h1>
-        <div className="mt-4 grid max-w-[860px] grid-cols-1 gap-2 md:grid-cols-4">
+        <div className="mt-4 grid max-w-[860px] grid-cols-2 gap-2 md:grid-cols-4">
           <DetailFact label="Updated" value={item.updatedAt} />
           <DetailFact
             label={detailQueueLabel(item)}
@@ -412,7 +412,7 @@ function DetailFact({
       </div>
       <div
         className={cn(
-          "mt-1 text-xs text-foreground",
+          "mt-1 truncate text-xs text-foreground",
           hot && "font-semibold text-foreground"
         )}
       >
@@ -478,7 +478,7 @@ function ContextBand({
       ? item.otherReviewers
           .map((reviewer) => `${reviewer.login}: ${reviewDecisionLabel(reviewer.decision)}`)
           .join(" · ")
-      : "no other reviewer state"
+      : "none"
   const authorActivity = [
     item.newCommitCount > 0
       ? `+${formatCount(item.newCommitCount, "commit")}`
@@ -490,14 +490,15 @@ function ContextBand({
 
   return (
     <section className="px-7 py-5">
-      <div className={cn("rounded-lg border bg-background p-5", detailToneClasses[tone])}>
-        <div className="flex items-center gap-2 text-xs font-medium">
+      <div className="rounded-md border border-border bg-card p-4 text-foreground">
+        <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
           <RotateCcw className="h-3.5 w-3.5" />
+          <span className={cn("h-1.5 w-1.5 rounded-full", detailDotClasses[tone])} />
           Review context
           <span className="opacity-45">·</span>
           {item.lastSeenAt}
         </div>
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-5">
           <ContextFact
             label="your last review"
             value={
@@ -509,12 +510,12 @@ function ContextBand({
           />
           <ContextFact
             label="author activity"
-            value={authorActivity.length > 0 ? authorActivity.join(" · ") : "none since last look"}
+            value={authorActivity.length > 0 ? authorActivity.join(" · ") : "none"}
             hot={item.newCommitCount > 0 || item.newReplyCount > 0}
           />
           <ContextFact
             label="review request"
-            value={reReviewRequested ? "requested again" : requestStateLabel(item)}
+            value={reReviewRequested ? "again" : requestStateLabel(item)}
             hot={reReviewRequested || item.workflowState === "needs_review"}
           />
           <ContextFact
@@ -528,7 +529,7 @@ function ContextBand({
           />
         </div>
         {changeCards.length > 0 ? (
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-4 flex flex-wrap gap-2">
             {changeCards.map((card) => (
               <ChangeCard
                 key={card.id}
@@ -604,19 +605,17 @@ function ChangeCard({
   hot?: boolean
 }) {
   return (
-    <div className="rounded-md border border-border bg-muted/30 px-4 py-3">
-      <div
-        className={cn(
-          "flex items-center gap-2 text-2xl font-semibold text-foreground",
-          hot && "text-foreground"
-        )}
-      >
-        {Icon ? <Icon className="h-5 w-5" /> : null}
+    <div
+      className={cn(
+        "inline-flex min-h-8 items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground",
+        hot && "border-amber-200 bg-amber-50 text-amber-800"
+      )}
+    >
+      <span className="inline-flex items-center gap-1.5 font-semibold text-foreground">
+        {Icon ? <Icon className="h-3.5 w-3.5" /> : null}
         {value}
-      </div>
-      <div className="mt-1 text-xs text-muted-foreground/70">
-        {label}
-      </div>
+      </span>
+      <span>{label}</span>
     </div>
   )
 }
