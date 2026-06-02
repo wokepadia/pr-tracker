@@ -38,7 +38,7 @@ import {
 
 type LaneId = ReviewLaneId
 
-type LocalQueueState = "snoozed" | "caught_up"
+type LocalQueueState = "snoozed"
 
 interface LaneDefinition {
   id: LaneId
@@ -142,7 +142,7 @@ export function InboxPage() {
     }
   }, [activeItems, selectedId, visibleItems])
 
-  function moveSelectionAfterRemoving(itemId: string) {
+  function moveSelectionAfterHiding(itemId: string) {
     const currentIndex = visibleItems.findIndex((item) => item.id === itemId)
     const remainingVisible = visibleItems.filter((item) => item.id !== itemId)
     const nextVisible =
@@ -151,14 +151,16 @@ export function InboxPage() {
     setSelectedId(nextVisible?.id ?? nextActive?.id ?? "")
   }
 
-  async function setSelectedQueueState(nextState: LocalQueueState) {
+  async function markSelectedCaughtUp() {
+    if (!selectedItem) return
+    await markSeenMutation.mutateAsync(selectedItem.id)
+  }
+
+  function snoozeSelected() {
     if (!selectedItem) return
     const itemId = selectedItem.id
-    if (nextState === "caught_up") {
-      await markSeenMutation.mutateAsync(itemId)
-    }
-    setLocalQueueState((current) => ({ ...current, [itemId]: nextState }))
-    moveSelectionAfterRemoving(itemId)
+    setLocalQueueState((current) => ({ ...current, [itemId]: "snoozed" }))
+    moveSelectionAfterHiding(itemId)
   }
 
   function openSelectedDetail() {
@@ -236,7 +238,12 @@ export function InboxPage() {
         return
       }
 
-      void setSelectedQueueState(event.key === "s" ? "snoozed" : "caught_up")
+      if (event.key === "s") {
+        snoozeSelected()
+        return
+      }
+
+      void markSelectedCaughtUp()
     }
 
     window.addEventListener("keydown", onKeyDown)
@@ -303,8 +310,8 @@ export function InboxPage() {
             <QuickPeekPanel
               item={selectedItem}
               isMarkingSeen={markSeenMutation.isPending}
-              onSnooze={() => void setSelectedQueueState("snoozed")}
-              onCaughtUp={() => void setSelectedQueueState("caught_up")}
+              onSnooze={snoozeSelected}
+              onCaughtUp={() => void markSelectedCaughtUp()}
             />
           ) : (
             <EmptyPeekPanel />
@@ -880,11 +887,15 @@ function QuickPeekPanel({
           type="button"
           variant="outline"
           onClick={onCaughtUp}
-          disabled={isMarkingSeen}
+          disabled={isMarkingSeen || item.unseenEventCount === 0}
           className="h-9 border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
         >
           <Check className="h-4 w-4" />
-          {isMarkingSeen ? "Saving" : "Caught up"}
+          {isMarkingSeen
+            ? "Saving"
+            : item.unseenEventCount === 0
+              ? "All caught up"
+              : "Caught up"}
         </Button>
         <Button
           asChild
