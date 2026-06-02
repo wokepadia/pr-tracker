@@ -153,7 +153,8 @@ export function InboxPage() {
 
   async function markSelectedCaughtUp() {
     if (!selectedItem) return
-    await markSeenMutation.mutateAsync(selectedItem.id)
+    markSeenMutation.reset()
+    await markSeenMutation.mutateAsync(selectedItem.id).catch(() => undefined)
   }
 
   function snoozeSelected() {
@@ -310,6 +311,7 @@ export function InboxPage() {
             <QuickPeekPanel
               item={selectedItem}
               isMarkingSeen={markSeenMutation.isPending}
+              caughtUpError={markSeenMutation.isError}
               onSnooze={snoozeSelected}
               onCaughtUp={() => void markSelectedCaughtUp()}
             />
@@ -687,11 +689,13 @@ function FactChip({
 function QuickPeekPanel({
   item,
   isMarkingSeen,
+  caughtUpError,
   onSnooze,
   onCaughtUp,
 }: {
   item: ReviewQueueItemView
   isMarkingSeen: boolean
+  caughtUpError: boolean
   onSnooze: () => void
   onCaughtUp: () => void
 }) {
@@ -865,6 +869,11 @@ function QuickPeekPanel({
       </div>
 
       <div className="mt-auto grid grid-cols-[1fr_1fr_auto] gap-2 border-t border-white/10 px-5 py-4">
+        {caughtUpError ? (
+          <div className="col-span-3 rounded-md border border-[#d0a24c]/30 bg-[#d0a24c]/10 px-3 py-2 text-[12px] leading-5 text-[#d8d3c8]">
+            Could not save caught-up state. Try again.
+          </div>
+        ) : null}
         <Button
           asChild
           className="col-span-3 h-9 bg-[#d0a24c] text-[#191916] hover:bg-[#e0b45f]"

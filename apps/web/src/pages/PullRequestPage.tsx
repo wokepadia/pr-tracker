@@ -66,17 +66,22 @@ export function PullRequestPage() {
     )
   }
 
-  const newEvents = item.activityEvents.filter((event) => event.isNew)
-  const oldEvents = item.activityEvents.filter((event) => !event.isNew)
-  const reReviewRequested = item.activityEvents.some((event) =>
+  const loadedItem = item
+  const newEvents = loadedItem.activityEvents.filter((event) => event.isNew)
+  const oldEvents = loadedItem.activityEvents.filter((event) => !event.isNew)
+  const reReviewRequested = loadedItem.activityEvents.some((event) =>
     event.isNew && event.action.toLowerCase().includes("requested your review")
   )
+  async function markCaughtUp() {
+    markSeenMutation.reset()
+    await markSeenMutation.mutateAsync(loadedItem.id).catch(() => undefined)
+  }
 
   return (
     <div className="min-h-[760px] bg-[#242420]">
-      <DetailHeader item={item} />
+      <DetailHeader item={loadedItem} />
       <ContextBand
-        item={item}
+        item={loadedItem}
         newEventCount={newEvents.length}
         reReviewRequested={reReviewRequested}
       />
@@ -92,10 +97,11 @@ export function PullRequestPage() {
           />
         </main>
         <DetailSideRail
-          item={item}
+          item={loadedItem}
           newEventCount={newEvents.length}
           isMarkingSeen={markSeenMutation.isPending}
-          onCaughtUp={() => void markSeenMutation.mutateAsync(item.id)}
+          caughtUpError={markSeenMutation.isError}
+          onCaughtUp={() => void markCaughtUp()}
         />
       </div>
     </div>
@@ -393,11 +399,13 @@ function DetailSideRail({
   item,
   newEventCount,
   isMarkingSeen,
+  caughtUpError,
   onCaughtUp,
 }: {
   item: ReviewQueueItemView
   newEventCount: number
   isMarkingSeen: boolean
+  caughtUpError: boolean
   onCaughtUp: () => void
 }) {
   const totalAdditions = item.changedFilesSinceLastSeen.reduce(
@@ -413,6 +421,11 @@ function DetailSideRail({
     <aside className="border-t border-white/10 bg-[#20201d] px-5 py-6 xl:border-l xl:border-t-0">
       <RailCard title="Catch up">
         <div className="grid gap-2">
+          {caughtUpError ? (
+            <div className="rounded-md border border-[#d0a24c]/30 bg-[#d0a24c]/10 px-3 py-2 text-[12px] leading-5 text-[#d8d3c8]">
+              Could not save caught-up state. Try again.
+            </div>
+          ) : null}
           <Button
             asChild
             className="h-9 justify-center bg-[#d0a24c] text-[#191916] hover:bg-[#e0b45f]"
