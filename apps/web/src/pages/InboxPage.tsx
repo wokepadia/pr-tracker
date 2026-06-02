@@ -711,8 +711,8 @@ function InboxSidebar({
   onSelectMuted: () => void
 }) {
   return (
-    <aside className="flex flex-col border-b border-white/10 bg-[#191916] px-3 py-4 sm:border-r sm:border-b-0">
-      <div className="flex items-center gap-2 px-2 pt-1 pb-4">
+    <aside className="flex flex-col border-b border-white/10 bg-[#191916] px-3 py-3 sm:border-r sm:border-b-0 sm:py-4">
+      <div className="flex items-center gap-2 px-2 pt-1 pb-2 sm:pb-4">
         <div className="flex h-4 w-4 items-center justify-center rounded-[3px] bg-[#d0a24c] text-[9px] font-bold text-[#191916]">
           R
         </div>
@@ -797,7 +797,7 @@ function InboxSidebar({
           }
         />
       </SidebarSection>
-      <div className="mt-4 rounded-md border border-white/10 bg-white/[0.03] p-3 text-[11px] leading-5 text-[#8e8b82] sm:mt-auto">
+      <div className="mt-4 hidden rounded-md border border-white/10 bg-white/[0.03] p-3 text-[11px] leading-5 text-[#8e8b82] sm:mt-auto sm:block">
         Review decisions still happen in GitHub. This surface only tracks where
         your attention belongs.
       </div>
@@ -837,11 +837,11 @@ function SidebarSection({
   children: ReactNode
 }) {
   return (
-    <div className="mb-5">
-      <div className="px-2 pb-2 pt-3 font-mono text-[9.5px] tracking-[0.14em] text-[#77736a] uppercase">
+    <div className="mb-2 sm:mb-5">
+      <div className="px-2 pb-2 pt-2 font-mono text-[9.5px] tracking-[0.14em] text-[#77736a] uppercase sm:pt-3">
         {label}
       </div>
-      <div className="space-y-1">{children}</div>
+      <div className="grid grid-cols-2 gap-1 sm:block sm:space-y-1">{children}</div>
     </div>
   )
 }
@@ -860,7 +860,7 @@ function SidebarItem({
   onClick?: () => void
 }) {
   const itemClassName = cn(
-    "grid w-full grid-cols-[7px_1fr_auto] items-center gap-2 rounded-md px-2 py-2 text-left text-[13px] text-[#a5a299]",
+    "grid w-full grid-cols-[7px_1fr_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-[#a5a299] sm:py-2 sm:text-[13px]",
     active && "bg-white/[0.07] text-[#f0ede4]",
     onClick && !active && "hover:bg-white/[0.04]",
     !onClick && "cursor-default"
