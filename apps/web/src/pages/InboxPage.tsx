@@ -18,11 +18,13 @@ import {
   Clock3,
   ExternalLink,
   Eye,
+  BellOff,
   GitCommitHorizontal,
   GitPullRequest,
   Inbox,
   MessageSquareText,
   PanelRight,
+  Pin,
   RotateCcw,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -38,14 +40,16 @@ import {
   type ReviewQueueItemView,
 } from "@/reviewer/view-model"
 import {
+  hasLocalQueueState,
   loadLocalQueueState,
   saveLocalQueueState,
+  type LocalPullRequestQueueState,
   type LocalQueueStateByPullRequestId,
 } from "@/reviewer/local-queue-state"
 
 type LaneId = ReviewQueueBucketId
 
-type QueueGroupMode = "action" | "repository" | "snoozed"
+type QueueGroupMode = "action" | "repository" | "pinned" | "snoozed" | "muted"
 
 interface LaneDefinition {
   id: LaneId
@@ -141,14 +145,31 @@ export function InboxPage() {
     [inboxQuery.data]
   )
   const activeItems = useMemo(
-    () => inboxView?.items.filter((item) => !localQueueState[item.id]) ?? [],
+    () =>
+      inboxView?.items.filter((item) => {
+        const itemState = localQueueState[item.id]
+        return !itemState?.snoozed && !itemState?.muted
+      }) ?? [],
+    [inboxView, localQueueState]
+  )
+  const pinnedItems = useMemo(
+    () =>
+      inboxView?.items.filter((item) => {
+        const itemState = localQueueState[item.id]
+        return Boolean(itemState?.pinned && !itemState.snoozed && !itemState.muted)
+      }) ?? [],
     [inboxView, localQueueState]
   )
   const snoozedItems = useMemo(
     () =>
       inboxView?.items.filter(
-        (item) => localQueueState[item.id] === "snoozed"
+        (item) => localQueueState[item.id]?.snoozed
       ) ?? [],
+    [inboxView, localQueueState]
+  )
+  const mutedItems = useMemo(
+    () =>
+      inboxView?.items.filter((item) => localQueueState[item.id]?.muted) ?? [],
     [inboxView, localQueueState]
   )
   const laneItems = useMemo(
@@ -203,19 +224,35 @@ export function InboxPage() {
       ? visibleItems
       : groupMode === "repository"
         ? visibleRepositoryItems
-        : snoozedItems
+        : groupMode === "pinned"
+          ? pinnedItems
+          : groupMode === "snoozed"
+            ? snoozedItems
+            : mutedItems
   const [selectedId, setSelectedId] = useState<string>(
     () => visibleQueueItems[0]?.id ?? activeItems[0]?.id ?? ""
   )
-  const selectableItems = groupMode === "snoozed" ? snoozedItems : activeItems
+  const selectableItems =
+    groupMode === "pinned"
+      ? pinnedItems
+      : groupMode === "snoozed"
+        ? snoozedItems
+        : groupMode === "muted"
+          ? mutedItems
+          : activeItems
   const selectedItem =
     selectableItems.find((item) => item.id === selectedId) ??
     selectableItems[0] ??
     activeItems[0] ??
-    snoozedItems[0]
-  const selectedItemIsSnoozed = Boolean(
-    selectedItem && localQueueState[selectedItem.id] === "snoozed"
-  )
+    pinnedItems[0] ??
+    snoozedItems[0] ??
+    mutedItems[0]
+  const selectedItemLocalState = selectedItem
+    ? localQueueState[selectedItem.id] ?? {}
+    : {}
+  const selectedItemIsPinned = Boolean(selectedItemLocalState.pinned)
+  const selectedItemIsSnoozed = Boolean(selectedItemLocalState.snoozed)
+  const selectedItemIsMuted = Boolean(selectedItemLocalState.muted)
 
   useEffect(() => {
     saveLocalQueueState(window.localStorage, localQueueState)
@@ -264,6 +301,11 @@ export function InboxPage() {
     const nextVisible =
       remainingVisible[Math.min(currentIndex, remainingVisible.length - 1)]
     const nextActive = activeItems.find((item) => item.id !== itemId)
+
+    if (!nextVisible && isStashedGroupMode(groupMode)) {
+      setGroupMode("action")
+    }
+
     setSelectedId(nextVisible?.id ?? nextActive?.id ?? "")
   }
 
@@ -277,19 +319,42 @@ export function InboxPage() {
     })
   }
 
+  function updateLocalItemState(
+    itemId: string,
+    update: (current: LocalPullRequestQueueState) => LocalPullRequestQueueState
+  ) {
+    setLocalQueueState((current) => {
+      const next = { ...current }
+      const nextItemState = update(current[itemId] ?? {})
+
+      if (hasLocalQueueState(nextItemState)) {
+        next[itemId] = nextItemState
+      } else {
+        delete next[itemId]
+      }
+
+      return next
+    })
+  }
+
   function snoozeSelected() {
     if (!selectedItem || selectedItemIsSnoozed) return
     const itemId = selectedItem.id
-    setLocalQueueState((current) => ({ ...current, [itemId]: "snoozed" }))
+    updateLocalItemState(itemId, (current) => ({
+      ...current,
+      muted: undefined,
+      snoozed: true,
+    }))
     moveSelectionAfterHiding(itemId)
   }
 
   function restoreSelected() {
-    if (!selectedItem || !selectedItemIsSnoozed) return
+    if (!selectedItem || (!selectedItemIsSnoozed && !selectedItemIsMuted)) return
     const itemId = selectedItem.id
-    setLocalQueueState((current) => {
+    updateLocalItemState(itemId, (current) => {
       const next = { ...current }
-      delete next[itemId]
+      delete next.snoozed
+      delete next.muted
       return next
     })
     setGroupMode("action")
@@ -302,6 +367,22 @@ export function InboxPage() {
       return next
     })
     setSelectedId(itemId)
+  }
+
+  function togglePinSelected() {
+    if (!selectedItem || selectedItemIsSnoozed || selectedItemIsMuted) return
+    const itemId = selectedItem.id
+    updateLocalItemState(itemId, (current) => ({
+      ...current,
+      pinned: current.pinned ? undefined : true,
+    }))
+  }
+
+  function muteSelected() {
+    if (!selectedItem || selectedItemIsMuted) return
+    const itemId = selectedItem.id
+    updateLocalItemState(itemId, () => ({ muted: true }))
+    moveSelectionAfterHiding(itemId)
   }
 
   function openSelectedDetail() {
@@ -338,11 +419,25 @@ export function InboxPage() {
     setSelectedId(snoozedItems[0]?.id ?? "")
   }
 
+  function focusPinned() {
+    if (pinnedItems.length === 0) return
+    setGroupMode("pinned")
+    setSelectedId(pinnedItems[0]?.id ?? "")
+  }
+
+  function focusMuted() {
+    if (mutedItems.length === 0) return
+    setGroupMode("muted")
+    setSelectedId(mutedItems[0]?.id ?? "")
+  }
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented) return
       if (event.metaKey || event.ctrlKey || event.altKey) return
-      if (!["j", "k", "Enter", "e", "s", "c"].includes(event.key)) return
+      if (!["j", "k", "Enter", "e", "s", "p", "m", "c"].includes(event.key)) {
+        return
+      }
       const activeElement = document.activeElement
       const activeTag = activeElement?.tagName
       const isEditingText =
@@ -390,8 +485,22 @@ export function InboxPage() {
       if (event.key === "s") {
         if (selectedItemIsSnoozed) {
           restoreSelected()
-        } else {
+        } else if (!selectedItemIsMuted) {
           snoozeSelected()
+        }
+        return
+      }
+
+      if (event.key === "p") {
+        togglePinSelected()
+        return
+      }
+
+      if (event.key === "m") {
+        if (selectedItemIsMuted) {
+          restoreSelected()
+        } else {
+          muteSelected()
         }
         return
       }
@@ -404,6 +513,8 @@ export function InboxPage() {
   }, [
     openSelectedDetail,
     selectedItem,
+    selectedItemIsMuted,
+    selectedItemIsPinned,
     selectedItemIsSnoozed,
     visibleQueueItems,
     markSeenMutation,
@@ -427,12 +538,18 @@ export function InboxPage() {
       <InboxSidebar
         laneItems={laneItems}
         activeLaneId={
-          groupMode === "snoozed" ? undefined : bucketIdForItem(selectedItem)
+          isStashedGroupMode(groupMode) ? undefined : bucketIdForItem(selectedItem)
         }
+        pinnedActive={groupMode === "pinned"}
+        pinnedCount={pinnedItems.length}
         snoozedActive={groupMode === "snoozed"}
         snoozedCount={snoozedItems.length}
+        mutedActive={groupMode === "muted"}
+        mutedCount={mutedItems.length}
         onSelectLane={focusLane}
+        onSelectPinned={focusPinned}
         onSelectSnoozed={focusSnoozed}
+        onSelectMuted={focusMuted}
       />
 
       <section className="flex min-w-0 flex-col bg-[#242420]">
@@ -476,11 +593,29 @@ export function InboxPage() {
                     onSelect={setSelectedId}
                   />
                 ))
-              ) : (
+              ) : groupMode === "pinned" ? (
+                <QueueLane
+                  group={{ id: "pinned", label: "Pinned", tone: "changed" }}
+                  isOpen
+                  items={pinnedItems}
+                  selectedId={selectedItem?.id ?? ""}
+                  onToggle={() => undefined}
+                  onSelect={setSelectedId}
+                />
+              ) : groupMode === "snoozed" ? (
                 <QueueLane
                   group={{ id: "snoozed", label: "Snoozed", tone: "quiet" }}
                   isOpen
                   items={snoozedItems}
+                  selectedId={selectedItem?.id ?? ""}
+                  onToggle={() => undefined}
+                  onSelect={setSelectedId}
+                />
+              ) : (
+                <QueueLane
+                  group={{ id: "muted", label: "Muted", tone: "quiet" }}
+                  isOpen
+                  items={mutedItems}
                   selectedId={selectedItem?.id ?? ""}
                   onToggle={() => undefined}
                   onSelect={setSelectedId}
@@ -491,11 +626,15 @@ export function InboxPage() {
           {selectedItem ? (
             <QuickPeekPanel
               item={selectedItem}
+              isPinned={selectedItemIsPinned}
               isSnoozed={selectedItemIsSnoozed}
+              isMuted={selectedItemIsMuted}
               isMarkingSeen={markSeenMutation.isPending}
               caughtUpError={failedCaughtUpItemId === selectedItem.id}
               onSnooze={snoozeSelected}
               onRestore={restoreSelected}
+              onTogglePin={togglePinSelected}
+              onMute={muteSelected}
               onCaughtUp={() => void markSelectedCaughtUp()}
             />
           ) : (
@@ -510,17 +649,29 @@ export function InboxPage() {
 function InboxSidebar({
   laneItems,
   activeLaneId,
+  pinnedActive,
+  pinnedCount,
   snoozedActive,
   snoozedCount,
+  mutedActive,
+  mutedCount,
   onSelectLane,
+  onSelectPinned,
   onSelectSnoozed,
+  onSelectMuted,
 }: {
   laneItems: Record<LaneId, ReviewQueueItemView[]>
   activeLaneId?: LaneId
+  pinnedActive: boolean
+  pinnedCount: number
   snoozedActive: boolean
   snoozedCount: number
+  mutedActive: boolean
+  mutedCount: number
   onSelectLane: (laneId: LaneId) => void
+  onSelectPinned: () => void
   onSelectSnoozed: () => void
+  onSelectMuted: () => void
 }) {
   return (
     <aside className="flex flex-col border-b border-white/10 bg-[#191916] px-3 py-4 sm:border-r sm:border-b-0">
@@ -579,11 +730,24 @@ function InboxSidebar({
       </SidebarSection>
       <SidebarSection label="Stashed">
         <SidebarItem
+          active={pinnedActive}
+          attention={pinnedCount > 0}
+          label="Pinned"
+          count={pinnedCount}
+          onClick={pinnedCount > 0 ? onSelectPinned : undefined}
+        />
+        <SidebarItem
           active={snoozedActive}
           attention={snoozedCount > 0}
           label="Snoozed"
           count={snoozedCount}
           onClick={snoozedCount > 0 ? onSelectSnoozed : undefined}
+        />
+        <SidebarItem
+          active={mutedActive}
+          label="Muted"
+          count={mutedCount}
+          onClick={mutedCount > 0 ? onSelectMuted : undefined}
         />
         <SidebarItem
           active={activeLaneId === "watching"}
@@ -955,19 +1119,27 @@ function FactChip({
 
 function QuickPeekPanel({
   item,
+  isPinned,
   isSnoozed,
+  isMuted,
   isMarkingSeen,
   caughtUpError,
   onSnooze,
   onRestore,
+  onTogglePin,
+  onMute,
   onCaughtUp,
 }: {
   item: ReviewQueueItemView
+  isPinned: boolean
   isSnoozed: boolean
+  isMuted: boolean
   isMarkingSeen: boolean
   caughtUpError: boolean
   onSnooze: () => void
   onRestore: () => void
+  onTogglePin: () => void
+  onMute: () => void
   onCaughtUp: () => void
 }) {
   const reReviewRequested = item.activityEvents.some((event) =>
@@ -1140,15 +1312,15 @@ function QuickPeekPanel({
         ) : null}
       </div>
 
-      <div className="mt-auto grid grid-cols-[1fr_1fr_auto] gap-2 border-t border-white/10 px-5 py-4">
+      <div className="mt-auto grid grid-cols-2 gap-2 border-t border-white/10 px-5 py-4 min-[1420px]:grid-cols-[1fr_1fr_1fr_1fr_auto]">
         {caughtUpError ? (
-          <div className="col-span-3 rounded-md border border-[#d0a24c]/30 bg-[#d0a24c]/10 px-3 py-2 text-[12px] leading-5 text-[#d8d3c8]">
+          <div className="col-span-2 rounded-md border border-[#d0a24c]/30 bg-[#d0a24c]/10 px-3 py-2 text-[12px] leading-5 text-[#d8d3c8] min-[1420px]:col-span-5">
             Could not save caught-up state. Try again.
           </div>
         ) : null}
         <Button
           asChild
-          className="col-span-3 h-9 bg-[#d0a24c] text-[#191916] hover:bg-[#e0b45f]"
+          className="col-span-2 h-9 bg-[#d0a24c] text-[#191916] hover:bg-[#e0b45f] min-[1420px]:col-span-5"
         >
           <a href={item.url} target="_blank" rel="noreferrer">
             Open in GitHub to review
@@ -1159,6 +1331,7 @@ function QuickPeekPanel({
           type="button"
           variant="outline"
           onClick={isSnoozed ? onRestore : onSnooze}
+          disabled={isMuted}
           className="h-9 border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
         >
           {isSnoozed ? (
@@ -1167,6 +1340,27 @@ function QuickPeekPanel({
             <Clock3 className="h-4 w-4" />
           )}
           {isSnoozed ? "Restore" : "Snooze"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onTogglePin}
+          disabled={isSnoozed || isMuted}
+          aria-pressed={isPinned}
+          className="h-9 border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+        >
+          <Pin className="h-4 w-4" />
+          {isPinned ? "Unpin" : "Pin"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={isMuted ? onRestore : onMute}
+          disabled={isSnoozed}
+          className="h-9 border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+        >
+          <BellOff className="h-4 w-4" />
+          {isMuted ? "Unmute" : "Mute"}
         </Button>
         <Button
           type="button"
@@ -1186,7 +1380,7 @@ function QuickPeekPanel({
           asChild
           variant="ghost"
           size="icon"
-          className="h-9 w-9 text-[#9f9a91] hover:bg-white/[0.04] hover:text-[#f0ede4]"
+          className="h-9 w-full text-[#9f9a91] hover:bg-white/[0.04] hover:text-[#f0ede4] min-[1420px]:w-9"
         >
           <Link to="/pull-requests/$pullRequestId" params={{ pullRequestId: item.id }}>
             <span className="sr-only">Open PR detail</span>
@@ -1219,6 +1413,10 @@ function bucketIdForItem(
 ): LaneId | undefined {
   if (!item) return undefined
   return item.laneId === "stale" ? "watching" : item.laneId
+}
+
+function isStashedGroupMode(groupMode: QueueGroupMode): boolean {
+  return groupMode === "pinned" || groupMode === "snoozed" || groupMode === "muted"
 }
 
 function itemBelongsToBucket(
