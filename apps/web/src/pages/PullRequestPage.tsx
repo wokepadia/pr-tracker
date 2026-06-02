@@ -358,10 +358,7 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
           <span className="mr-2 inline-block h-2 w-2 rounded-full bg-[#e5e5e5]" />
           {userReviewStanding(item.userLastReviewDecision)}
         </div>
-        <Button
-          asChild
-          className="h-9 bg-[#e5e5e5] text-[#171717] hover:bg-[#fafafa]"
-        >
+        <Button asChild className="h-9">
           <a href={item.url} target="_blank" rel="noreferrer">
             Open in GitHub
             <ExternalLink className="h-4 w-4" />
@@ -704,10 +701,7 @@ function DetailSideRail({
               Could not save caught-up state. Try again.
             </div>
           ) : null}
-          <Button
-            asChild
-            className="h-9 justify-center bg-[#e5e5e5] text-[#171717] hover:bg-[#fafafa]"
-          >
+          <Button asChild className="h-9 justify-center">
             <a href={item.url} target="_blank" rel="noreferrer">
               {newEventCount > 0
                 ? `Review ${formatCount(newEventCount, "new event")}`
@@ -720,7 +714,7 @@ function DetailSideRail({
             variant="outline"
             disabled={!canMarkCaughtUp}
             onClick={onCaughtUp}
-            className="h-9 justify-center border-white/10 bg-transparent text-[#d4d4d4] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
+            className="h-9 justify-center"
           >
             <Check className="h-4 w-4" />
             {isMarkingSeen
@@ -735,7 +729,7 @@ function DetailSideRail({
               variant="outline"
               disabled={isMuted}
               onClick={isSnoozed ? onRestore : onSnooze}
-              className="h-9 justify-center border-white/10 bg-transparent text-[#d4d4d4] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
+              className="h-9 justify-center"
             >
               {isSnoozed ? (
                 <RotateCcw className="h-4 w-4" />
@@ -750,7 +744,7 @@ function DetailSideRail({
               disabled={isSnoozed || isMuted}
               aria-pressed={isPinned}
               onClick={onTogglePin}
-              className="h-9 justify-center border-white/10 bg-transparent text-[#d4d4d4] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
+              className="h-9 justify-center"
             >
               <Pin className="h-4 w-4" />
               {isPinned ? "Unpin" : "Pin"}
@@ -760,7 +754,7 @@ function DetailSideRail({
               variant="outline"
               disabled={isSnoozed}
               onClick={isMuted ? onRestore : onMute}
-              className="col-span-2 h-9 justify-center border-white/10 bg-transparent text-[#d4d4d4] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
+              className="col-span-2 h-9 justify-center"
             >
               <BellOff className="h-4 w-4" />
               {isMuted ? "Unmute" : "Mute"}

@@ -1365,10 +1365,7 @@ function QuickPeekPanel({
             Could not save caught-up state. Try again.
           </div>
         ) : null}
-        <Button
-          asChild
-          className="col-span-2 h-9 bg-[#e5e5e5] text-[#171717] hover:bg-[#fafafa]"
-        >
+        <Button asChild className="col-span-2 h-9">
           <a href={item.url} target="_blank" rel="noreferrer">
             Open in GitHub to review
             <ExternalLink className="h-4 w-4" />
@@ -1379,7 +1376,7 @@ function QuickPeekPanel({
           variant="outline"
           onClick={isSnoozed ? onRestore : onSnooze}
           disabled={isMuted}
-          className="h-9 min-w-0 justify-center border-white/10 bg-transparent text-[#d4d4d4] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
+          className="h-9 min-w-0 justify-center"
         >
           {isSnoozed ? (
             <RotateCcw className="h-4 w-4" />
@@ -1394,7 +1391,7 @@ function QuickPeekPanel({
           onClick={onTogglePin}
           disabled={isSnoozed || isMuted}
           aria-pressed={isPinned}
-          className="h-9 min-w-0 justify-center border-white/10 bg-transparent text-[#d4d4d4] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
+          className="h-9 min-w-0 justify-center"
         >
           <Pin className="h-4 w-4" />
           {isPinned ? "Unpin" : "Pin"}
@@ -1404,7 +1401,7 @@ function QuickPeekPanel({
           variant="outline"
           onClick={isMuted ? onRestore : onMute}
           disabled={isSnoozed}
-          className="h-9 min-w-0 justify-center border-white/10 bg-transparent text-[#d4d4d4] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
+          className="h-9 min-w-0 justify-center"
         >
           <BellOff className="h-4 w-4" />
           {isMuted ? "Unmute" : "Mute"}
@@ -1414,7 +1411,7 @@ function QuickPeekPanel({
           variant="outline"
           onClick={onCaughtUp}
           disabled={!canMarkCaughtUp}
-          className="h-9 min-w-0 justify-center border-white/10 bg-transparent text-[#d4d4d4] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
+          className="h-9 min-w-0 justify-center"
         >
           <Check className="h-4 w-4" />
           {isMarkingSeen
@@ -1426,7 +1423,7 @@ function QuickPeekPanel({
         <Button
           asChild
           variant="ghost"
-          className="col-span-2 h-9 text-[#a3a3a3] hover:bg-white/[0.04] hover:text-[#f5f5f5]"
+          className="col-span-2 h-9"
         >
           <Link to="/pull-requests/$pullRequestId" params={{ pullRequestId: item.id }}>
             <GitPullRequest className="h-4 w-4" />
