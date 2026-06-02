@@ -440,9 +440,13 @@ export function InboxPage() {
 
   function openSelectedDetail() {
     if (!selectedItem) return
+    openItemDetail(selectedItem.id)
+  }
+
+  function openItemDetail(itemId: string) {
     void navigate({
       to: "/pull-requests/$pullRequestId",
-      params: { pullRequestId: selectedItem.id },
+      params: { pullRequestId: itemId },
     })
   }
 
@@ -629,6 +633,7 @@ export function InboxPage() {
                     isOpen={openLaneIds.has(lane.id)}
                     items={laneItems[lane.id]}
                     selectedId={selectedItem?.id ?? ""}
+                    onOpenDetail={openItemDetail}
                     onToggle={() => {
                       setOpenLaneIds((current) =>
                         toggleOpenGroup(current, lane.id)
@@ -645,6 +650,7 @@ export function InboxPage() {
                     isOpen={openRepositoryIds.has(group.id)}
                     items={group.items}
                     selectedId={selectedItem?.id ?? ""}
+                    onOpenDetail={openItemDetail}
                     onToggle={() => {
                       setOpenRepositoryIds((current) =>
                         toggleOpenGroup(current, group.id)
@@ -659,6 +665,7 @@ export function InboxPage() {
                   isOpen
                   items={searchedPinnedItems}
                   selectedId={selectedItem?.id ?? ""}
+                  onOpenDetail={openItemDetail}
                   onToggle={() => undefined}
                   onSelect={setSelectedId}
                 />
@@ -668,6 +675,7 @@ export function InboxPage() {
                   isOpen
                   items={searchedSnoozedItems}
                   selectedId={selectedItem?.id ?? ""}
+                  onOpenDetail={openItemDetail}
                   onToggle={() => undefined}
                   onSelect={setSelectedId}
                 />
@@ -677,6 +685,7 @@ export function InboxPage() {
                   isOpen
                   items={searchedMutedItems}
                   selectedId={selectedItem?.id ?? ""}
+                  onOpenDetail={openItemDetail}
                   onToggle={() => undefined}
                   onSelect={setSelectedId}
                 />
@@ -1000,6 +1009,7 @@ function QueueLane({
   isOpen,
   items,
   selectedId,
+  onOpenDetail,
   onToggle,
   onSelect,
 }: {
@@ -1007,6 +1017,7 @@ function QueueLane({
   isOpen: boolean
   items: ReviewQueueItemView[]
   selectedId: string
+  onOpenDetail: (id: string) => void
   onToggle: () => void
   onSelect: (id: string) => void
 }) {
@@ -1045,6 +1056,7 @@ function QueueLane({
               item={item}
               selected={item.id === selectedId}
               onSelect={() => onSelect(item.id)}
+              onOpenDetail={() => onOpenDetail(item.id)}
             />
           ))}
         </div>
@@ -1057,10 +1069,12 @@ function QueueRow({
   item,
   selected,
   onSelect,
+  onOpenDetail,
 }: {
   item: ReviewQueueItemView
   selected: boolean
   onSelect: () => void
+  onOpenDetail: () => void
 }) {
   const initials = item.authorLogin.slice(0, 2).toUpperCase()
   const reReviewRequested = item.activityEvents.some((event) =>
@@ -1071,6 +1085,12 @@ function QueueRow({
     <button
       type="button"
       onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter") return
+        event.preventDefault()
+        event.stopPropagation()
+        onOpenDetail()
+      }}
       aria-pressed={selected}
       className={cn(
         "relative grid w-full grid-cols-[26px_1fr_auto] items-center gap-3 border-t border-border px-5 py-3 text-left transition-colors hover:bg-muted/40",
