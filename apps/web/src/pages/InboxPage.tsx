@@ -945,44 +945,6 @@ function QuickPeekPanel({
           </ul>
         </section>
 
-        <Separator className="my-5 bg-white/10" />
-
-        <section>
-          <div className="font-mono text-[11px] tracking-[0.1em] text-[#9f9a91] uppercase">
-            Queue reason
-          </div>
-          <div className="mt-3 rounded-md border border-white/10 bg-white/[0.03] p-3 text-[13px] leading-5 text-[#d8d3c8]">
-            {item.reason}
-          </div>
-        </section>
-
-        {item.activityEvents.length > 0 ? (
-          <>
-            <Separator className="my-5 bg-white/10" />
-            <section>
-              <div className="font-mono text-[11px] tracking-[0.1em] text-[#9f9a91] uppercase">
-                Latest activity
-              </div>
-              <div className="mt-3 space-y-2">
-                {item.activityEvents.slice(0, 3).map((event) => (
-                  <div
-                    key={event.id}
-                    className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-[12.5px] leading-5 text-[#d8d3c8]"
-                  >
-                    <div>
-                      <b>{event.actor}</b> {event.action}
-                    </div>
-                    <div className="mt-1 font-mono text-[10px] tracking-[0.06em] text-[#77736a] uppercase">
-                      {event.occurredAt}
-                      {event.isNew ? " · new" : ""}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </>
-        ) : null}
-
         {hasBodySections ? <Separator className="my-5 bg-white/10" /> : null}
 
         {item.totalThreadCount > 0 ? (
@@ -1026,24 +988,64 @@ function QuickPeekPanel({
           <Separator className="my-5 bg-white/10" />
         ) : null}
 
-        {item.changedFilesSinceLastSeen.length > 0 ? <section>
+        {item.changedFilesSinceLastSeen.length > 0 ? (
+          <section>
+            <div className="font-mono text-[11px] tracking-[0.1em] text-[#9f9a91] uppercase">
+              Files touched since last look · {item.changedFilesSinceLastSeen.length}
+            </div>
+            <div className="mt-3 space-y-1">
+              {item.changedFilesSinceLastSeen.map((file) => (
+                <div
+                  key={file.path}
+                  className="flex items-center justify-between gap-4 rounded-[4px] px-2 py-1.5 font-mono text-[11px] text-[#bdb8ad] hover:bg-white/[0.03]"
+                >
+                  <span className="truncate">{file.path}</span>
+                  <span className="text-[#8e8b82]">
+                    +{file.additions} / -{file.deletions}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        <Separator className="my-5 bg-white/10" />
+
+        <section>
           <div className="font-mono text-[11px] tracking-[0.1em] text-[#9f9a91] uppercase">
-            Files touched since last look · {item.changedFilesSinceLastSeen.length}
+            Queue reason
           </div>
-          <div className="mt-3 space-y-1">
-            {item.changedFilesSinceLastSeen.map((file) => (
-              <div
-                key={file.path}
-                className="flex items-center justify-between gap-4 rounded-[4px] px-2 py-1.5 font-mono text-[11px] text-[#bdb8ad] hover:bg-white/[0.03]"
-              >
-                <span className="truncate">{file.path}</span>
-                <span className="text-[#8e8b82]">
-                  +{file.additions} / -{file.deletions}
-                </span>
+          <div className="mt-3 rounded-md border border-white/10 bg-white/[0.03] p-3 text-[13px] leading-5 text-[#d8d3c8]">
+            {item.reason}
+          </div>
+        </section>
+
+        {item.activityEvents.length > 0 ? (
+          <>
+            <Separator className="my-5 bg-white/10" />
+            <section>
+              <div className="font-mono text-[11px] tracking-[0.1em] text-[#9f9a91] uppercase">
+                Latest activity
               </div>
-            ))}
-          </div>
-        </section> : null}
+              <div className="mt-3 space-y-2">
+                {item.activityEvents.slice(0, 3).map((event) => (
+                  <div
+                    key={event.id}
+                    className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-[12.5px] leading-5 text-[#d8d3c8]"
+                  >
+                    <div>
+                      <b>{event.actor}</b> {event.action}
+                    </div>
+                    <div className="mt-1 font-mono text-[10px] tracking-[0.06em] text-[#77736a] uppercase">
+                      {event.occurredAt}
+                      {event.isNew ? " · new" : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </>
+        ) : null}
       </div>
 
       <div className="mt-auto grid grid-cols-[1fr_1fr_auto] gap-2 border-t border-white/10 px-5 py-4">
