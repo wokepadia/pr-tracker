@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { filterQueueItems } from "./InboxPage"
+import { filterQueueItems, resolveVisibleQueueItem } from "./InboxPage"
 import type { ReviewQueueItemView } from "@/reviewer/view-model"
 
 describe("inbox queue search", () => {
@@ -48,6 +48,35 @@ describe("inbox queue search", () => {
   it("returns all items for blank search and no items for misses", () => {
     expect(filterQueueItems(items, " ")).toEqual(items)
     expect(filterQueueItems(items, "nope")).toEqual([])
+  })
+})
+
+describe("inbox queue selection", () => {
+  const items = [
+    makeQueueItem({
+      id: "pr_1",
+      title: "Normalize review request webhook payloads",
+      repository: "acme/api",
+      number: 142,
+      authorLogin: "maya",
+      reason: "You are requested as a reviewer.",
+      activityAction: "requested your review",
+    }),
+    makeQueueItem({
+      id: "pr_2",
+      title: "Add persisted reviewer inbox filters",
+      repository: "acme/web",
+      number: 87,
+      authorLogin: "ari",
+      reason: "New commits were pushed after your last review.",
+      activityAction: "pushed 1 commit",
+    }),
+  ]
+
+  it("resolves selection only from currently visible rows", () => {
+    expect(resolveVisibleQueueItem(items, "pr_2")?.id).toBe("pr_2")
+    expect(resolveVisibleQueueItem(items, "missing")?.id).toBe("pr_1")
+    expect(resolveVisibleQueueItem([], "pr_1")).toBeUndefined()
   })
 })
 

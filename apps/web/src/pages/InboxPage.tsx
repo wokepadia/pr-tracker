@@ -250,21 +250,7 @@ export function InboxPage() {
   const [selectedId, setSelectedId] = useState<string>(
     () => visibleQueueItems[0]?.id ?? activeItems[0]?.id ?? ""
   )
-  const selectableItems =
-    groupMode === "pinned"
-      ? searchedPinnedItems
-      : groupMode === "snoozed"
-        ? searchedSnoozedItems
-        : groupMode === "muted"
-          ? searchedMutedItems
-          : searchedActiveItems
-  const selectedItem =
-    selectableItems.find((item) => item.id === selectedId) ??
-    selectableItems[0] ??
-    searchedActiveItems[0] ??
-    searchedPinnedItems[0] ??
-    searchedSnoozedItems[0] ??
-    searchedMutedItems[0]
+  const selectedItem = resolveVisibleQueueItem(visibleQueueItems, selectedId)
   const selectedItemLocalState = selectedItem
     ? localQueueState[selectedItem.id] ?? {}
     : {}
@@ -309,9 +295,9 @@ export function InboxPage() {
 
   useEffect(() => {
     if (!visibleQueueItems.some((item) => item.id === selectedId)) {
-      setSelectedId(visibleQueueItems[0]?.id ?? selectableItems[0]?.id ?? "")
+      setSelectedId(visibleQueueItems[0]?.id ?? "")
     }
-  }, [selectableItems, selectedId, visibleQueueItems])
+  }, [selectedId, visibleQueueItems])
 
   function moveSelectionAfterHiding(itemId: string) {
     const currentIndex = visibleQueueItems.findIndex((item) => item.id === itemId)
@@ -1520,6 +1506,13 @@ export function filterQueueItems(
   return items.filter((item) =>
     buildSearchTextForItem(item).includes(normalizedQuery)
   )
+}
+
+export function resolveVisibleQueueItem(
+  visibleItems: ReviewQueueItemView[],
+  selectedId: string
+): ReviewQueueItemView | undefined {
+  return visibleItems.find((item) => item.id === selectedId) ?? visibleItems[0]
 }
 
 function buildSearchTextForItem(item: ReviewQueueItemView): string {
