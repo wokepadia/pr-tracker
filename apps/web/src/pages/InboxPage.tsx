@@ -63,6 +63,7 @@ import {
 } from "./inbox-helpers"
 
 type LaneId = ReviewQueueBucketId
+type ActionQueueTabId = "home" | LaneId
 
 interface LaneDefinition {
   id: LaneId
@@ -149,18 +150,20 @@ const rowSelectedToneClasses: Record<LaneDefinition["tone"], string> = {
   quiet: "bg-muted shadow-[inset_3px_0_0_#94a3b8]",
 }
 
-const primaryQueueLaneIds: LaneId[] = [
-  "needs_review",
-  "updated_since_review",
-  "waiting_on_author",
-]
-
 const workflowLabels: Record<LaneId, string> = {
   needs_review: "Needs you",
   updated_since_review: "Changed since",
   waiting_on_author: "Waiting on author",
   approved: "Approved · recent",
   watching: "Watching / stale",
+}
+
+const queueTabLabels: Record<LaneId, string> = {
+  needs_review: "Needs you",
+  updated_since_review: "Changed",
+  waiting_on_author: "Waiting",
+  approved: "Approved",
+  watching: "Watching",
 }
 
 export function InboxPage() {
@@ -248,25 +251,14 @@ export function InboxPage() {
       ),
     [searchedActiveItems]
   )
-  const [openLaneIds, setOpenLaneIds] = useState<Set<LaneId>>(
-    () => new Set(lanes.filter((lane) => lane.defaultOpen).map((lane) => lane.id))
-  )
-  const actionQueueGroups = useMemo(
+  const [activeActionTabId, setActiveActionTabId] =
+    useState<ActionQueueTabId>("home")
+  const visibleActionItems = useMemo(
     () =>
-      lanes.filter(
-        (lane) =>
-          primaryQueueLaneIds.includes(lane.id) ||
-          laneItems[lane.id].length > 0 ||
-          openLaneIds.has(lane.id)
-      ),
-    [laneItems, openLaneIds]
-  )
-  const visibleItems = useMemo(
-    () =>
-      actionQueueGroups.flatMap((lane) =>
-        openLaneIds.has(lane.id) ? laneItems[lane.id] : []
-      ),
-    [actionQueueGroups, laneItems, openLaneIds]
+      activeActionTabId === "home"
+        ? searchedActiveItems
+        : laneItems[activeActionTabId],
+    [activeActionTabId, laneItems, searchedActiveItems]
   )
   const repositoryGroups = useMemo(
     () => buildRepositoryGroups(searchedActiveItems),
@@ -284,7 +276,7 @@ export function InboxPage() {
   )
   const visibleQueueItems =
     groupMode === "action"
-      ? visibleItems
+      ? visibleActionItems
       : groupMode === "repository"
         ? visibleRepositoryItems
         : groupMode === "pinned"
@@ -316,21 +308,6 @@ export function InboxPage() {
   useEffect(() => {
     saveStoredSelectedQueueItemId(window.sessionStorage, selectedId)
   }, [selectedId])
-
-  useEffect(() => {
-    if (groupMode !== "action") return
-    if (visibleQueueItems.length > 0 || searchedActiveItems.length === 0) return
-
-    const firstNonEmptyLane = lanes.find((lane) => laneItems[lane.id].length > 0)
-    if (!firstNonEmptyLane) return
-
-    setOpenLaneIds((current) => {
-      if (current.has(firstNonEmptyLane.id)) return current
-      const next = new Set(current)
-      next.add(firstNonEmptyLane.id)
-      return next
-    })
-  }, [groupMode, laneItems, searchedActiveItems.length, visibleQueueItems.length])
 
   useEffect(() => {
     if (groupMode !== "repository") return
@@ -368,6 +345,11 @@ export function InboxPage() {
 
     if (!nextVisible && isStashedGroupMode(groupMode)) {
       setGroupMode("action")
+      setActiveActionTabId("home")
+    }
+
+    if (!nextVisible && groupMode === "action" && activeActionTabId !== "home") {
+      setActiveActionTabId("home")
     }
 
     setSelectedId(nextVisible?.id ?? nextActive?.id ?? "")
@@ -430,14 +412,7 @@ export function InboxPage() {
       return next
     })
     setGroupMode("action")
-    setOpenLaneIds((current) => {
-      const next = new Set(current)
-      const restoredBucketId = bucketIdForItem(selectedItem)
-      if (restoredBucketId) {
-        next.add(restoredBucketId)
-      }
-      return next
-    })
+    setActiveActionTabId(bucketIdForItem(selectedItem) ?? "home")
     setSelectedId(itemId)
   }
 
@@ -452,14 +427,7 @@ export function InboxPage() {
 
     if (wasPinned && groupMode === "pinned") {
       setGroupMode("action")
-      setOpenLaneIds((current) => {
-        const next = new Set(current)
-        const restoredBucketId = bucketIdForItem(selectedItem)
-        if (restoredBucketId) {
-          next.add(restoredBucketId)
-        }
-        return next
-      })
+      setActiveActionTabId(bucketIdForItem(selectedItem) ?? "home")
       setSelectedId(itemId)
     }
   }
@@ -488,14 +456,15 @@ export function InboxPage() {
     window.open(selectedItem.url, "_blank", "noreferrer")
   }
 
+  function focusHome() {
+    setGroupMode("action")
+    setActiveActionTabId("home")
+    setSelectedId(searchedActiveItems[0]?.id ?? "")
+  }
+
   function focusLane(laneId: LaneId) {
     setGroupMode("action")
-    setOpenLaneIds((current) => {
-      if (current.has(laneId)) return current
-      const next = new Set(current)
-      next.add(laneId)
-      return next
-    })
+    setActiveActionTabId(laneId)
 
     const firstLaneItem = laneItems[laneId][0]
     if (firstLaneItem) {
@@ -632,15 +601,14 @@ export function InboxPage() {
     <div className="grid min-h-[760px] grid-cols-1 sm:grid-cols-[190px_1fr] lg:grid-cols-[212px_1fr]">
       <InboxSidebar
         laneItems={laneItems}
-        activeLaneId={
-          isStashedGroupMode(groupMode) ? undefined : bucketIdForItem(selectedItem)
-        }
+        activeActionTabId={groupMode === "action" ? activeActionTabId : undefined}
         pinnedActive={groupMode === "pinned"}
         pinnedCount={searchedPinnedItems.length}
         snoozedActive={groupMode === "snoozed"}
         snoozedCount={searchedSnoozedItems.length}
         mutedActive={groupMode === "muted"}
         mutedCount={searchedMutedItems.length}
+        onSelectHome={focusHome}
         onSelectLane={focusLane}
         onSelectPinned={focusPinned}
         onSelectSnoozed={focusSnoozed}
@@ -668,22 +636,20 @@ export function InboxPage() {
           <div className="min-w-0 border-b border-border xl:border-r xl:border-b-0">
             <div className="h-full overflow-y-auto pt-2 pb-7">
               {groupMode === "action" ? (
-                actionQueueGroups.map((lane) => (
-                  <QueueLane
-                    key={lane.id}
-                    group={lane}
-                    isOpen={openLaneIds.has(lane.id)}
-                    items={laneItems[lane.id]}
-                    selectedId={selectedItem?.id ?? ""}
-                    onOpenDetail={openItemDetail}
-                    onToggle={() => {
-                      setOpenLaneIds((current) =>
-                        toggleOpenGroup(current, lane.id)
-                      )
-                    }}
-                    onSelect={setSelectedId}
-                  />
-                ))
+                <ActionQueueList
+                  activeTabId={activeActionTabId}
+                  laneItems={laneItems}
+                  items={visibleActionItems}
+                  selectedId={selectedItem?.id ?? ""}
+                  onOpenDetail={openItemDetail}
+                  onSelect={setSelectedId}
+                  onSelectTab={(tabId) => {
+                    setActiveActionTabId(tabId)
+                    const nextItems =
+                      tabId === "home" ? searchedActiveItems : laneItems[tabId]
+                    setSelectedId(nextItems[0]?.id ?? "")
+                  }}
+                />
               ) : groupMode === "repository" ? (
                 repositoryGroups.map((group) => (
                   <QueueLane
@@ -759,31 +725,38 @@ export function InboxPage() {
 
 function InboxSidebar({
   laneItems,
-  activeLaneId,
+  activeActionTabId,
   pinnedActive,
   pinnedCount,
   snoozedActive,
   snoozedCount,
   mutedActive,
   mutedCount,
+  onSelectHome,
   onSelectLane,
   onSelectPinned,
   onSelectSnoozed,
   onSelectMuted,
 }: {
   laneItems: Record<LaneId, ReviewQueueItemView[]>
-  activeLaneId?: LaneId
+  activeActionTabId?: ActionQueueTabId
   pinnedActive: boolean
   pinnedCount: number
   snoozedActive: boolean
   snoozedCount: number
   mutedActive: boolean
   mutedCount: number
+  onSelectHome: () => void
   onSelectLane: (laneId: LaneId) => void
   onSelectPinned: () => void
   onSelectSnoozed: () => void
   onSelectMuted: () => void
 }) {
+  const activeTotal = lanes.reduce(
+    (total, lane) => total + laneItems[lane.id].length,
+    0
+  )
+
   return (
     <aside className="flex flex-col border-b border-border bg-card px-3 py-3 sm:border-r sm:border-b-0 sm:py-4">
       <div className="flex items-center gap-2 px-2 pt-1 pb-2 sm:pb-4">
@@ -796,7 +769,15 @@ function InboxSidebar({
       </div>
       <SidebarSection label="Review buckets">
         <SidebarItem
-          active={activeLaneId === "needs_review"}
+          active={activeActionTabId === "home"}
+          attention={activeTotal > 0}
+          tone="quiet"
+          label="Home"
+          count={activeTotal}
+          onClick={onSelectHome}
+        />
+        <SidebarItem
+          active={activeActionTabId === "needs_review"}
           attention={laneItems.needs_review.length > 0}
           tone="hot"
           label={workflowLabels.needs_review}
@@ -808,7 +789,7 @@ function InboxSidebar({
           }
         />
         <SidebarItem
-          active={activeLaneId === "updated_since_review"}
+          active={activeActionTabId === "updated_since_review"}
           attention={laneItems.updated_since_review.length > 0}
           tone="changed"
           label={workflowLabels.updated_since_review}
@@ -820,7 +801,7 @@ function InboxSidebar({
           }
         />
         <SidebarItem
-          active={activeLaneId === "waiting_on_author"}
+          active={activeActionTabId === "waiting_on_author"}
           attention={laneItems.waiting_on_author.length > 0}
           tone="waiting"
           label={workflowLabels.waiting_on_author}
@@ -832,7 +813,7 @@ function InboxSidebar({
           }
         />
         <SidebarItem
-          active={activeLaneId === "approved"}
+          active={activeActionTabId === "approved"}
           tone="success"
           label={workflowLabels.approved}
           count={laneItems.approved.length}
@@ -868,7 +849,7 @@ function InboxSidebar({
           onClick={mutedCount > 0 ? onSelectMuted : undefined}
         />
         <SidebarItem
-          active={activeLaneId === "watching"}
+          active={activeActionTabId === "watching"}
           tone="quiet"
           label="Watching"
           count={laneItems.watching.length}
@@ -1125,6 +1106,107 @@ function formatSyncLabel(dataUpdatedAt: number): string {
   if (hours < 24) return `synced ${hours}h ago`
 
   return `synced ${Math.floor(hours / 24)}d ago`
+}
+
+function ActionQueueList({
+  activeTabId,
+  laneItems,
+  items,
+  selectedId,
+  onOpenDetail,
+  onSelect,
+  onSelectTab,
+}: {
+  activeTabId: ActionQueueTabId
+  laneItems: Record<LaneId, ReviewQueueItemView[]>
+  items: ReviewQueueItemView[]
+  selectedId: string
+  onOpenDetail: (id: string) => void
+  onSelect: (id: string) => void
+  onSelectTab: (tabId: ActionQueueTabId) => void
+}) {
+  const homeCount = lanes.reduce(
+    (total, lane) => total + laneItems[lane.id].length,
+    0
+  )
+  const tabs = [
+    {
+      id: "home" as const,
+      label: "Home",
+      count: homeCount,
+      tone: "quiet" as const,
+    },
+    ...lanes.map((lane) => ({
+      id: lane.id,
+      label: queueTabLabels[lane.id],
+      count: laneItems[lane.id].length,
+      tone: lane.tone,
+    })),
+  ].filter((tab) => tab.id === "home" || tab.count > 0 || tab.id === activeTabId)
+
+  return (
+    <section>
+      <div className="flex items-center justify-between gap-4 border-b border-border bg-card px-5 py-2">
+        <div className="flex min-w-0 gap-1.5">
+          {tabs.map((tab) => {
+            const active = tab.id === activeTabId
+            const disabled = tab.count === 0 && tab.id !== "home"
+
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                disabled={disabled}
+                onClick={() => onSelectTab(tab.id)}
+                className={cn(
+                  "inline-flex h-7 items-center gap-2 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground transition-colors",
+                  active && "bg-foreground text-background shadow-sm",
+                  !active && !disabled && "hover:bg-muted/40 hover:text-foreground",
+                  disabled && "cursor-default opacity-45"
+                )}
+              >
+                <span
+                  className={cn(
+                    "h-1.5 w-1.5 rounded-full",
+                    active ? "bg-background" : laneToneClasses[tab.tone]
+                  )}
+                />
+                <span>{tab.label}</span>
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 text-[11px] tabular-nums",
+                    active ? "bg-background/15 text-background" : "bg-muted text-muted-foreground"
+                  )}
+                >
+                  {tab.count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+        <div className="shrink-0 text-xs text-muted-foreground">
+          {items.length} visible
+        </div>
+      </div>
+      {items.length > 0 ? (
+        <div>
+          {items.map((item) => (
+            <QueueRow
+              key={item.id}
+              item={item}
+              selected={item.id === selectedId}
+              onSelect={() => onSelect(item.id)}
+              onOpenDetail={() => onOpenDetail(item.id)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="border-b border-border px-5 py-10 text-sm text-muted-foreground">
+          No PRs in this view.
+        </div>
+      )}
+    </section>
+  )
 }
 
 function QueueLane({
