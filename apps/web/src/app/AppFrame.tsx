@@ -1,5 +1,4 @@
 import { Link, Outlet } from "@tanstack/react-router"
-import { Kbd } from "@/components/ui/kbd"
 
 export function AppFrame() {
   return (
@@ -8,14 +7,6 @@ export function AppFrame() {
         <Link to="/" className="mr-auto font-medium text-[#d8d6cf]">
           Review Queue
         </Link>
-        <div className="hidden items-center gap-2 lg:flex">
-          <Kbd>j</Kbd>
-          <Kbd>k</Kbd>
-          <span className="tracking-[0.14em]">move</span>
-          <span className="mx-2 text-white/15">·</span>
-          <Kbd>enter</Kbd>
-          <span className="tracking-[0.14em]">open</span>
-        </div>
         <div className="ml-auto hidden text-right tracking-[0.12em] md:block">
           tracker, not a review surface · review happens in GitHub
         </div>
