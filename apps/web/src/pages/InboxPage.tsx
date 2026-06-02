@@ -272,7 +272,7 @@ export function InboxPage() {
       />
 
       <section className="flex min-w-0 flex-col bg-[#242420]">
-        <InboxHeader />
+        <InboxHeader syncLabel={formatSyncLabel(inboxQuery.dataUpdatedAt)} />
         <div className="grid min-h-[697px] grid-cols-1 xl:grid-cols-[58fr_42fr]">
           <div className="min-w-0 border-b border-white/10 xl:border-r xl:border-b-0">
             <div className="h-full overflow-y-auto pt-2 pb-7">
@@ -474,12 +474,12 @@ function SidebarItem({
   )
 }
 
-function InboxHeader() {
+function InboxHeader({ syncLabel }: { syncLabel: string }) {
   return (
     <div className="flex h-[62px] items-center border-b border-white/10 px-5">
       <h1 className="text-[17px] font-semibold tracking-tight">Review Inbox</h1>
       <span className="ml-4 font-mono text-[11px] text-[#8e8b82]">
-        · synced 2m ago
+        · {syncLabel}
       </span>
       <div className="ml-auto inline-flex h-8 items-center rounded-md border border-white/10 px-3 font-mono text-[11px] text-[#c9c5ba]">
         group: action
@@ -492,6 +492,20 @@ function InboxHeader() {
       </div>
     </div>
   )
+}
+
+function formatSyncLabel(dataUpdatedAt: number): string {
+  if (!dataUpdatedAt) return "not synced"
+
+  const elapsedMs = Math.max(0, Date.now() - dataUpdatedAt)
+  const minutes = Math.floor(elapsedMs / 60_000)
+  if (minutes < 1) return "synced just now"
+  if (minutes < 60) return `synced ${minutes}m ago`
+
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `synced ${hours}h ago`
+
+  return `synced ${Math.floor(hours / 24)}d ago`
 }
 
 function QueueLane({

@@ -427,12 +427,16 @@ function DetailSideRail({
           <Button
             type="button"
             variant="outline"
-            disabled={isMarkingSeen}
+            disabled={isMarkingSeen || newEventCount === 0}
             onClick={onCaughtUp}
             className="h-9 justify-center border-white/10 bg-transparent text-[#d8d3c8] hover:bg-white/[0.04] hover:text-[#f0ede4]"
           >
             <Check className="h-4 w-4" />
-            {isMarkingSeen ? "Saving" : "Mark all caught up"}
+            {isMarkingSeen
+              ? "Saving"
+              : newEventCount === 0
+                ? "All caught up"
+                : "Mark all caught up"}
           </Button>
         </div>
       </RailCard>
