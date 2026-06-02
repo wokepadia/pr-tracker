@@ -943,17 +943,19 @@ function InboxHeader({
     <div className="flex min-h-[62px] flex-wrap items-center gap-3 border-b border-white/10 px-5 py-2">
       <h1 className="text-lg font-semibold tracking-tight">Review Inbox</h1>
       <span className="text-xs text-muted-foreground">· {syncLabel}</span>
-      <div className="relative ml-auto min-w-[220px] max-w-[360px] flex-1">
+      <div className="relative min-w-0 flex-[1_1_100%] sm:ml-auto sm:min-w-[220px] sm:max-w-[360px] sm:flex-1">
         <Input
           id="review-inbox-search"
           type="search"
           value={searchQuery}
           onChange={(event) => onSearchQueryChange(event.target.value)}
           placeholder="Search PRs, repos, authors, files"
-          className="h-8 rounded-lg bg-[#171717] pr-9 pl-8 text-sm"
+          className="h-8 rounded-lg bg-[#171717] pr-3 pl-8 text-sm sm:pr-9"
         />
         <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Kbd className="absolute top-1/2 right-2 -translate-y-1/2">/</Kbd>
+        <Kbd className="absolute top-1/2 right-2 hidden -translate-y-1/2 sm:inline-flex">
+          /
+        </Kbd>
       </div>
       <Tabs
         value={groupMode}
