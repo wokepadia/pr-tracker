@@ -4,6 +4,7 @@
 
 - Core product workflow: [docs/core-workflow-plan.md](docs/core-workflow-plan.md)
 - Reviewer UI wireframe reference: [docs/wireframe-reference.md](docs/wireframe-reference.md)
+- Localhost GitHub setup: [docs/localhost-github-setup.md](docs/localhost-github-setup.md)
 - Development practices: [docs/development-practices.md](docs/development-practices.md)
 - Commit guidelines: [docs/commit-guidelines.md](docs/commit-guidelines.md)
 

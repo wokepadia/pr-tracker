@@ -7,12 +7,10 @@ import {
 } from "@pr-tracker/github";
 import { getApiConfig } from "./config";
 import {
-  createSampleRepository,
-  shouldUseDatabaseRepository,
   type ReviewerInboxRepository
 } from "./repository";
 import { createWebhookSink, type WebhookSink } from "./webhook-sink";
-import { createDatabaseRepository } from "./database-repository";
+import { createConfiguredRepository } from "./configured-repository";
 
 export function createApp(options?: {
   repository?: ReviewerInboxRepository;
@@ -21,10 +19,7 @@ export function createApp(options?: {
   const app = new Hono();
   const config = getApiConfig();
   const repository =
-    options?.repository ??
-    (shouldUseDatabaseRepository()
-      ? createDatabaseRepository()
-      : createSampleRepository());
+    options?.repository ?? createConfiguredRepository();
   const webhookSink = options?.webhookSink ?? createWebhookSink();
 
   app.use(

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createApp } from "./app";
+import { createGithubLiveRepository } from "./github-live-repository";
 import { createSampleRepository } from "./repository";
 import { createMemoryWebhookSink } from "./webhook-sink";
 
@@ -151,6 +152,144 @@ describe("api app", () => {
     expect(body).toEqual({ error: "Pull request not found." });
   });
 
+  it("serves reviewer inbox data from a live GitHub source", async () => {
+    const app = createApp({
+      repository: createGithubLiveRepository({
+        source: {
+          async getViewerLogin() {
+            return "viewer";
+          },
+          async listPullRequests() {
+            return [
+              {
+                repository: { full_name: "acme/web" },
+                pull_request: {
+                  number: 42,
+                  title: "Ship reviewer inbox",
+                  html_url: "https://github.com/acme/web/pull/42",
+                  state: "open",
+                  draft: false,
+                  created_at: "2026-06-01T08:00:00.000Z",
+                  updated_at: "2026-06-01T09:00:00.000Z",
+                  user: { login: "author" },
+                  head: { sha: "head-sha" },
+                  requested_reviewers: [{ login: "viewer" }]
+                },
+                reviews: [],
+                changed_files: [
+                  {
+                    filename: "apps/web/src/pages/InboxPage.tsx",
+                    additions: 12,
+                    deletions: 4
+                  }
+                ]
+              }
+            ];
+          }
+        }
+      }),
+      webhookSink: createMemoryWebhookSink()
+    });
+
+    const response = await app.request("/api/reviewer-inbox");
+    const body = (await response.json()) as {
+      viewer: { login: string };
+      items: Array<{
+        workflowState: string;
+        pullRequest: {
+          id: string;
+          repository: string;
+          changedFiles?: Array<{ path: string; additions?: number; deletions?: number }>;
+        };
+      }>;
+      sections: { needs_review: unknown[] };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.viewer.login).toBe("viewer");
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]).toMatchObject({
+      workflowState: "needs_review",
+      pullRequest: {
+        id: "github:acme~web:42",
+        repository: "acme/web",
+        changedFiles: [
+          {
+            path: "apps/web/src/pages/InboxPage.tsx",
+            additions: 12,
+            deletions: 4
+          }
+        ]
+      }
+    });
+    expect(body.sections.needs_review).toHaveLength(1);
+  });
+
+  it("persists live GitHub last-seen state for the local API process", async () => {
+    const app = createApp({
+      repository: createGithubLiveRepository({
+        viewerLogin: "viewer",
+        source: {
+          async listPullRequests() {
+            return [
+              {
+                repository: { full_name: "acme/api" },
+                pull_request: {
+                  number: 7,
+                  title: "Handle requested changes",
+                  html_url: "https://github.com/acme/api/pull/7",
+                  state: "open",
+                  draft: false,
+                  created_at: "2026-06-01T08:00:00.000Z",
+                  updated_at: "2026-06-01T09:00:00.000Z",
+                  user: { login: "author" },
+                  head: { sha: "new-sha" },
+                  requested_reviewers: []
+                },
+                reviews: [
+                  {
+                    id: 1,
+                    state: "CHANGES_REQUESTED",
+                    submitted_at: "2026-06-01T08:30:00.000Z",
+                    commit_id: "old-sha",
+                    user: { login: "viewer" }
+                  }
+                ]
+              }
+            ];
+          }
+        }
+      }),
+      webhookSink: createMemoryWebhookSink()
+    });
+
+    const seenResponse = await app.request(
+      "/api/pull-requests/github:acme~api:7/seen",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ lastSeenAt: "2026-06-01T12:00:00.000Z" })
+      }
+    );
+
+    expect(seenResponse.status).toBe(200);
+
+    const inboxResponse = await app.request("/api/reviewer-inbox");
+    const inbox = (await inboxResponse.json()) as {
+      items: Array<{
+        workflowState: string;
+        unseenActivityCount: number;
+        pullRequest: { id: string };
+      }>;
+    };
+
+    expect(inbox.items[0]).toMatchObject({
+      pullRequest: { id: "github:acme~api:7" },
+      workflowState: "caught_up",
+      unseenActivityCount: 0
+    });
+  });
+
   it("accepts unsigned local webhook payloads when GitHub env is absent", async () => {
     const response = await app.request("/webhooks/github", {
       method: "POST",
@@ -185,6 +324,7 @@ describe("api app", () => {
       return undefined;
     });
     const failingApp = createApp({
+      repository: createSampleRepository(),
       webhookSink: {
         async record() {
           throw new Error("database unavailable");

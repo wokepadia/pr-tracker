@@ -320,20 +320,41 @@ function toChangedFiles(rawPayload: unknown): PullRequestChangedFile[] | undefin
   const payload =
     typeof rawPayload === "string" ? parseJson(rawPayload) : rawPayload;
 
-  if (!isObject(payload) || !Array.isArray(payload.changedFiles)) {
+  if (!isObject(payload)) {
     return undefined;
   }
 
-  return payload.changedFiles.flatMap((file) => {
-    if (!isObject(file) || typeof file.path !== "string") return [];
+  const changedFiles = Array.isArray(payload.changedFiles)
+    ? payload.changedFiles
+    : Array.isArray(payload.changed_files)
+      ? payload.changed_files
+      : undefined;
+
+  if (!changedFiles) {
+    return undefined;
+  }
+
+  return changedFiles.flatMap((file) => {
+    if (!isObject(file)) return [];
+
+    const path = stringProperty(file, "path") ?? stringProperty(file, "filename");
+    if (!path) return [];
 
     return {
-      path: file.path,
+      path,
       additions: typeof file.additions === "number" ? file.additions : undefined,
       deletions: typeof file.deletions === "number" ? file.deletions : undefined,
       changedAt: typeof file.changedAt === "string" ? file.changedAt : undefined
     };
   });
+}
+
+function stringProperty(
+  value: Record<string, unknown>,
+  property: string
+): string | undefined {
+  const propertyValue = value[property];
+  return typeof propertyValue === "string" ? propertyValue : undefined;
 }
 
 function parseJson(value: string): unknown {

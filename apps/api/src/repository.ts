@@ -83,6 +83,8 @@ export function createSampleRepository(): ReviewerInboxRepository {
   };
 }
 
-export function shouldUseDatabaseRepository(): boolean {
-  return process.env.PR_TRACKER_USE_DATABASE === "true";
+export function shouldUseDatabaseRepository(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  return env.PR_TRACKER_USE_DATABASE === "true";
 }
