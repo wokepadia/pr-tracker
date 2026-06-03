@@ -1,6 +1,6 @@
 # Core Workflow Plan
 
-This document defines the first-pass product structure for a long-term GitHub PR review dashboard. It intentionally excludes generic setup concerns such as login, GitHub App installation, billing, deployment, and account management. The focus is the core single-user workflow: helping one power user understand which PRs need attention, what changed recently, and what action should happen next.
+This document defines the first-pass product structure for a long-term GitHub PR review dashboard. It intentionally excludes generic setup concerns such as login, GitHub credential setup, billing, deployment, and account management. The focus is the core single-user workflow: helping one power user understand which PRs need attention, what changed recently, and what action should happen next.
 
 ## Product Goal
 

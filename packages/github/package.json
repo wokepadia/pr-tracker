@@ -15,8 +15,6 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@octokit/app": "^15.1.6",
-    "@octokit/webhooks-methods": "^5.1.1",
     "zod": "^3.25.42"
   },
   "devDependencies": {

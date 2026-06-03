@@ -9,7 +9,6 @@ import { deterministicUuid } from "./ids";
 
 interface GitHubPullRequestPayload {
   action?: string;
-  installation?: { id?: number; account?: { login?: string } };
   sender?: { login?: string };
   repository?: {
     full_name?: string;
@@ -126,12 +125,9 @@ export async function upsertPullRequestSnapshot(
     pullRequest.id,
     "pull_request"
   );
-  const installationId = await upsertInstallation(
+  const accountId = await upsertSourceAccount(
     orm,
-    {
-      githubInstallationId: snapshot.installationId,
-      accountLogin: snapshot.repository.owner?.login
-    },
+    snapshot.repository.owner?.login ?? repository.full_name.split("/")[0],
     ctx
   );
   const pullRequestId = deterministicUuid(`pull-request:${githubNodeId}`);
@@ -148,7 +144,7 @@ export async function upsertPullRequestSnapshot(
     `
       insert into pull_requests (
         id,
-        installation_id,
+        account_id,
         github_node_id,
         repository,
         number,
@@ -176,7 +172,7 @@ export async function upsertPullRequestSnapshot(
     `,
     [
       pullRequestId,
-      installationId,
+      accountId,
       githubNodeId,
       repository?.full_name ?? "unknown/unknown",
       pullRequest.number ?? 0,
@@ -260,42 +256,33 @@ export async function upsertReviewSnapshot(
   );
 }
 
-async function upsertInstallation(
+async function upsertSourceAccount(
   orm: MikroORM,
-  input: {
-    githubInstallationId: number | undefined;
-    accountLogin?: string;
-  },
+  accountLogin: string | undefined,
   ctx?: Transaction
 ): Promise<string> {
-  const githubInstallationId = input.githubInstallationId;
-  if (!githubInstallationId || githubInstallationId <= 0) {
-    throw new Error("Missing installation.id in GitHub payload.");
-  }
-
-  const installationId = deterministicUuid(`installation:${githubInstallationId}`);
-  const accountLogin = input.accountLogin ?? "unknown";
+  const normalizedLogin = accountLogin ?? "unknown";
+  const sourceAccountId = deterministicUuid(`github-account:${normalizedLogin}`);
   const now = new Date().toISOString();
 
   await orm.em.getConnection().execute(
     `
-      insert into github_installations (
+      insert into github_accounts (
         id,
-        github_installation_id,
-        account_login,
+        login,
         created_at,
         updated_at
       )
-      values (?, ?, ?, ?, ?)
-      on conflict (github_installation_id)
-      do update set account_login = excluded.account_login, updated_at = excluded.updated_at
+      values (?, ?, ?, ?)
+      on conflict (login)
+      do update set updated_at = excluded.updated_at
     `,
-    [installationId, githubInstallationId, accountLogin, now, now],
+    [sourceAccountId, normalizedLogin, now, now],
     undefined,
     ctx
   );
 
-  return installationId;
+  return sourceAccountId;
 }
 
 async function replaceRequestedReviewers(
@@ -415,7 +402,6 @@ function pullRequestPayloadToSnapshot(
   }
 
   return {
-    installationId: payload.installation?.id,
     repository: {
       full_name: payload.repository?.full_name ?? "unknown/unknown",
       html_url: payload.repository?.html_url,

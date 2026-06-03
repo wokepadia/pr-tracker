@@ -1,16 +1,15 @@
 import { EntitySchema } from "@mikro-orm/core";
 
-export interface GithubInstallationRecord {
+export interface GithubAccountRecord {
   id: string;
-  githubInstallationId: number;
-  accountLogin: string;
+  login: string;
   createdAt: Date;
   updatedAt: Date;
 }
 
 export interface PullRequestRecord {
   id: string;
-  installationId: string;
+  accountId: string;
   githubNodeId: string;
   repository: string;
   number: number;
@@ -73,7 +72,6 @@ export interface WebhookDeliveryRecord {
   deliveryId: string;
   eventName: string;
   action?: string;
-  installationId?: number;
   receivedAt: Date;
   rawPayload: unknown;
 }
@@ -102,13 +100,12 @@ export interface LocalPullRequestStateRecord {
   updatedAt: Date;
 }
 
-export const GithubInstallationEntity = new EntitySchema<GithubInstallationRecord>({
-  name: "GithubInstallation",
-  tableName: "github_installations",
+export const GithubAccountEntity = new EntitySchema<GithubAccountRecord>({
+  name: "GithubAccount",
+  tableName: "github_accounts",
   properties: {
     id: { type: "uuid", primary: true },
-    githubInstallationId: { type: "number", unique: true },
-    accountLogin: { type: "text" },
+    login: { type: "text", unique: true },
     createdAt: { type: "Date" },
     updatedAt: { type: "Date", onUpdate: () => new Date() }
   }
@@ -119,7 +116,7 @@ export const PullRequestEntity = new EntitySchema<PullRequestRecord>({
   tableName: "pull_requests",
   properties: {
     id: { type: "uuid", primary: true },
-    installationId: { type: "uuid" },
+    accountId: { type: "uuid" },
     githubNodeId: { type: "text", unique: true },
     repository: { type: "text" },
     number: { type: "number" },
@@ -135,7 +132,7 @@ export const PullRequestEntity = new EntitySchema<PullRequestRecord>({
   },
   indexes: [
     { properties: ["repository", "number"] },
-    { properties: ["installationId"] },
+    { properties: ["accountId"] },
     { properties: ["updatedAt"] }
   ]
 });
@@ -225,13 +222,11 @@ export const WebhookDeliveryEntity = new EntitySchema<WebhookDeliveryRecord>({
     deliveryId: { type: "text", unique: true },
     eventName: { type: "text" },
     action: { type: "text", nullable: true },
-    installationId: { type: "number", nullable: true },
     receivedAt: { type: "Date" },
     rawPayload: { type: "json" }
   },
   indexes: [
     { properties: ["eventName"] },
-    { properties: ["installationId"] },
     { properties: ["receivedAt"] }
   ]
 });
@@ -276,7 +271,7 @@ export const LocalPullRequestStateEntity =
   });
 
 export const entities = [
-  GithubInstallationEntity,
+  GithubAccountEntity,
   PullRequestEntity,
   ReviewEventEntity,
   PullRequestReviewerEntity,

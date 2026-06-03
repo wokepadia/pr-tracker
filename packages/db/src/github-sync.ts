@@ -10,7 +10,6 @@ import {
 } from "./github-ingestion";
 
 interface KnownOpenPullRequest {
-  installation_id: number | null;
   repository: string;
   number: number;
 }
@@ -28,7 +27,7 @@ export async function syncPullRequestsFromGithub(
   options: { sourceName?: string } = {}
 ): Promise<GitHubPullRequestSyncResult> {
   const startedAt = new Date().toISOString();
-  const sourceName = options.sourceName ?? "github-app";
+  const sourceName = options.sourceName ?? "github-token";
   const syncRunId = await startSyncRun(orm, { sourceName, startedAt });
   const result: GitHubPullRequestSyncResult = {
     scannedPullRequests: 0,
@@ -130,7 +129,6 @@ async function listKnownOpenPullRequestSnapshots(
     }
 
     const snapshot = await source.getPullRequest({
-      installationId: pullRequest.installation_id ?? undefined,
       repository: pullRequest.repository,
       number: pullRequest.number
     });
@@ -150,11 +148,9 @@ async function listKnownOpenPullRequests(
   return orm.em.getConnection().execute<KnownOpenPullRequest[]>(
     `
       select
-        gi.github_installation_id as installation_id,
         pr.repository,
         pr.number
       from pull_requests pr
-      left join github_installations gi on gi.id = pr.installation_id
       where pr.state = 'open'
       order by pr.updated_at desc
     `

@@ -6,12 +6,12 @@ V1 is intentionally focused on basic plumbing:
 
 - GitHub-shaped domain primitives.
 - Deterministic reviewer workflow classification.
-- Hono API with GitHub webhook verification scaffold.
-- One-shot GitHub App sync worker for PR state and review backfill.
+- Hono API with deterministic GitHub webhook payload normalization scaffold.
+- One-shot GitHub token sync worker for PR state and review backfill.
 - Vite + React + TanStack reviewer inbox UI.
 - MikroORM/PostgreSQL schema and migration.
 - Worker entrypoint for future sync/reconciliation jobs.
-- Sample data fallback so the app runs before GitHub App credentials are configured.
+- Sample data fallback so the app runs before GitHub token credentials are configured.
 
 Generated summaries, LLM-dependent ranking, CI/check-state tracking, team workflows, and authored-PR management are out of scope for V1.
 
@@ -23,7 +23,7 @@ Generated summaries, LLM-dependent ranking, CI/check-state tracking, team workfl
 - TanStack Router, Query, and Table
 - Hono API
 - MikroORM + PostgreSQL
-- Octokit GitHub App primitives
+- GitHub REST API token source
 - Vitest
 
 ## Local Development
@@ -62,7 +62,7 @@ pnpm db:smoke:ingest
 pnpm db:smoke:sync
 ```
 
-Run the GitHub App sync worker once after setting database and GitHub App
+Run the GitHub token sync worker once after setting database and GitHub token
 environment variables:
 
 ```sh
@@ -102,7 +102,7 @@ PR_TRACKER_USE_DATABASE=true
 PR_TRACKER_VIEWER_LOGIN=your-github-login
 ```
 
-The database-backed path currently supports the reviewer inbox, PR detail reads, local seen state, webhook delivery persistence, and one-shot GitHub App sync.
+The database-backed path currently supports the reviewer inbox, PR detail reads, local seen state, webhook delivery persistence, and one-shot GitHub token sync.
 
 ## Web/API URL Configuration
 
@@ -111,21 +111,19 @@ In development, Vite proxies `/api` to the Hono API. In production, either:
 - serve the frontend and API behind the same origin and reverse proxy `/api` and `/webhooks`, or
 - set `VITE_API_BASE_URL` at build time.
 
-## GitHub App Environment
+## GitHub Token Environment
 
-Set these values when wiring a real GitHub App:
+Set these values when wiring real GitHub data:
 
 ```text
-GITHUB_APP_ID=
-GITHUB_PRIVATE_KEY=
-GITHUB_WEBHOOK_SECRET=
-GITHUB_INSTALLATION_ID=
+GITHUB_TOKEN=
+GITHUB_REPOSITORIES=owner/repo,owner/another-repo
+GITHUB_API_BASE_URL=https://api.github.com
 GITHUB_CLOSED_LOOKBACK_DAYS=30
 ```
 
-Without those values, the webhook endpoint accepts local development payloads without signature verification. With those values present, GitHub webhook signatures are verified.
+A read-only fine-grained personal access token is enough for the current reviewer inbox. Scope it to the selected repositories and grant repository `Pull requests` read access. The app does not write reviews or comments in V1.
 
-`GITHUB_INSTALLATION_ID` is optional. When omitted, the worker iterates every installation visible to the GitHub App.
 The worker always syncs open PRs, reconciles recently updated closed or merged PRs, and checks any locally known open PRs that did not appear in the list response. `GITHUB_CLOSED_LOOKBACK_DAYS` must be a positive integer; unset, zero, negative, or invalid values use the default 30-day closed/merged lookback window.
 
 ## VPS Deployment Shape

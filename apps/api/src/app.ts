@@ -1,10 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import {
-  getGithubAppEnv,
-  normalizeWebhookEvent,
-  verifyGithubWebhook
-} from "@pr-tracker/github";
+import { normalizeWebhookEvent } from "@pr-tracker/github";
 import { getApiConfig } from "./config";
 import {
   type ReviewerInboxRepository
@@ -73,22 +69,7 @@ export function createApp(options?: {
   });
 
   app.post("/webhooks/github", async (c) => {
-    const githubEnv = getGithubAppEnv(process.env);
     const payloadText = await c.req.text();
-    const signature = c.req.header("x-hub-signature-256") ?? null;
-
-    if (githubEnv) {
-      const verified = await verifyGithubWebhook({
-        secret: githubEnv.GITHUB_WEBHOOK_SECRET,
-        payload: payloadText,
-        signature
-      });
-
-      if (!verified) {
-        return c.json({ error: "Invalid webhook signature." }, 401);
-      }
-    }
-
     const payload = JSON.parse(payloadText || "{}") as unknown;
     const event = normalizeWebhookEvent({
       deliveryId: c.req.header("x-github-delivery") ?? "local-dev-delivery",

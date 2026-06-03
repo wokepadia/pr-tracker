@@ -18,7 +18,6 @@ const reviewNodeId = `PRR_sync_${runId}`;
 try {
   await seedSampleData(orm);
   await upsertPullRequestSnapshot(orm, {
-    installationId: 44,
     repository: {
       full_name: "acme/api",
       html_url: "https://github.com/acme/api",
@@ -46,7 +45,6 @@ try {
       async listPullRequests() {
         return [
           {
-            installationId: 44,
             repository: {
               full_name: "acme/api",
               html_url: "https://github.com/acme/api",
@@ -56,7 +54,7 @@ try {
               id: openNumber,
               node_id: openNodeId,
               number: openNumber,
-              title: "Backfill reviewer inbox from GitHub App",
+              title: "Backfill reviewer inbox from GitHub token",
               html_url: `https://github.com/acme/api/pull/${openNumber}`,
               state: "open",
               draft: false,
@@ -79,7 +77,6 @@ try {
             ]
           },
           {
-            installationId: 44,
             repository: {
               full_name: "acme/api",
               html_url: "https://github.com/acme/api",
@@ -101,7 +98,6 @@ try {
             }
           },
           {
-            installationId: 44,
             repository: {
               full_name: "acme/api",
               html_url: "https://github.com/acme/api",
@@ -130,14 +126,7 @@ try {
           return undefined;
         }
 
-        if (input.installationId !== 44) {
-          throw new Error(
-            `Unexpected pull request reconciliation input ${JSON.stringify(input)}.`
-          );
-        }
-
         return {
-          installationId: 44,
           repository: {
             full_name: "acme/api",
             html_url: "https://github.com/acme/api",

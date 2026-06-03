@@ -3,10 +3,9 @@ import { Migration } from "@mikro-orm/migrations";
 export class Migration20260601140000_initial extends Migration {
   override async up(): Promise<void> {
     this.addSql(`
-      create table if not exists "github_installations" (
+      create table if not exists "github_accounts" (
         "id" uuid primary key,
-        "github_installation_id" integer not null unique,
-        "account_login" text not null,
+        "login" text not null unique,
         "created_at" timestamptz not null,
         "updated_at" timestamptz not null
       );
@@ -15,7 +14,7 @@ export class Migration20260601140000_initial extends Migration {
     this.addSql(`
       create table if not exists "pull_requests" (
         "id" uuid primary key,
-        "installation_id" uuid not null,
+        "account_id" uuid not null,
         "github_node_id" text not null unique,
         "repository" text not null,
         "number" integer not null,
@@ -32,9 +31,9 @@ export class Migration20260601140000_initial extends Migration {
     `);
 
     this.addSql(`create index if not exists "pull_requests_repository_number_index" on "pull_requests" ("repository", "number");`);
-    this.addSql(`create index if not exists "pull_requests_installation_id_index" on "pull_requests" ("installation_id");`);
+    this.addSql(`create index if not exists "pull_requests_account_id_index" on "pull_requests" ("account_id");`);
     this.addSql(`create index if not exists "pull_requests_updated_at_index" on "pull_requests" ("updated_at");`);
-    this.addSql(`alter table "pull_requests" add constraint "pull_requests_installation_id_foreign" foreign key ("installation_id") references "github_installations" ("id") on update cascade on delete cascade;`);
+    this.addSql(`alter table "pull_requests" add constraint "pull_requests_account_id_foreign" foreign key ("account_id") references "github_accounts" ("id") on update cascade on delete cascade;`);
 
     this.addSql(`
       create table if not exists "review_events" (
@@ -80,14 +79,12 @@ export class Migration20260601140000_initial extends Migration {
         "delivery_id" text not null unique,
         "event_name" text not null,
         "action" text null,
-        "installation_id" integer null,
         "received_at" timestamptz not null,
         "raw_payload" jsonb not null
       );
     `);
 
     this.addSql(`create index if not exists "webhook_deliveries_event_name_index" on "webhook_deliveries" ("event_name");`);
-    this.addSql(`create index if not exists "webhook_deliveries_installation_id_index" on "webhook_deliveries" ("installation_id");`);
     this.addSql(`create index if not exists "webhook_deliveries_received_at_index" on "webhook_deliveries" ("received_at");`);
 
     this.addSql(`
@@ -113,6 +110,6 @@ export class Migration20260601140000_initial extends Migration {
     this.addSql(`drop table if exists "activity_events";`);
     this.addSql(`drop table if exists "review_events";`);
     this.addSql(`drop table if exists "pull_requests";`);
-    this.addSql(`drop table if exists "github_installations";`);
+    this.addSql(`drop table if exists "github_accounts";`);
   }
 }

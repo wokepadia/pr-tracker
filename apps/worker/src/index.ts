@@ -1,16 +1,15 @@
 import { createOrm, syncPullRequestsFromGithub } from "@pr-tracker/db";
 import {
-  createGithubApp,
-  createGithubPullRequestSource,
+  createGithubTokenPullRequestSource,
   getGithubClosedLookbackDays,
-  getGithubAppAuthEnv,
-  getGithubInstallationId
+  getGithubTokenEnv,
+  parseGithubRepositories
 } from "@pr-tracker/github";
 
-const githubEnv = getGithubAppAuthEnv(process.env);
+const githubEnv = getGithubTokenEnv(process.env);
 
 if (!githubEnv) {
-  throw new Error("GitHub App auth is required for worker sync.");
+  throw new Error("GITHUB_TOKEN and GITHUB_REPOSITORIES are required for worker sync.");
 }
 
 if (process.env.PR_TRACKER_USE_DATABASE !== "true") {
@@ -23,9 +22,9 @@ if (process.env.PR_TRACKER_USE_DATABASE !== "true") {
   try {
     const result = await syncPullRequestsFromGithub(
       orm,
-      createGithubPullRequestSource({
-        app: createGithubApp(githubEnv),
-        installationId: getGithubInstallationId(process.env),
+      createGithubTokenPullRequestSource({
+        token: githubEnv.GITHUB_TOKEN,
+        repositories: parseGithubRepositories(githubEnv.GITHUB_REPOSITORIES),
         closedLookbackDays: getGithubClosedLookbackDays(process.env)
       })
     );
@@ -34,7 +33,7 @@ if (process.env.PR_TRACKER_USE_DATABASE !== "true") {
       JSON.stringify(
         {
           worker: "pr-tracker-worker",
-          mode: "github-app-sync",
+          mode: "github-token-sync",
           ...result
         },
         null,

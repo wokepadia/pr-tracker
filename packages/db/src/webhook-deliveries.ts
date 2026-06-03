@@ -6,7 +6,6 @@ export interface PersistableWebhookDelivery {
   deliveryId: string;
   eventName: string;
   action?: string;
-  installationId?: number;
   receivedAt: string;
   rawPayload: unknown;
 }
@@ -23,11 +22,10 @@ export async function recordWebhookDelivery(
         delivery_id,
         event_name,
         action,
-        installation_id,
         received_at,
         raw_payload
       )
-      values (?, ?, ?, ?, ?, ?, ?::jsonb)
+      values (?, ?, ?, ?, ?, ?::jsonb)
       on conflict (delivery_id) do nothing
     `,
     [
@@ -35,7 +33,6 @@ export async function recordWebhookDelivery(
       delivery.deliveryId,
       delivery.eventName,
       delivery.action ?? null,
-      delivery.installationId ?? null,
       delivery.receivedAt,
       JSON.stringify(delivery.rawPayload)
     ],

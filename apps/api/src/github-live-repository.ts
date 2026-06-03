@@ -11,12 +11,8 @@ import {
   type ReviewerInbox
 } from "@pr-tracker/reviewer-workflow";
 import {
-  createGithubApp,
-  createGithubPullRequestSource,
   createGithubTokenPullRequestSource,
-  getGithubAppAuthEnv,
   getGithubClosedLookbackDays,
-  getGithubInstallationId,
   getGithubTokenEnv,
   parseGithubRepositories,
   type GitHubChangedFileSnapshot,
@@ -47,7 +43,7 @@ export function createGithubLiveRepository(input: {
 
     if (!input.source.getViewerLogin) {
       throw new Error(
-        "PR_TRACKER_VIEWER_LOGIN is required when using GitHub App auth."
+        "PR_TRACKER_VIEWER_LOGIN is required when the GitHub source cannot resolve the viewer."
       );
     }
 
@@ -128,18 +124,6 @@ export function createGithubLiveRepositoryFromEnv(
         token: tokenEnv.GITHUB_TOKEN,
         repositories: parseGithubRepositories(tokenEnv.GITHUB_REPOSITORIES),
         apiBaseUrl: tokenEnv.GITHUB_API_BASE_URL,
-        closedLookbackDays: getGithubClosedLookbackDays(env)
-      }),
-      viewerLogin: env.PR_TRACKER_VIEWER_LOGIN
-    });
-  }
-
-  const appEnv = getGithubAppAuthEnv(env);
-  if (appEnv) {
-    return createGithubLiveRepository({
-      source: createGithubPullRequestSource({
-        app: createGithubApp(appEnv),
-        installationId: getGithubInstallationId(env),
         closedLookbackDays: getGithubClosedLookbackDays(env)
       }),
       viewerLogin: env.PR_TRACKER_VIEWER_LOGIN

@@ -244,38 +244,6 @@
           "enumItems": [],
           "mappedType": "uuid"
         },
-        "github_installation_id": {
-          "name": "github_installation_id",
-          "type": "int4",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": false,
-          "unique": true,
-          "length": null,
-          "precision": 32,
-          "scale": 0,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "integer"
-        },
-        "account_login": {
-          "name": "account_login",
-          "type": "text",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": false,
-          "unique": false,
-          "length": null,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "text"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamptz(6)",
@@ -307,18 +275,34 @@
           "comment": null,
           "enumItems": [],
           "mappedType": "datetime"
+        },
+        "login": {
+          "name": "login",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": true,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "text"
         }
       },
-      "name": "github_installations",
+      "name": "github_accounts",
       "schema": "public",
       "indexes": [
         {
           "columnNames": [
-            "github_installation_id"
+            "login"
           ],
           "composite": false,
           "constraint": true,
-          "keyName": "github_installations_github_installation_id_key",
+          "keyName": "github_accounts_login_key",
           "unique": true,
           "primary": false
         },
@@ -328,7 +312,7 @@
           ],
           "composite": false,
           "constraint": false,
-          "keyName": "github_installations_pkey",
+          "keyName": "github_accounts_pkey",
           "unique": true,
           "primary": true
         }
@@ -653,22 +637,6 @@
           "enumItems": [],
           "mappedType": "uuid"
         },
-        "installation_id": {
-          "name": "installation_id",
-          "type": "uuid",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": false,
-          "unique": false,
-          "length": null,
-          "precision": null,
-          "scale": null,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "uuid"
-        },
         "github_node_id": {
           "name": "github_node_id",
           "type": "text",
@@ -860,6 +828,22 @@
           "comment": null,
           "enumItems": [],
           "mappedType": "datetime"
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "enumItems": [],
+          "mappedType": "uuid"
         }
       },
       "name": "pull_requests",
@@ -877,11 +861,11 @@
         },
         {
           "columnNames": [
-            "installation_id"
+            "account_id"
           ],
           "composite": false,
           "constraint": false,
-          "keyName": "pull_requests_installation_id_index",
+          "keyName": "pull_requests_account_id_index",
           "unique": false,
           "primary": false
         },
@@ -919,13 +903,13 @@
       ],
       "checks": [],
       "foreignKeys": {
-        "pull_requests_installation_id_foreign": {
+        "pull_requests_account_id_foreign": {
           "columnNames": [
-            "installation_id"
+            "account_id"
           ],
-          "constraintName": "pull_requests_installation_id_foreign",
+          "constraintName": "pull_requests_account_id_foreign",
           "localTableName": "public.pull_requests",
-          "referencedTableName": "public.github_installations",
+          "referencedTableName": "public.github_accounts",
           "referencedColumnNames": [
             "id"
           ],
@@ -1644,22 +1628,6 @@
           "enumItems": [],
           "mappedType": "text"
         },
-        "installation_id": {
-          "name": "installation_id",
-          "type": "int4",
-          "unsigned": false,
-          "autoincrement": false,
-          "primary": false,
-          "nullable": true,
-          "unique": false,
-          "length": null,
-          "precision": 32,
-          "scale": 0,
-          "default": null,
-          "comment": null,
-          "enumItems": [],
-          "mappedType": "integer"
-        },
         "received_at": {
           "name": "received_at",
           "type": "timestamptz(6)",
@@ -1713,16 +1681,6 @@
           "composite": false,
           "constraint": false,
           "keyName": "webhook_deliveries_event_name_index",
-          "unique": false,
-          "primary": false
-        },
-        {
-          "columnNames": [
-            "installation_id"
-          ],
-          "composite": false,
-          "constraint": false,
-          "keyName": "webhook_deliveries_installation_id_index",
           "unique": false,
           "primary": false
         },

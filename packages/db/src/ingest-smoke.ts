@@ -11,15 +11,10 @@ try {
     deliveryId: "smoke-pr-opened",
     eventName: "pull_request",
     action: "opened",
-    installationId: 44,
     receivedAt: "2026-06-01T13:00:00.000Z",
     rawPayload: {
       action: "opened",
       sender: { login: "maya" },
-      installation: {
-        id: 44,
-        account: { login: "acme" }
-      },
       repository: {
         full_name: "acme/api",
         html_url: "https://github.com/acme/api",
@@ -46,15 +41,10 @@ try {
     deliveryId: "smoke-review-approved",
     eventName: "pull_request_review",
     action: "submitted",
-    installationId: 44,
     receivedAt: "2026-06-01T13:10:00.000Z",
     rawPayload: {
       action: "submitted",
       sender: { login: "viewer" },
-      installation: {
-        id: 44,
-        account: { login: "acme" }
-      },
       repository: {
         full_name: "acme/api",
         html_url: "https://github.com/acme/api",
@@ -90,15 +80,10 @@ try {
     deliveryId: "smoke-pr-stale",
     eventName: "pull_request",
     action: "synchronize",
-    installationId: 44,
     receivedAt: "2026-06-01T13:11:00.000Z",
     rawPayload: {
       action: "synchronize",
       sender: { login: "maya" },
-      installation: {
-        id: 44,
-        account: { login: "acme" }
-      },
       repository: {
         full_name: "acme/api",
         html_url: "https://github.com/acme/api",

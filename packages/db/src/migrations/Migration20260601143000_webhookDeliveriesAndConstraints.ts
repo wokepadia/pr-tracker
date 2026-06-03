@@ -8,14 +8,12 @@ export class Migration20260601143000_webhookDeliveriesAndConstraints extends Mig
         "delivery_id" text not null unique,
         "event_name" text not null,
         "action" text null,
-        "installation_id" integer null,
         "received_at" timestamptz not null,
         "raw_payload" jsonb not null
       );
     `);
 
     this.addSql(`create index if not exists "webhook_deliveries_event_name_index" on "webhook_deliveries" ("event_name");`);
-    this.addSql(`create index if not exists "webhook_deliveries_installation_id_index" on "webhook_deliveries" ("installation_id");`);
     this.addSql(`create index if not exists "webhook_deliveries_received_at_index" on "webhook_deliveries" ("received_at");`);
     this.addSql(`create unique index if not exists "activity_events_delivery_event_unique" on "activity_events" ("github_delivery_id", "event_type") where "github_delivery_id" is not null;`);
     this.addSql(`create unique index if not exists "local_pull_request_states_pull_request_id_viewer_login_unique" on "local_pull_request_states" ("pull_request_id", "viewer_login");`);
@@ -24,12 +22,12 @@ export class Migration20260601143000_webhookDeliveriesAndConstraints extends Mig
       do $$
       begin
         if not exists (
-          select 1 from pg_constraint where conname = 'pull_requests_installation_id_foreign'
+          select 1 from pg_constraint where conname = 'pull_requests_account_id_foreign'
         ) then
           alter table "pull_requests"
-            add constraint "pull_requests_installation_id_foreign"
-            foreign key ("installation_id")
-            references "github_installations" ("id")
+            add constraint "pull_requests_account_id_foreign"
+            foreign key ("account_id")
+            references "github_accounts" ("id")
             on update cascade
             on delete cascade;
         end if;

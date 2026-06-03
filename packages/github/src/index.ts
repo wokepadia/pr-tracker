@@ -1,17 +1,4 @@
-import { App } from "@octokit/app";
-import { verify } from "@octokit/webhooks-methods";
 import { z } from "zod";
-
-export const githubAppAuthEnvSchema = z.object({
-  GITHUB_APP_ID: z.string().min(1),
-  GITHUB_PRIVATE_KEY: z.string().min(1)
-});
-
-export const githubAppEnvSchema = z.object({
-  GITHUB_APP_ID: z.string().min(1),
-  GITHUB_PRIVATE_KEY: z.string().min(1),
-  GITHUB_WEBHOOK_SECRET: z.string().min(1)
-});
 
 export const githubTokenEnvSchema = z.object({
   GITHUB_TOKEN: z.string().min(1),
@@ -19,42 +6,7 @@ export const githubTokenEnvSchema = z.object({
   GITHUB_API_BASE_URL: z.string().url().optional()
 });
 
-export type GithubAppAuthEnv = z.infer<typeof githubAppAuthEnvSchema>;
-export type GithubAppEnv = z.infer<typeof githubAppEnvSchema>;
 export type GithubTokenEnv = z.infer<typeof githubTokenEnvSchema>;
-
-export function createGithubApp(env: GithubAppAuthEnv): App {
-  return new App({
-    appId: env.GITHUB_APP_ID,
-    privateKey: env.GITHUB_PRIVATE_KEY.replace(/\\n/g, "\n")
-  });
-}
-
-export async function verifyGithubWebhook(input: {
-  secret: string;
-  payload: string;
-  signature: string | null;
-}): Promise<boolean> {
-  if (!input.signature) {
-    return false;
-  }
-
-  return verify(input.secret, input.payload, input.signature);
-}
-
-export function getGithubAppEnv(
-  env: Record<string, string | undefined>
-): GithubAppEnv | undefined {
-  const result = githubAppEnvSchema.safeParse(env);
-  return result.success ? result.data : undefined;
-}
-
-export function getGithubAppAuthEnv(
-  env: Record<string, string | undefined>
-): GithubAppAuthEnv | undefined {
-  const result = githubAppAuthEnvSchema.safeParse(env);
-  return result.success ? result.data : undefined;
-}
 
 export function getGithubTokenEnv(
   env: Record<string, string | undefined>
@@ -67,7 +19,6 @@ export interface NormalizedWebhookEvent {
   deliveryId: string;
   eventName: string;
   action?: string;
-  installationId?: number;
   receivedAt: string;
   rawPayload: unknown;
 }
@@ -78,23 +29,18 @@ export function normalizeWebhookEvent(input: {
   payload: unknown;
   receivedAt?: string;
 }): NormalizedWebhookEvent {
-  const payload = input.payload as {
-    action?: string;
-    installation?: { id?: number };
-  };
+  const payload = input.payload as { action?: string };
 
   return {
     deliveryId: input.deliveryId,
     eventName: input.eventName,
     action: payload.action,
-    installationId: payload.installation?.id,
     receivedAt: input.receivedAt ?? new Date().toISOString(),
     rawPayload: input.payload
   };
 }
 
 export interface GitHubPullRequestSnapshot {
-  installationId?: number;
   repository: {
     full_name: string;
     html_url?: string;
@@ -139,7 +85,6 @@ export interface GitHubChangedFileSnapshot {
 }
 
 export interface GitHubPullRequestLookupInput {
-  installationId?: number;
   repository: string;
   number: number;
 }
@@ -213,29 +158,6 @@ interface GitHubUserFromApi {
   login: string;
 }
 
-export function createGithubPullRequestSource(input: {
-  app: App;
-  installationId?: number;
-  closedLookbackDays?: number;
-}): GitHubPullRequestSource {
-  return {
-    async listPullRequests() {
-      return listInstallationPullRequests(input, { includeRecentClosed: true });
-    },
-    async listOpenPullRequests() {
-      return listInstallationPullRequests(input, { includeRecentClosed: false });
-    },
-    async getPullRequest(lookup) {
-      const installationId = lookup.installationId ?? input.installationId;
-      if (!installationId) {
-        return undefined;
-      }
-
-      return getInstallationPullRequest(input.app, installationId, lookup);
-    }
-  };
-}
-
 export function createGithubTokenPullRequestSource(input: {
   token: string;
   repositories: string[];
@@ -290,22 +212,6 @@ export function parseGithubRepositories(value: string | undefined): string[] {
     .filter((repository) => /^[^/\s]+\/[^/\s]+$/.test(repository));
 }
 
-export function getGithubInstallationId(
-  env: Record<string, string | undefined>
-): number | undefined {
-  const raw = env.GITHUB_INSTALLATION_ID;
-  if (!raw) {
-    return undefined;
-  }
-
-  if (!/^\d+$/.test(raw)) {
-    return undefined;
-  }
-
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-}
-
 export function getGithubClosedLookbackDays(
   env: Record<string, string | undefined>
 ): number | undefined {
@@ -316,85 +222,6 @@ export function getGithubClosedLookbackDays(
 
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-}
-
-async function listInstallationPullRequests(
-  input: {
-    app: App;
-    installationId?: number;
-    closedLookbackDays?: number;
-  },
-  options: { includeRecentClosed: boolean }
-): Promise<GitHubPullRequestSnapshot[]> {
-  const snapshots: GitHubPullRequestSnapshot[] = [];
-  const installationIds = await listInstallationIds(
-    input.app,
-    input.installationId
-  );
-  const closedUpdatedSince = new Date(
-    Date.now() - (input.closedLookbackDays ?? 30) * 24 * 60 * 60 * 1000
-  ).toISOString();
-
-  for (const installationId of installationIds) {
-    for await (const { octokit, repository } of input.app.eachRepository.iterator({
-      installationId
-    })) {
-      const repo = repository as GitHubRepositoryFromApi;
-      const [owner, name] = repo.full_name.split("/");
-
-      if (!owner || !name) {
-        continue;
-      }
-
-      const openPullRequests = await listRepoPullRequests(
-        octokit as RequestingOctokit,
-        owner,
-        name,
-        { state: "open" }
-      );
-      const recentlyClosedPullRequests = options.includeRecentClosed
-        ? await listRepoPullRequests(octokit as RequestingOctokit, owner, name, {
-            state: "closed",
-            updatedSince: closedUpdatedSince
-          })
-        : [];
-
-      for (const pullRequest of [
-        ...openPullRequests,
-        ...recentlyClosedPullRequests
-      ]) {
-        const reviews = await listPullRequestReviews(
-          octokit as RequestingOctokit,
-          owner,
-          name,
-          pullRequest.number
-        );
-        const changedFiles = await listPullRequestFiles(
-          octokit as RequestingOctokit,
-          owner,
-          name,
-          pullRequest.number
-        );
-
-        snapshots.push({
-          installationId,
-          repository: {
-            full_name: repo.full_name,
-            html_url: repo.html_url,
-            owner: { login: repo.owner?.login ?? owner }
-          },
-          pull_request: {
-            ...pullRequest,
-            merged: pullRequest.merged ?? Boolean(pullRequest.merged_at)
-          },
-          reviews,
-          changed_files: changedFiles
-        });
-      }
-    }
-  }
-
-  return snapshots;
 }
 
 async function listConfiguredRepositoryPullRequests(
@@ -454,22 +281,6 @@ async function listConfiguredRepositoryPullRequests(
   return snapshots;
 }
 
-async function listInstallationIds(
-  app: App,
-  configuredInstallationId: number | undefined
-): Promise<number[]> {
-  if (configuredInstallationId) {
-    return [configuredInstallationId];
-  }
-
-  const installationIds: number[] = [];
-  for await (const { installation } of app.eachInstallation.iterator()) {
-    installationIds.push(installation.id);
-  }
-
-  return installationIds;
-}
-
 async function listRepoPullRequests(
   octokit: RequestingOctokit,
   owner: string,
@@ -513,56 +324,6 @@ async function listRepoPullRequests(
     if (response.data.length < 100) {
       return pullRequests;
     }
-  }
-}
-
-async function getInstallationPullRequest(
-  app: App,
-  installationId: number,
-  lookup: GitHubPullRequestLookupInput
-): Promise<GitHubPullRequestSnapshot | undefined> {
-  const [owner, repo] = lookup.repository.split("/");
-  if (!owner || !repo) {
-    return undefined;
-  }
-
-  const octokit = (await app.getInstallationOctokit(
-    installationId
-  )) as RequestingOctokit;
-
-  try {
-    const response = await octokit.request<GitHubPullRequestFromApi>(
-      "GET /repos/{owner}/{repo}/pulls/{pull_number}",
-      {
-        owner,
-        repo,
-        pull_number: lookup.number
-      }
-    );
-    const [reviews, changedFiles] = await Promise.all([
-      listPullRequestReviews(octokit, owner, repo, response.data.number),
-      listPullRequestFiles(octokit, owner, repo, response.data.number)
-    ]);
-
-    return {
-      installationId,
-      repository: {
-        full_name: lookup.repository,
-        owner: { login: owner }
-      },
-      pull_request: {
-        ...response.data,
-        merged: response.data.merged ?? Boolean(response.data.merged_at)
-      },
-      reviews,
-      changed_files: changedFiles
-    };
-  } catch (error) {
-    if (isGithubNotFoundError(error)) {
-      return undefined;
-    }
-
-    throw error;
   }
 }
 

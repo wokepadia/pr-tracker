@@ -6,7 +6,7 @@ import {
 } from "@pr-tracker/core";
 import { deterministicUuid } from "./ids";
 
-const sampleInstallationId = "00000000-0000-4000-8000-000000000001";
+const sampleAccountId = "00000000-0000-4000-8000-000000000001";
 
 export async function seedSampleData(orm: MikroORM): Promise<void> {
   const connection = orm.em.getConnection();
@@ -14,18 +14,17 @@ export async function seedSampleData(orm: MikroORM): Promise<void> {
 
   await connection.execute(
     `
-      insert into github_installations (
+      insert into github_accounts (
         id,
-        github_installation_id,
-        account_login,
+        login,
         created_at,
         updated_at
       )
-      values (?, ?, ?, ?, ?)
-      on conflict (github_installation_id)
-      do update set account_login = excluded.account_login, updated_at = excluded.updated_at
+      values (?, ?, ?, ?)
+      on conflict (login)
+      do update set updated_at = excluded.updated_at
     `,
-    [sampleInstallationId, 1, "acme", now, now]
+    [sampleAccountId, "acme", now, now]
   );
 
   for (const pullRequest of samplePullRequests) {
@@ -33,7 +32,7 @@ export async function seedSampleData(orm: MikroORM): Promise<void> {
       `
         insert into pull_requests (
           id,
-          installation_id,
+          account_id,
           github_node_id,
           repository,
           number,
@@ -59,7 +58,7 @@ export async function seedSampleData(orm: MikroORM): Promise<void> {
       `,
       [
         deterministicUuid(`pull-request:${pullRequest.id}`),
-        sampleInstallationId,
+        sampleAccountId,
         pullRequest.id,
         pullRequest.repository,
         pullRequest.number,

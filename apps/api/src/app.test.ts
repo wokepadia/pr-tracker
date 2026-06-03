@@ -297,14 +297,11 @@ describe("api app", () => {
         "x-github-delivery": "delivery-1",
         "x-github-event": "pull_request"
       },
-      body: JSON.stringify({
-        action: "opened",
-        installation: { id: 123 }
-      })
+      body: JSON.stringify({ action: "opened" })
     });
     const body = (await response.json()) as {
       accepted: boolean;
-      event: { eventName: string; action?: string; installationId?: number };
+      event: { eventName: string; action?: string };
     };
 
     expect(response.status).toBe(200);
@@ -312,8 +309,7 @@ describe("api app", () => {
       accepted: true,
       event: {
         eventName: "pull_request",
-        action: "opened",
-        installationId: 123
+        action: "opened"
       },
       persistence: "memory"
     });
