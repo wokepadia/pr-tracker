@@ -10,6 +10,21 @@ export interface PullRequestDetailResponse {
   item: ClassifiedPullRequest
 }
 
+export interface GithubSettingsStatus {
+  repositories: string[]
+  viewerLogin?: string
+  apiBaseUrl?: string
+  tokenConfigured: boolean
+  storage: "macos-keychain"
+}
+
+export interface SaveGithubSettingsInput {
+  token?: string
+  repositories: string
+  viewerLogin?: string
+  apiBaseUrl?: string
+}
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ""
 
 function apiUrl(path: string): string {
@@ -56,4 +71,33 @@ export async function markPullRequestSeen(id: string): Promise<{
     pullRequestId: string
     lastSeenAt: string
   }>
+}
+
+export async function getGithubSettingsStatus(): Promise<GithubSettingsStatus> {
+  const response = await fetch(apiUrl("/api/local-settings/github"))
+
+  if (!response.ok) {
+    throw new Error("Failed to load GitHub settings.")
+  }
+
+  return response.json() as Promise<GithubSettingsStatus>
+}
+
+export async function saveGithubSettings(
+  input: SaveGithubSettingsInput
+): Promise<GithubSettingsStatus> {
+  const response = await fetch(apiUrl("/api/local-settings/github"), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  })
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as {
+      error?: string
+    }
+    throw new Error(body.error ?? "Failed to save GitHub settings.")
+  }
+
+  return response.json() as Promise<GithubSettingsStatus>
 }

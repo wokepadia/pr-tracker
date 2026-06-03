@@ -1,6 +1,10 @@
+import { mkdtemp } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import { createApp } from "./app";
 import { createGithubLiveRepository } from "./github-live-repository";
+import { createMemoryGithubSettingsStore } from "./local-github-settings";
 import { createSampleRepository } from "./repository";
 import { createMemoryWebhookSink } from "./webhook-sink";
 
@@ -150,6 +154,51 @@ describe("api app", () => {
 
     expect(seenResponse.status).toBe(404);
     expect(body).toEqual({ error: "Pull request not found." });
+  });
+
+  it("stores local GitHub settings without returning the token", async () => {
+    const configPath = join(
+      await mkdtemp(join(tmpdir(), "pr-tracker-settings-")),
+      "github-settings.json"
+    );
+    const store = createMemoryGithubSettingsStore();
+    const app = createApp({
+      repository: createSampleRepository(),
+      settingsOptions: { configPath, store },
+      webhookSink: createMemoryWebhookSink()
+    });
+
+    const saveResponse = await app.request("/api/local-settings/github", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        token: "github_pat_read_only",
+        repositories: "zulip/zulip, invalid",
+        viewerLogin: "reviewer"
+      })
+    });
+    const saveBody = (await saveResponse.json()) as {
+      repositories: string[];
+      viewerLogin?: string;
+      token?: string;
+      tokenConfigured: boolean;
+    };
+
+    expect(saveResponse.status).toBe(200);
+    expect(saveBody).toEqual({
+      repositories: ["zulip/zulip"],
+      viewerLogin: "reviewer",
+      tokenConfigured: true,
+      storage: "macos-keychain"
+    });
+    expect(saveBody.token).toBeUndefined();
+    await expect(store.readToken()).resolves.toBe("github_pat_read_only");
+
+    const statusResponse = await app.request("/api/local-settings/github");
+    const statusBody = await statusResponse.json();
+
+    expect(statusResponse.status).toBe(200);
+    expect(statusBody).toEqual(saveBody);
   });
 
   it("serves reviewer inbox data from a live GitHub source", async () => {

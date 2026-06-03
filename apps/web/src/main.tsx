@@ -11,6 +11,7 @@ import { AppFrame } from "./app/AppFrame";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { InboxPage } from "./pages/InboxPage";
 import { PullRequestPage } from "./pages/PullRequestPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -40,7 +41,17 @@ const pullRequestRoute = createRoute({
   component: PullRequestPage
 });
 
-const routeTree = rootRoute.addChildren([inboxRoute, pullRequestRoute]);
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings",
+  component: SettingsPage
+});
+
+const routeTree = rootRoute.addChildren([
+  inboxRoute,
+  pullRequestRoute,
+  settingsRoute
+]);
 
 const router = createRouter({ routeTree });
 

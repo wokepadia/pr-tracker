@@ -3,6 +3,11 @@ import { cors } from "hono/cors";
 import { normalizeWebhookEvent } from "@pr-tracker/github";
 import { getApiConfig } from "./config";
 import {
+  getLocalGithubSettingsStatus,
+  saveLocalGithubSettings,
+  type LocalGithubSettingsOptions
+} from "./local-github-settings";
+import {
   type ReviewerInboxRepository
 } from "./repository";
 import { createWebhookSink, type WebhookSink } from "./webhook-sink";
@@ -10,12 +15,13 @@ import { createConfiguredRepository } from "./configured-repository";
 
 export function createApp(options?: {
   repository?: ReviewerInboxRepository;
+  settingsOptions?: LocalGithubSettingsOptions;
   webhookSink?: WebhookSink;
 }): Hono {
   const app = new Hono();
   const config = getApiConfig();
   const repository =
-    options?.repository ?? createConfiguredRepository();
+    options?.repository ?? createConfiguredRepository(process.env, options?.settingsOptions);
   const webhookSink = options?.webhookSink ?? createWebhookSink();
 
   app.use(
@@ -34,6 +40,61 @@ export function createApp(options?: {
       now: new Date().toISOString()
     })
   );
+
+  app.get("/api/local-settings/github", async (c) => {
+    try {
+      return c.json(await getLocalGithubSettingsStatus(options?.settingsOptions));
+    } catch (error) {
+      return c.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to load GitHub settings."
+        },
+        500
+      );
+    }
+  });
+
+  app.post("/api/local-settings/github", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as {
+      token?: unknown;
+      repositories?: unknown;
+      viewerLogin?: unknown;
+      apiBaseUrl?: unknown;
+    };
+
+    try {
+      const status = await saveLocalGithubSettings(
+        {
+          token: typeof body.token === "string" ? body.token : undefined,
+          repositories:
+            typeof body.repositories === "string" ||
+            Array.isArray(body.repositories)
+              ? body.repositories
+              : "",
+          viewerLogin:
+            typeof body.viewerLogin === "string" ? body.viewerLogin : undefined,
+          apiBaseUrl:
+            typeof body.apiBaseUrl === "string" ? body.apiBaseUrl : undefined
+        },
+        options?.settingsOptions
+      );
+
+      return c.json(status);
+    } catch (error) {
+      return c.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to save GitHub settings."
+        },
+        400
+      );
+    }
+  });
 
   app.get("/api/reviewer-inbox", async (c) => {
     return c.json(await repository.getReviewerInbox(new Date().toISOString()));

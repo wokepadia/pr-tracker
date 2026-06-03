@@ -14,7 +14,15 @@ For the current localhost product, use a read-only personal access token.
 
 ## Token Mode
 
-Set:
+Open `http://127.0.0.1:5176/settings` and enter:
+
+- a read-only GitHub token
+- one or more repositories, for example `zulip/zulip`
+- your GitHub username
+
+The API stores the token in macOS Keychain and stores the non-secret repository settings in local application config. The token is never returned to the browser after saving.
+
+Equivalent environment variables still work if you prefer starting the API from a configured shell:
 
 ```sh
 GITHUB_TOKEN=github_pat_...

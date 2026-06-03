@@ -1,4 +1,5 @@
 import { Link, Outlet } from "@tanstack/react-router"
+import { Settings } from "lucide-react"
 
 export function AppFrame() {
   return (
@@ -13,6 +14,13 @@ export function AppFrame() {
         <div className="ml-auto hidden text-right md:block">
           tracker, not a review surface · review happens in GitHub
         </div>
+        <Link
+          to="/settings"
+          className="ml-4 inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-muted"
+        >
+          <Settings className="h-3.5 w-3.5" />
+          Settings
+        </Link>
       </header>
 
       <main className="pt-[48px]">

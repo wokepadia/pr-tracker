@@ -133,6 +133,24 @@ export function createGithubLiveRepositoryFromEnv(
   return undefined;
 }
 
+export function createGithubLiveRepositoryFromCredentials(input: {
+  token: string;
+  repositories: string[];
+  viewerLogin?: string;
+  apiBaseUrl?: string;
+  closedLookbackDays?: number;
+}): ReviewerInboxRepository {
+  return createGithubLiveRepository({
+    source: createGithubTokenPullRequestSource({
+      token: input.token,
+      repositories: input.repositories,
+      apiBaseUrl: input.apiBaseUrl,
+      closedLookbackDays: input.closedLookbackDays
+    }),
+    viewerLogin: input.viewerLogin
+  });
+}
+
 function snapshotToPullRequestItem(
   snapshot: GitHubPullRequestSnapshot
 ): PullRequestItem {
