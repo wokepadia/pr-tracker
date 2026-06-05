@@ -14,6 +14,7 @@ import {
   ArrowLeft,
   BellOff,
   Check,
+  ChevronsLeftRight,
   Clock3,
   ExternalLink,
   FileText,
@@ -21,10 +22,19 @@ import {
   MessageSquareText,
   Pin,
   RotateCcw,
+  Sparkles,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ActivityEventLine } from "@/components/ActivityEventLine"
 import { MarkdownContent } from "@/components/MarkdownContent"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Separator } from "@/components/ui/separator"
 import { getPullRequest, markPullRequestSeen } from "@/api"
 import { formatCount, pluralize } from "@/lib/copy"
@@ -36,14 +46,21 @@ import {
   type ReviewQueueItemView,
 } from "@/reviewer/view-model"
 import {
+  bucketIdForLocalQueueItem,
   canMuteLocalQueueItem,
   canPinLocalQueueItem,
   canSnoozeLocalQueueItem,
+  defaultUserBuckets,
   hasLocalQueueState,
   loadLocalQueueState,
+  loadUserBucketLabels,
   saveLocalQueueState,
+  saveUserBucketLabels,
+  userBucketLabelFromId,
   type LocalPullRequestQueueState,
   type LocalQueueStateByPullRequestId,
+  type UserBucketId,
+  type UserBucketLabels,
 } from "@/reviewer/local-queue-state"
 import { detailAttentionLabel } from "./pull-request-helpers"
 import type { ReviewDecision } from "@pr-tracker/core"
@@ -72,6 +89,14 @@ const detailDotClasses: Record<DetailTone, string> = {
   quiet: "bg-slate-300",
 }
 
+const detailBucketToneClasses: Record<UserBucketId, DetailTone> = {
+  inbox: "hot",
+  reviewing: "changed",
+  waiting: "waiting",
+  later: "quiet",
+  done: "success",
+}
+
 export function PullRequestPage() {
   const { pullRequestId } = useParams({ from: "/pull-requests/$pullRequestId" })
   const queryClient = useQueryClient()
@@ -81,6 +106,14 @@ export function PullRequestPage() {
       if (typeof window === "undefined") return {}
       return loadLocalQueueState(window.localStorage)
     })
+  const [userBucketLabels, setUserBucketLabels] = useState<UserBucketLabels>(() => {
+    if (typeof window === "undefined") {
+      return Object.fromEntries(
+        defaultUserBuckets.map((bucket) => [bucket.id, bucket.label])
+      ) as UserBucketLabels
+    }
+    return loadUserBucketLabels(window.localStorage)
+  })
   const detailQuery = useQuery({
     queryKey: ["pull-request", pullRequestId],
     queryFn: () => getPullRequest(pullRequestId),
@@ -107,6 +140,10 @@ export function PullRequestPage() {
     saveLocalQueueState(window.localStorage, localQueueState)
   }, [localQueueState])
 
+  useEffect(() => {
+    saveUserBucketLabels(window.localStorage, userBucketLabels)
+  }, [userBucketLabels])
+
   function updateLocalItemState(
     itemId: string,
     update: (current: LocalPullRequestQueueState) => LocalPullRequestQueueState
@@ -123,6 +160,13 @@ export function PullRequestPage() {
 
       return next
     })
+  }
+
+  function movePullRequestToBucket(itemId: string, bucketId: UserBucketId) {
+    updateLocalItemState(itemId, (current) => ({
+      ...current,
+      bucketId,
+    }))
   }
 
   function snoozePullRequestById(itemId: string) {
@@ -250,6 +294,10 @@ export function PullRequestPage() {
       event.isNew && event.action.toLowerCase().includes("requested your review")
   ).length
   const loadedItemLocalState = localQueueState[loadedItem.id] ?? {}
+  const bucketId = bucketIdForLocalQueueItem(
+    loadedItemLocalState,
+    loadedItem.laneId
+  )
   const isPinned = Boolean(loadedItemLocalState.pinned)
   const isSnoozed = Boolean(loadedItemLocalState.snoozed)
   const isMuted = Boolean(loadedItemLocalState.muted)
@@ -270,6 +318,10 @@ export function PullRequestPage() {
     mutePullRequestById(loadedItem.id)
   }
 
+  function movePullRequest(bucketId: UserBucketId) {
+    movePullRequestToBucket(loadedItem.id, bucketId)
+  }
+
   async function markCaughtUp() {
     await markCaughtUpById(loadedItem.id)
   }
@@ -279,8 +331,11 @@ export function PullRequestPage() {
       <DetailHeader item={loadedItem} />
       <ContextBand
         item={loadedItem}
+        bucketId={bucketId}
+        userBucketLabels={userBucketLabels}
         newEventCount={newEvents.length}
         reviewRequestCount={reviewRequestCount}
+        onMoveToBucket={movePullRequest}
       />
       <div className="grid grid-cols-1 gap-0 border-t border-border xl:grid-cols-[62fr_38fr]">
         <main className="min-w-0 px-7 py-6">
@@ -297,6 +352,8 @@ export function PullRequestPage() {
         </main>
         <DetailSideRail
           item={loadedItem}
+          bucketId={bucketId}
+          userBucketLabels={userBucketLabels}
           newEventCount={newEvents.length}
           isPinned={isPinned}
           isSnoozed={isSnoozed}
@@ -307,6 +364,7 @@ export function PullRequestPage() {
           onRestore={restorePullRequest}
           onTogglePin={togglePinPullRequest}
           onMute={mutePullRequest}
+          onMoveToBucket={movePullRequest}
           onCaughtUp={() => void markCaughtUp()}
         />
       </div>
@@ -446,12 +504,18 @@ function DetailFact({
 
 function ContextBand({
   item,
+  bucketId,
+  userBucketLabels,
   newEventCount,
   reviewRequestCount,
+  onMoveToBucket,
 }: {
   item: ReviewQueueItemView
+  bucketId: UserBucketId
+  userBucketLabels: UserBucketLabels
   newEventCount: number
   reviewRequestCount: number
+  onMoveToBucket: (bucketId: UserBucketId) => void
 }) {
   const reReviewRequested = reviewRequestCount > 0
   const tone = detailToneForItem(item)
@@ -506,9 +570,22 @@ function ContextBand({
         <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
           <RotateCcw className="h-3.5 w-3.5" />
           <span className={cn("h-1.5 w-1.5 rounded-full", detailDotClasses[tone])} />
-          Review context
+          New activity and current bucket
           <span className="opacity-45">·</span>
           {item.lastSeenAt}
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <BucketMoveMenu
+            bucketId={bucketId}
+            userBucketLabels={userBucketLabels}
+            onMoveToBucket={onMoveToBucket}
+          />
+          {newEventCount > 0 ? (
+            <span className="inline-flex h-8 items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2.5 text-xs font-medium text-sky-800">
+              <Sparkles className="h-3.5 w-3.5" />
+              {formatCount(newEventCount, "new event")}
+            </span>
+          ) : null}
         </div>
         <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-5">
           <ContextFact
@@ -632,6 +709,53 @@ function ChangeCard({
   )
 }
 
+function BucketMoveMenu({
+  bucketId,
+  userBucketLabels,
+  onMoveToBucket,
+  fullWidth,
+}: {
+  bucketId: UserBucketId
+  userBucketLabels: UserBucketLabels
+  onMoveToBucket: (bucketId: UserBucketId) => void
+  fullWidth?: boolean
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          className={cn(
+            "h-8 justify-start rounded-md text-xs",
+            fullWidth && "w-full justify-center"
+          )}
+        >
+          <ChevronsLeftRight className="h-3.5 w-3.5" />
+          Bucket: {userBucketLabelFromId(userBucketLabels, bucketId)}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-48 rounded-lg">
+        <DropdownMenuLabel>Move to bucket</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {defaultUserBuckets.map((bucket) => {
+          const tone = detailBucketToneClasses[bucket.id]
+          return (
+            <DropdownMenuItem
+              key={bucket.id}
+              disabled={bucket.id === bucketId}
+              onClick={() => onMoveToBucket(bucket.id)}
+            >
+              <span className={cn("h-2 w-2 rounded-full", detailDotClasses[tone])} />
+              {userBucketLabelFromId(userBucketLabels, bucket.id)}
+            </DropdownMenuItem>
+          )
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 function Timeline({
   newEvents,
   oldEvents,
@@ -704,6 +828,8 @@ function TimelineItem({
 
 function DetailSideRail({
   item,
+  bucketId,
+  userBucketLabels,
   newEventCount,
   isPinned,
   isSnoozed,
@@ -714,9 +840,12 @@ function DetailSideRail({
   onRestore,
   onTogglePin,
   onMute,
+  onMoveToBucket,
   onCaughtUp,
 }: {
   item: ReviewQueueItemView
+  bucketId: UserBucketId
+  userBucketLabels: UserBucketLabels
   newEventCount: number
   isPinned: boolean
   isSnoozed: boolean
@@ -727,6 +856,7 @@ function DetailSideRail({
   onRestore: () => void
   onTogglePin: () => void
   onMute: () => void
+  onMoveToBucket: (bucketId: UserBucketId) => void
   onCaughtUp: () => void
 }) {
   const canMarkCaughtUp = canMarkReviewItemCaughtUp(item, isMarkingSeen)
@@ -748,6 +878,12 @@ function DetailSideRail({
               <ExternalLink className="h-4 w-4" />
             </a>
           </Button>
+          <BucketMoveMenu
+            bucketId={bucketId}
+            userBucketLabels={userBucketLabels}
+            onMoveToBucket={onMoveToBucket}
+            fullWidth
+          />
           <Button
             type="button"
             variant="outline"

@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest"
 import {
+  bucketIdForLocalQueueItem,
   canMuteLocalQueueItem,
   canPinLocalQueueItem,
   canSnoozeLocalQueueItem,
+  defaultBucketIdForWorkflowLane,
   loadLocalQueueState,
+  loadUserBucketLabels,
   saveLocalQueueState,
+  saveUserBucketLabels,
+  userBucketLabelFromId,
 } from "./local-queue-state"
 
 describe("local queue state", () => {
@@ -36,6 +41,21 @@ describe("local queue state", () => {
     expect(loadLocalQueueState(storage)).toEqual({
       pr_1: { pinned: true },
       pr_2: { muted: true },
+    })
+  })
+
+  it("loads persisted user bucket assignments", () => {
+    const storage = {
+      getItem: () =>
+        JSON.stringify({
+          pr_1: { bucketId: "reviewing" },
+          pr_2: { bucketId: "waiting", pinned: true },
+        }),
+    }
+
+    expect(loadLocalQueueState(storage)).toEqual({
+      pr_1: { bucketId: "reviewing" },
+      pr_2: { bucketId: "waiting", pinned: true },
     })
   })
 
@@ -92,6 +112,54 @@ describe("local queue state", () => {
     expect(writes).toEqual([
       JSON.stringify({ pr_1: { snoozed: true, pinned: true } }),
     ])
+  })
+
+  it("maps workflow lanes to default user buckets", () => {
+    expect(defaultBucketIdForWorkflowLane("needs_review")).toBe("inbox")
+    expect(defaultBucketIdForWorkflowLane("updated_since_review")).toBe("inbox")
+    expect(defaultBucketIdForWorkflowLane("waiting_on_author")).toBe("waiting")
+    expect(defaultBucketIdForWorkflowLane("approved")).toBe("done")
+    expect(defaultBucketIdForWorkflowLane("caught_up")).toBe("done")
+    expect(defaultBucketIdForWorkflowLane("watching")).toBe("later")
+
+    expect(bucketIdForLocalQueueItem({ bucketId: "reviewing" }, "watching")).toBe(
+      "reviewing"
+    )
+  })
+
+  it("loads and saves editable bucket labels", () => {
+    const labels = loadUserBucketLabels({
+      getItem: () =>
+        JSON.stringify({
+          inbox: "Review now",
+          reviewing: "",
+          waiting: "Blocked",
+          later: "  Later-ish  ",
+          done: "Done",
+          unknown: "Nope",
+        }),
+    })
+
+    expect(labels).toEqual({
+      inbox: "Review now",
+      reviewing: "Reviewing",
+      waiting: "Blocked",
+      later: "Later-ish",
+      done: "Done",
+    })
+    expect(userBucketLabelFromId(labels, "waiting")).toBe("Blocked")
+
+    const writes: string[] = []
+    saveUserBucketLabels(
+      {
+        setItem: (_key, value) => {
+          writes.push(value)
+        },
+      },
+      labels
+    )
+
+    expect(writes).toEqual([JSON.stringify(labels)])
   })
 
   it("allows only one hiding state to control local triage", () => {

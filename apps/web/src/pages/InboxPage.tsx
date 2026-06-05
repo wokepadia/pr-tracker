@@ -21,7 +21,9 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  ChevronsLeftRight,
   Clock3,
+  Edit3,
   ExternalLink,
   Eye,
   BellOff,
@@ -34,10 +36,19 @@ import {
   Pin,
   RotateCcw,
   Search,
+  Sparkles,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ActivityEventLine } from "@/components/ActivityEventLine"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Kbd } from "@/components/ui/kbd"
 import { MarkdownContent } from "@/components/MarkdownContent"
@@ -52,18 +63,24 @@ import { cn, externalLinkProps, openExternalLink } from "@/lib/utils"
 import {
   buildInboxView,
   canMarkReviewItemCaughtUp,
-  type ReviewQueueBucketId,
   type ReviewQueueItemView,
 } from "@/reviewer/view-model"
 import {
+  bucketIdForLocalQueueItem,
   canMuteLocalQueueItem,
   canPinLocalQueueItem,
   canSnoozeLocalQueueItem,
+  defaultUserBuckets,
   hasLocalQueueState,
   loadLocalQueueState,
+  loadUserBucketLabels,
   saveLocalQueueState,
+  saveUserBucketLabels,
+  userBucketLabelFromId,
   type LocalPullRequestQueueState,
   type LocalQueueStateByPullRequestId,
+  type UserBucketId,
+  type UserBucketLabels,
 } from "@/reviewer/local-queue-state"
 import {
   filterQueueItems,
@@ -74,8 +91,8 @@ import {
   type QueueGroupMode,
 } from "./inbox-helpers"
 
-type LaneId = ReviewQueueBucketId
-type ActionQueueTabId = "home" | LaneId
+type LaneId = UserBucketId
+type ActionQueueTabId = "home" | "new_activity" | LaneId
 
 const REVIEW_QUEUE_MIN_WIDTH = 520
 const QUICK_PEEK_MIN_WIDTH = 360
@@ -116,43 +133,43 @@ interface QueueGroupDefinition {
 }
 
 const laneDescriptions: Record<LaneId, string> = {
-  needs_review: "Your review is the next move",
-  updated_since_review: "Activity after your last pass",
-  waiting_on_author: "Blocked on author changes",
-  approved: "Recently approved",
-  watching: "Tracked, not urgent",
+  inbox: "Default place for active PRs",
+  reviewing: "PRs you are actively reviewing",
+  waiting: "Waiting for another person",
+  later: "Keep visible, lower urgency",
+  done: "Finished or caught up",
 }
 
 const lanes: LaneDefinition[] = [
   {
-    id: "needs_review",
-    label: "Needs your review",
+    id: "inbox",
+    label: "Inbox",
     tone: "hot",
-    description: laneDescriptions.needs_review,
+    description: laneDescriptions.inbox,
   },
   {
-    id: "updated_since_review",
-    label: "Changed since you last looked",
+    id: "reviewing",
+    label: "Reviewing",
     tone: "changed",
-    description: laneDescriptions.updated_since_review,
+    description: laneDescriptions.reviewing,
   },
   {
-    id: "waiting_on_author",
-    label: "Waiting on author",
+    id: "waiting",
+    label: "Waiting",
     tone: "waiting",
-    description: laneDescriptions.waiting_on_author,
+    description: laneDescriptions.waiting,
   },
   {
-    id: "approved",
-    label: "Approved recently",
-    tone: "success",
-    description: laneDescriptions.approved,
-  },
-  {
-    id: "watching",
-    label: "Watching / stale",
+    id: "later",
+    label: "Later",
     tone: "quiet",
-    description: laneDescriptions.watching,
+    description: laneDescriptions.later,
+  },
+  {
+    id: "done",
+    label: "Done",
+    tone: "success",
+    description: laneDescriptions.done,
   },
 ]
 
@@ -180,14 +197,6 @@ const rowSelectedToneClasses: Record<LaneDefinition["tone"], string> = {
   quiet: "bg-muted shadow-[inset_3px_0_0_#94a3b8]",
 }
 
-const sidebarBucketLabels: Record<LaneId, string> = {
-  needs_review: "Needs you",
-  updated_since_review: "Changed since",
-  waiting_on_author: "Waiting on author",
-  approved: "Approved · recent",
-  watching: "Watching / stale",
-}
-
 const inboxLoadingSteps: InboxLoadingStep[] = [
   {
     label: "Opening inbox request",
@@ -211,7 +220,7 @@ const inboxLoadingSteps: InboxLoadingStep[] = [
   },
   {
     label: "Reading review history",
-    detail: "Loading review decisions, comments, threads, commits, and changed files.",
+    detail: "Loading review decisions, comments, threads, and commits.",
     progress: "Fetching per-PR review activity",
   },
   {
@@ -258,6 +267,14 @@ export function InboxPage() {
       if (typeof window === "undefined") return {}
       return loadLocalQueueState(window.localStorage)
     })
+  const [userBucketLabels, setUserBucketLabels] = useState<UserBucketLabels>(() => {
+    if (typeof window === "undefined") {
+      return Object.fromEntries(
+        defaultUserBuckets.map((bucket) => [bucket.id, bucket.label])
+      ) as UserBucketLabels
+    }
+    return loadUserBucketLabels(window.localStorage)
+  })
   const [failedCaughtUpItemId, setFailedCaughtUpItemId] = useState<string>()
   const [groupMode, setGroupMode] = useState<QueueGroupMode>("action")
   const [searchQuery, setSearchQuery] = useState("")
@@ -309,18 +326,28 @@ export function InboxPage() {
     () => filterQueueItems(mutedItems, searchQuery),
     [mutedItems, searchQuery]
   )
+  const newActivityItems = useMemo(
+    () => activeItems.filter((item) => item.unseenEventCount > 0),
+    [activeItems]
+  )
+  const searchedNewActivityItems = useMemo(
+    () => filterQueueItems(newActivityItems, searchQuery),
+    [newActivityItems, searchQuery]
+  )
   const laneItems = useMemo(
     () =>
       lanes.reduce(
         (acc, lane) => {
           acc[lane.id] = searchedActiveItems.filter(
-            (item) => itemBelongsToBucket(item, lane.id)
+            (item) =>
+              bucketIdForLocalQueueItem(localQueueState[item.id], item.laneId) ===
+              lane.id
           )
           return acc
         },
         {} as Record<LaneId, ReviewQueueItemView[]>
       ),
-    [searchedActiveItems]
+    [localQueueState, searchedActiveItems]
   )
   const [activeActionTabId, setActiveActionTabId] =
     useState<ActionQueueTabId>("home")
@@ -328,8 +355,10 @@ export function InboxPage() {
     () =>
       activeActionTabId === "home"
         ? searchedActiveItems
-        : laneItems[activeActionTabId],
-    [activeActionTabId, laneItems, searchedActiveItems]
+        : activeActionTabId === "new_activity"
+          ? searchedNewActivityItems
+          : laneItems[activeActionTabId],
+    [activeActionTabId, laneItems, searchedActiveItems, searchedNewActivityItems]
   )
   const repositoryGroups = useMemo(
     () => buildRepositoryGroups(searchedActiveItems),
@@ -375,6 +404,10 @@ export function InboxPage() {
   useEffect(() => {
     saveLocalQueueState(window.localStorage, localQueueState)
   }, [localQueueState])
+
+  useEffect(() => {
+    saveUserBucketLabels(window.localStorage, userBucketLabels)
+  }, [userBucketLabels])
 
   useEffect(() => {
     saveStoredSelectedQueueItemId(window.sessionStorage, selectedId)
@@ -462,6 +495,29 @@ export function InboxPage() {
     })
   }
 
+  function updateBucketLabel(bucketId: UserBucketId, label: string) {
+    const trimmedLabel = label.trim()
+    setUserBucketLabels((current) => ({
+      ...current,
+      [bucketId]:
+        trimmedLabel || defaultUserBuckets.find((bucket) => bucket.id === bucketId)?.label || bucketId,
+    }))
+  }
+
+  function moveItemToBucket(itemId: string, bucketId: UserBucketId) {
+    updateLocalItemState(itemId, (current) => ({
+      ...current,
+      bucketId,
+    }))
+  }
+
+  function moveSelectedToBucket(bucketId: UserBucketId) {
+    if (!selectedItem) return
+    moveItemToBucket(selectedItem.id, bucketId)
+    setActiveActionTabId(bucketId)
+    setGroupMode("action")
+  }
+
   function snoozeSelected() {
     if (!selectedItem || !canSnoozeLocalQueueItem(selectedItemLocalState)) return
     const itemId = selectedItem.id
@@ -483,7 +539,7 @@ export function InboxPage() {
       return next
     })
     setGroupMode("action")
-    setActiveActionTabId(bucketIdForItem(selectedItem) ?? "home")
+    setActiveActionTabId(bucketIdForItem(selectedItem, localQueueState) ?? "home")
     setSelectedId(itemId)
   }
 
@@ -498,7 +554,7 @@ export function InboxPage() {
 
     if (wasPinned && groupMode === "pinned") {
       setGroupMode("action")
-      setActiveActionTabId(bucketIdForItem(selectedItem) ?? "home")
+      setActiveActionTabId(bucketIdForItem(selectedItem, localQueueState) ?? "home")
       setSelectedId(itemId)
     }
   }
@@ -531,6 +587,13 @@ export function InboxPage() {
     setGroupMode("action")
     setActiveActionTabId("home")
     setSelectedId(searchedActiveItems[0]?.id ?? "")
+  }
+
+  function focusNewActivity() {
+    if (searchedNewActivityItems.length === 0) return
+    setGroupMode("action")
+    setActiveActionTabId("new_activity")
+    setSelectedId(searchedNewActivityItems[0]?.id ?? "")
   }
 
   function focusLane(laneId: LaneId) {
@@ -695,7 +758,9 @@ export function InboxPage() {
     >
       <InboxSidebar
         laneItems={laneItems}
+        userBucketLabels={userBucketLabels}
         activeActionTabId={groupMode === "action" ? activeActionTabId : undefined}
+        newActivityCount={searchedNewActivityItems.length}
         pinnedActive={groupMode === "pinned"}
         pinnedCount={searchedPinnedItems.length}
         snoozedActive={groupMode === "snoozed"}
@@ -703,10 +768,12 @@ export function InboxPage() {
         mutedActive={groupMode === "muted"}
         mutedCount={searchedMutedItems.length}
         onSelectHome={focusHome}
+        onSelectNewActivity={focusNewActivity}
         onSelectLane={focusLane}
         onSelectPinned={focusPinned}
         onSelectSnoozed={focusSnoozed}
         onSelectMuted={focusMuted}
+        onBucketLabelChange={updateBucketLabel}
       />
 
       <section className="min-w-0 bg-background">
@@ -740,12 +807,36 @@ export function InboxPage() {
               />
               <div className="min-h-0 flex-1 overflow-y-auto pt-2 pb-7">
                 {groupMode === "action" ? (
-                  <ActionQueueList
-                    items={visibleActionItems}
-                    selectedId={selectedItem?.id ?? ""}
-                    onOpenDetail={openItemDetail}
-                    onSelect={setSelectedId}
-                  />
+                  activeActionTabId === "home" ? (
+                    lanes.map((lane) => (
+                      <QueueLane
+                        key={lane.id}
+                        group={{
+                          ...lane,
+                          label: userBucketLabelFromId(userBucketLabels, lane.id),
+                        }}
+                        isOpen
+                        items={laneItems[lane.id]}
+                        selectedId={selectedItem?.id ?? ""}
+                        userBucketLabels={userBucketLabels}
+                        localQueueState={localQueueState}
+                        onOpenDetail={openItemDetail}
+                        onMoveItemToBucket={moveItemToBucket}
+                        onToggle={() => undefined}
+                        onSelect={setSelectedId}
+                      />
+                    ))
+                  ) : (
+                    <ActionQueueList
+                      items={visibleActionItems}
+                      selectedId={selectedItem?.id ?? ""}
+                      userBucketLabels={userBucketLabels}
+                      localQueueState={localQueueState}
+                      onOpenDetail={openItemDetail}
+                      onMoveItemToBucket={moveItemToBucket}
+                      onSelect={setSelectedId}
+                    />
+                  )
                 ) : groupMode === "repository" ? (
                   repositoryGroups.map((group) => (
                     <QueueLane
@@ -754,7 +845,10 @@ export function InboxPage() {
                       isOpen={openRepositoryIds.has(group.id)}
                       items={group.items}
                       selectedId={selectedItem?.id ?? ""}
+                      userBucketLabels={userBucketLabels}
+                      localQueueState={localQueueState}
                       onOpenDetail={openItemDetail}
+                      onMoveItemToBucket={moveItemToBucket}
                       onToggle={() => {
                         setOpenRepositoryIds((current) =>
                           toggleOpenGroup(current, group.id)
@@ -769,7 +863,10 @@ export function InboxPage() {
                     isOpen
                     items={searchedPinnedItems}
                     selectedId={selectedItem?.id ?? ""}
+                    userBucketLabels={userBucketLabels}
+                    localQueueState={localQueueState}
                     onOpenDetail={openItemDetail}
+                    onMoveItemToBucket={moveItemToBucket}
                     onToggle={() => undefined}
                     onSelect={setSelectedId}
                   />
@@ -779,7 +876,10 @@ export function InboxPage() {
                     isOpen
                     items={searchedSnoozedItems}
                     selectedId={selectedItem?.id ?? ""}
+                    userBucketLabels={userBucketLabels}
+                    localQueueState={localQueueState}
                     onOpenDetail={openItemDetail}
+                    onMoveItemToBucket={moveItemToBucket}
                     onToggle={() => undefined}
                     onSelect={setSelectedId}
                   />
@@ -789,7 +889,10 @@ export function InboxPage() {
                     isOpen
                     items={searchedMutedItems}
                     selectedId={selectedItem?.id ?? ""}
+                    userBucketLabels={userBucketLabels}
+                    localQueueState={localQueueState}
                     onOpenDetail={openItemDetail}
+                    onMoveItemToBucket={moveItemToBucket}
                     onToggle={() => undefined}
                     onSelect={setSelectedId}
                   />
@@ -813,6 +916,11 @@ export function InboxPage() {
             {selectedItem ? (
               <QuickPeekPanel
                 item={selectedItem}
+                bucketId={bucketIdForLocalQueueItem(
+                  selectedItemLocalState,
+                  selectedItem.laneId
+                )}
+                userBucketLabels={userBucketLabels}
                 isPinned={selectedItemIsPinned}
                 isSnoozed={selectedItemIsSnoozed}
                 isMuted={selectedItemIsMuted}
@@ -822,6 +930,7 @@ export function InboxPage() {
                 onRestore={restoreSelected}
                 onTogglePin={togglePinSelected}
                 onMute={muteSelected}
+                onMoveToBucket={moveSelectedToBucket}
                 onCaughtUp={() => void markSelectedCaughtUp()}
               />
             ) : (
@@ -1159,7 +1268,9 @@ function LoadingStepRow({
 
 function InboxSidebar({
   laneItems,
+  userBucketLabels,
   activeActionTabId,
+  newActivityCount,
   pinnedActive,
   pinnedCount,
   snoozedActive,
@@ -1167,13 +1278,17 @@ function InboxSidebar({
   mutedActive,
   mutedCount,
   onSelectHome,
+  onSelectNewActivity,
   onSelectLane,
   onSelectPinned,
   onSelectSnoozed,
   onSelectMuted,
+  onBucketLabelChange,
 }: {
   laneItems: Record<LaneId, ReviewQueueItemView[]>
+  userBucketLabels: UserBucketLabels
   activeActionTabId?: ActionQueueTabId
+  newActivityCount: number
   pinnedActive: boolean
   pinnedCount: number
   snoozedActive: boolean
@@ -1181,10 +1296,12 @@ function InboxSidebar({
   mutedActive: boolean
   mutedCount: number
   onSelectHome: () => void
+  onSelectNewActivity: () => void
   onSelectLane: (laneId: LaneId) => void
   onSelectPinned: () => void
   onSelectSnoozed: () => void
   onSelectMuted: () => void
+  onBucketLabelChange: (bucketId: UserBucketId, label: string) => void
 }) {
   const activeTotal = lanes.reduce(
     (total, lane) => total + laneItems[lane.id].length,
@@ -1201,73 +1318,42 @@ function InboxSidebar({
           Review Q
         </div>
       </div>
-      <SidebarSection label="Review buckets">
+      <SidebarSection label="Views">
         <SidebarItem
           active={activeActionTabId === "home"}
           attention={activeTotal > 0}
           tone="quiet"
-          label="Home"
+          label="All PRs"
           count={activeTotal}
           onClick={onSelectHome}
         />
         <SidebarItem
-          active={activeActionTabId === "needs_review"}
-          attention={laneItems.needs_review.length > 0}
-          tone="hot"
-          label={sidebarBucketLabels.needs_review}
-          count={laneItems.needs_review.length}
-          onClick={
-            laneItems.needs_review.length > 0
-              ? () => onSelectLane("needs_review")
-              : undefined
-          }
-        />
-        <SidebarItem
-          active={activeActionTabId === "updated_since_review"}
-          attention={laneItems.updated_since_review.length > 0}
+          active={activeActionTabId === "new_activity"}
+          attention={newActivityCount > 0}
           tone="changed"
-          label={sidebarBucketLabels.updated_since_review}
-          count={laneItems.updated_since_review.length}
-          onClick={
-            laneItems.updated_since_review.length > 0
-              ? () => onSelectLane("updated_since_review")
-              : undefined
-          }
+          label="New activity"
+          count={newActivityCount}
+          onClick={newActivityCount > 0 ? onSelectNewActivity : undefined}
         />
-        <SidebarItem
-          active={activeActionTabId === "waiting_on_author"}
-          attention={laneItems.waiting_on_author.length > 0}
-          tone="waiting"
-          label={sidebarBucketLabels.waiting_on_author}
-          count={laneItems.waiting_on_author.length}
-          onClick={
-            laneItems.waiting_on_author.length > 0
-              ? () => onSelectLane("waiting_on_author")
-              : undefined
-          }
-        />
-        <SidebarItem
-          active={activeActionTabId === "approved"}
-          tone="success"
-          label={sidebarBucketLabels.approved}
-          count={laneItems.approved.length}
-          onClick={
-            laneItems.approved.length > 0
-              ? () => onSelectLane("approved")
-              : undefined
-          }
-        />
-        <SidebarItem
-          active={activeActionTabId === "watching"}
-          tone="quiet"
-          label={sidebarBucketLabels.watching}
-          count={laneItems.watching.length}
-          onClick={
-            laneItems.watching.length > 0
-              ? () => onSelectLane("watching")
-              : undefined
-          }
-        />
+      </SidebarSection>
+      <SidebarSection label="Buckets">
+        {lanes.map((lane) => (
+          <SidebarBucketItem
+            key={lane.id}
+            bucketId={lane.id}
+            active={activeActionTabId === lane.id}
+            attention={laneItems[lane.id].length > 0}
+            tone={lane.tone}
+            label={userBucketLabelFromId(userBucketLabels, lane.id)}
+            count={laneItems[lane.id].length}
+            onClick={
+              laneItems[lane.id].length > 0
+                ? () => onSelectLane(lane.id)
+                : undefined
+            }
+            onLabelChange={onBucketLabelChange}
+          />
+        ))}
       </SidebarSection>
       <SidebarSection label="Stashed">
         <SidebarItem
@@ -1403,6 +1489,82 @@ function SidebarItem({
   )
 }
 
+function SidebarBucketItem({
+  bucketId,
+  label,
+  count,
+  active,
+  attention,
+  tone,
+  onClick,
+  onLabelChange,
+}: {
+  bucketId: UserBucketId
+  label: string
+  count: number
+  active?: boolean
+  attention?: boolean
+  tone: LaneDefinition["tone"]
+  onClick?: () => void
+  onLabelChange: (bucketId: UserBucketId, label: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draftLabel, setDraftLabel] = useState(label)
+
+  useEffect(() => {
+    if (!editing) setDraftLabel(label)
+  }, [editing, label])
+
+  function saveDraftLabel() {
+    setEditing(false)
+    onLabelChange(bucketId, draftLabel)
+  }
+
+  if (editing) {
+    return (
+      <div className="grid grid-cols-[7px_1fr_auto] items-center gap-2 rounded-md bg-white px-2 py-1.5 shadow-sm ring-1 ring-border sm:py-2">
+        <span className={cn("h-[7px] w-[7px] rounded-full", laneToneClasses[tone])} />
+        <Input
+          value={draftLabel}
+          onChange={(event) => setDraftLabel(event.target.value)}
+          onBlur={saveDraftLabel}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") saveDraftLabel()
+            if (event.key === "Escape") {
+              setDraftLabel(label)
+              setEditing(false)
+            }
+          }}
+          autoFocus
+          className="h-6 rounded-md px-2 text-xs"
+        />
+        <span className="text-xs text-muted-foreground/70">{count}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="group grid grid-cols-[1fr_24px] items-center gap-1">
+      <SidebarItem
+        active={active}
+        attention={attention}
+        tone={tone}
+        label={label}
+        count={count}
+        onClick={onClick}
+      />
+      <button
+        type="button"
+        aria-label={`Rename ${label} bucket`}
+        onClick={() => setEditing(true)}
+        className="flex h-7 w-6 items-center justify-center rounded-md text-muted-foreground/60 opacity-0 transition hover:bg-muted hover:text-foreground group-hover:opacity-100 focus:opacity-100"
+      >
+        <Edit3 className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  )
+}
+
 function InboxHeader({
   groupMode,
   activeCount,
@@ -1474,7 +1636,7 @@ function InboxHeader({
             <span className="text-xs text-muted-foreground">· {syncLabel}</span>
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            {activeCount} active PRs sorted by reviewer attention
+            {activeCount} active PRs across user buckets
           </div>
         </div>
         <div className="relative min-w-0 flex-[1_1_100%] lg:ml-auto lg:min-w-[220px] lg:max-w-[360px] lg:flex-1">
@@ -1498,7 +1660,7 @@ function InboxHeader({
         >
           <TabsList aria-label="Group pull requests">
             <TabsTrigger value="action" className="px-3">
-              Action
+              Buckets
             </TabsTrigger>
             <TabsTrigger value="repository" className="px-3">
               Repo
@@ -1533,12 +1695,18 @@ function formatSyncLabel(dataUpdatedAt: number): string {
 function ActionQueueList({
   items,
   selectedId,
+  userBucketLabels,
+  localQueueState,
   onOpenDetail,
+  onMoveItemToBucket,
   onSelect,
 }: {
   items: ReviewQueueItemView[]
   selectedId: string
+  userBucketLabels: UserBucketLabels
+  localQueueState: LocalQueueStateByPullRequestId
   onOpenDetail: (id: string) => void
+  onMoveItemToBucket: (itemId: string, bucketId: UserBucketId) => void
   onSelect: (id: string) => void
 }) {
   return (
@@ -1550,8 +1718,14 @@ function ActionQueueList({
               key={item.id}
               item={item}
               selected={item.id === selectedId}
+              bucketId={bucketIdForLocalQueueItem(
+                localQueueState[item.id],
+                item.laneId
+              )}
+              userBucketLabels={userBucketLabels}
               onSelect={() => onSelect(item.id)}
               onOpenDetail={() => onOpenDetail(item.id)}
+              onMoveToBucket={(bucketId) => onMoveItemToBucket(item.id, bucketId)}
             />
           ))}
         </div>
@@ -1569,7 +1743,10 @@ function QueueLane({
   isOpen,
   items,
   selectedId,
+  userBucketLabels,
+  localQueueState,
   onOpenDetail,
+  onMoveItemToBucket,
   onToggle,
   onSelect,
 }: {
@@ -1577,7 +1754,10 @@ function QueueLane({
   isOpen: boolean
   items: ReviewQueueItemView[]
   selectedId: string
+  userBucketLabels: UserBucketLabels
+  localQueueState: LocalQueueStateByPullRequestId
   onOpenDetail: (id: string) => void
+  onMoveItemToBucket: (itemId: string, bucketId: UserBucketId) => void
   onToggle: () => void
   onSelect: (id: string) => void
 }) {
@@ -1622,8 +1802,14 @@ function QueueLane({
               key={item.id}
               item={item}
               selected={item.id === selectedId}
+              bucketId={bucketIdForLocalQueueItem(
+                localQueueState[item.id],
+                item.laneId
+              )}
+              userBucketLabels={userBucketLabels}
               onSelect={() => onSelect(item.id)}
               onOpenDetail={() => onOpenDetail(item.id)}
+              onMoveToBucket={(bucketId) => onMoveItemToBucket(item.id, bucketId)}
             />
           ))}
         </div>
@@ -1635,13 +1821,19 @@ function QueueLane({
 function QueueRow({
   item,
   selected,
+  bucketId,
+  userBucketLabels,
   onSelect,
   onOpenDetail,
+  onMoveToBucket,
 }: {
   item: ReviewQueueItemView
   selected: boolean
+  bucketId: UserBucketId
+  userBucketLabels: UserBucketLabels
   onSelect: () => void
   onOpenDetail: () => void
+  onMoveToBucket: (bucketId: UserBucketId) => void
 }) {
   const tone = toneForItem(item)
   const reReviewRequested = item.activityEvents.some((event) =>
@@ -1649,18 +1841,20 @@ function QueueRow({
   )
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
       onKeyDown={(event) => {
-        if (event.key !== "Enter") return
-        event.preventDefault()
-        event.stopPropagation()
-        onOpenDetail()
+        if (event.key === "Enter") {
+          event.preventDefault()
+          event.stopPropagation()
+          onOpenDetail()
+        }
       }}
       aria-pressed={selected}
       className={cn(
-        "relative grid w-full grid-cols-[26px_1fr_auto] items-center gap-3 border-t border-border px-5 py-3 text-left transition-colors hover:bg-muted/40",
+        "relative grid w-full cursor-pointer grid-cols-[26px_1fr_auto] items-center gap-3 border-t border-border px-5 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
         selected && rowSelectedToneClasses[tone]
       )}
     >
@@ -1712,6 +1906,12 @@ function QueueRow({
         </span>
       </span>
       <span className="flex min-w-[74px] flex-col items-end gap-1">
+        <BucketMoveMenu
+          bucketId={bucketId}
+          userBucketLabels={userBucketLabels}
+          onMoveToBucket={onMoveToBucket}
+          compact
+        />
         <span
           className={cn(
             "text-xs text-muted-foreground",
@@ -1724,7 +1924,61 @@ function QueueRow({
           {queueTimingLabel(item)}
         </span>
       </span>
-    </button>
+    </div>
+  )
+}
+
+function BucketMoveMenu({
+  bucketId,
+  userBucketLabels,
+  onMoveToBucket,
+  compact,
+}: {
+  bucketId: UserBucketId
+  userBucketLabels: UserBucketLabels
+  onMoveToBucket: (bucketId: UserBucketId) => void
+  compact?: boolean
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size={compact ? "xs" : "sm"}
+          onClick={(event) => {
+            event.stopPropagation()
+          }}
+          className={cn(
+            "max-w-[150px] justify-start rounded-md px-2 text-xs",
+            compact && "h-6 max-w-[112px]"
+          )}
+        >
+          <ChevronsLeftRight className="h-3.5 w-3.5" />
+          <span className="truncate">
+            {userBucketLabelFromId(userBucketLabels, bucketId)}
+          </span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="w-44 rounded-lg"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <DropdownMenuLabel>Move to bucket</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {lanes.map((lane) => (
+          <DropdownMenuItem
+            key={lane.id}
+            disabled={lane.id === bucketId}
+            onClick={() => onMoveToBucket(lane.id)}
+          >
+            <span className={cn("h-2 w-2 rounded-full", laneToneClasses[lane.tone])} />
+            {userBucketLabelFromId(userBucketLabels, lane.id)}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -1785,6 +2039,8 @@ function AuthorAvatar({
 
 function QuickPeekPanel({
   item,
+  bucketId,
+  userBucketLabels,
   isPinned,
   isSnoozed,
   isMuted,
@@ -1794,9 +2050,12 @@ function QuickPeekPanel({
   onRestore,
   onTogglePin,
   onMute,
+  onMoveToBucket,
   onCaughtUp,
 }: {
   item: ReviewQueueItemView
+  bucketId: UserBucketId
+  userBucketLabels: UserBucketLabels
   isPinned: boolean
   isSnoozed: boolean
   isMuted: boolean
@@ -1806,6 +2065,7 @@ function QuickPeekPanel({
   onRestore: () => void
   onTogglePin: () => void
   onMute: () => void
+  onMoveToBucket: (bucketId: UserBucketId) => void
   onCaughtUp: () => void
 }) {
   const canMarkCaughtUp = canMarkReviewItemCaughtUp(item, isMarkingSeen)
@@ -1836,6 +2096,19 @@ function QuickPeekPanel({
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <PanelRight className="h-3.5 w-3.5" />
           Quick peek · no need to open
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <BucketMoveMenu
+            bucketId={bucketId}
+            userBucketLabels={userBucketLabels}
+            onMoveToBucket={onMoveToBucket}
+          />
+          {item.unseenEventCount > 0 ? (
+            <span className="inline-flex h-7 items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2 text-xs font-medium text-sky-800">
+              <Sparkles className="h-3.5 w-3.5" />
+              {formatCount(item.unseenEventCount, "new event")}
+            </span>
+          ) : null}
         </div>
         <h2 className="mt-3 text-xl font-semibold leading-7 tracking-tight text-foreground">
           {item.title}
@@ -2065,32 +2338,15 @@ function queueTimingLabel(item: ReviewQueueItemView): string {
 }
 
 function bucketIdForItem(
-  item: ReviewQueueItemView | undefined
+  item: ReviewQueueItemView | undefined,
+  localQueueState: LocalQueueStateByPullRequestId
 ): LaneId | undefined {
   if (!item) return undefined
-  if (item.laneId === "caught_up" || item.laneId === "stale") {
-    return "watching"
-  }
-  return item.laneId
+  return bucketIdForLocalQueueItem(localQueueState[item.id], item.laneId)
 }
 
 function isStashedGroupMode(groupMode: QueueGroupMode): boolean {
   return groupMode === "pinned" || groupMode === "snoozed" || groupMode === "muted"
-}
-
-function itemBelongsToBucket(
-  item: ReviewQueueItemView,
-  bucketId: LaneId
-): boolean {
-  if (bucketId === "watching") {
-    return (
-      item.laneId === "caught_up" ||
-      item.laneId === "watching" ||
-      item.laneId === "stale"
-    )
-  }
-
-  return item.laneId === bucketId
 }
 
 function buildRepositoryGroups(
