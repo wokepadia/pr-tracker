@@ -36,7 +36,7 @@ The product is successful when the reviewer can decide where to spend review tim
 
 ### 1. Review Inbox
 
-The main surface is a dense, keyboard-friendly inbox. It should feel closer to an issue triage tool than a project dashboard.
+The main surface is a dense inbox. It should feel closer to an issue triage tool than a project dashboard.
 
 Recommended sections:
 
@@ -234,4 +234,4 @@ GitHub's APIs and webhooks support the data shape needed for this workflow:
 - Timeline events cover activity across issues and pull requests, and GitHub treats pull requests as issues for shared conversation/event APIs: [REST API endpoints for timeline events](https://docs.github.com/en/rest/issues/timeline?apiVersion=2026-03-10).
 - Webhooks are available for PR activity, PR reviews, review comments, review threads, and issue comments: [Webhook events and payloads](https://docs.github.com/en/webhooks/webhook-events-and-payloads).
 - GraphQL exposes PR-specific objects such as `PullRequest`, `PullRequestReview`, `PullRequestReviewThread`, `ReviewRequestedEvent`, and `ReadyForReviewEvent`, which may be useful for efficient detail queries: [GraphQL object reference](https://docs.github.com/en/graphql/reference/objects).
-- Existing review inbox products emphasize customizable inbox sections, real-time sync, comments, and keyboard-driven review flow, which validates the inbox-first direction: [Graphite Inbox](https://graphite.dev/features/inbox).
+- Existing review inbox products emphasize customizable inbox sections, real-time sync, comments, and focused review flow, which validates the inbox-first direction: [Graphite Inbox](https://graphite.dev/features/inbox).

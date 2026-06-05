@@ -11,7 +11,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react"
-import { Link, useNavigate } from "@tanstack/react-router"
+import { Link } from "@tanstack/react-router"
 import {
   Group as ResizablePanelGroup,
   Panel as ResizablePanel,
@@ -37,6 +37,7 @@ import {
   RotateCcw,
   Search,
   Sparkles,
+  X,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -50,7 +51,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-import { Kbd } from "@/components/ui/kbd"
 import { MarkdownContent } from "@/components/MarkdownContent"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -59,7 +59,7 @@ import {
   markPullRequestSeen,
 } from "@/api"
 import { formatCount } from "@/lib/copy"
-import { cn, externalLinkProps, openExternalLink } from "@/lib/utils"
+import { cn, externalLinkProps } from "@/lib/utils"
 import {
   buildInboxView,
   canMarkReviewItemCaughtUp,
@@ -235,13 +235,12 @@ const inboxLoadingSteps: InboxLoadingStep[] = [
   },
   {
     label: "Preparing workspace",
-    detail: "Arranging lanes, quick peek context, and the initial keyboard selection.",
+    detail: "Arranging lanes, quick peek context, and the initial selection.",
     progress: "Rendering the review inbox",
   },
 ]
 
 export function InboxPage() {
-  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [githubSearchQueryDraft, setGithubSearchQueryDraft] = useState(() =>
     loadStoredGithubReviewQuery()
@@ -566,23 +565,6 @@ export function InboxPage() {
     moveSelectionAfterHiding(itemId)
   }
 
-  function openSelectedDetail() {
-    if (!selectedItem) return
-    openItemDetail(selectedItem.id)
-  }
-
-  function openItemDetail(itemId: string) {
-    void navigate({
-      to: "/pull-requests/$pullRequestId",
-      params: { pullRequestId: itemId },
-    })
-  }
-
-  function openSelectedGitHub() {
-    if (!selectedItem) return
-    openExternalLink(selectedItem.url)
-  }
-
   function focusHome() {
     setGroupMode("action")
     setActiveActionTabId("home")
@@ -637,100 +619,6 @@ export function InboxPage() {
     setAppliedGithubSearchQuery(undefined)
     saveStoredGithubReviewQuery("")
   }
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented) return
-      if (event.metaKey || event.ctrlKey || event.altKey) return
-      if (!["j", "k", "Enter", "e", "s", "p", "m", "c", "/"].includes(event.key)) {
-        return
-      }
-      const activeElement = document.activeElement
-      const activeTag = activeElement?.tagName
-      const isEditingText =
-        activeTag === "INPUT" ||
-        activeTag === "TEXTAREA" ||
-        activeTag === "SELECT" ||
-        activeElement?.getAttribute("contenteditable") === "true"
-      if (isEditingText) return
-      if (
-        event.key === "Enter" &&
-        (activeTag === "BUTTON" || activeTag === "A")
-      ) {
-        return
-      }
-
-      event.preventDefault()
-
-      if (event.key === "/") {
-        document.getElementById("review-inbox-search")?.focus()
-        return
-      }
-
-      if (event.key === "j" || event.key === "k") {
-        setSelectedId((currentId) => {
-          const keyboardItems = visibleQueueItems
-          const currentIndex = keyboardItems.findIndex(
-            (item) => item.id === currentId
-          )
-          if (currentIndex < 0) return keyboardItems[0]?.id ?? currentId
-          const direction = event.key === "j" ? 1 : -1
-          const nextIndex = Math.min(
-            keyboardItems.length - 1,
-            Math.max(0, currentIndex + direction)
-          )
-          return keyboardItems[nextIndex]?.id ?? currentId
-        })
-        return
-      }
-
-      if (event.key === "Enter") {
-        openSelectedDetail()
-        return
-      }
-
-      if (event.key === "e") {
-        openSelectedGitHub()
-        return
-      }
-
-      if (event.key === "s") {
-        if (selectedItemIsSnoozed) {
-          restoreSelected()
-        } else if (!selectedItemIsMuted) {
-          snoozeSelected()
-        }
-        return
-      }
-
-      if (event.key === "p") {
-        togglePinSelected()
-        return
-      }
-
-      if (event.key === "m") {
-        if (selectedItemIsMuted) {
-          restoreSelected()
-        } else {
-          muteSelected()
-        }
-        return
-      }
-
-      void markSelectedCaughtUp()
-    }
-
-    window.addEventListener("keydown", onKeyDown)
-    return () => window.removeEventListener("keydown", onKeyDown)
-  }, [
-    openSelectedDetail,
-    selectedItem,
-    selectedItemIsMuted,
-    selectedItemIsPinned,
-    selectedItemIsSnoozed,
-    visibleQueueItems,
-    markSeenMutation,
-  ])
 
   if (inboxQuery.isLoading) {
     return <InboxLoadingScreen />
@@ -820,7 +708,6 @@ export function InboxPage() {
                         selectedId={selectedItem?.id ?? ""}
                         userBucketLabels={userBucketLabels}
                         localQueueState={localQueueState}
-                        onOpenDetail={openItemDetail}
                         onMoveItemToBucket={moveItemToBucket}
                         onToggle={() => undefined}
                         onSelect={setSelectedId}
@@ -832,7 +719,6 @@ export function InboxPage() {
                       selectedId={selectedItem?.id ?? ""}
                       userBucketLabels={userBucketLabels}
                       localQueueState={localQueueState}
-                      onOpenDetail={openItemDetail}
                       onMoveItemToBucket={moveItemToBucket}
                       onSelect={setSelectedId}
                     />
@@ -847,7 +733,6 @@ export function InboxPage() {
                       selectedId={selectedItem?.id ?? ""}
                       userBucketLabels={userBucketLabels}
                       localQueueState={localQueueState}
-                      onOpenDetail={openItemDetail}
                       onMoveItemToBucket={moveItemToBucket}
                       onToggle={() => {
                         setOpenRepositoryIds((current) =>
@@ -865,7 +750,6 @@ export function InboxPage() {
                     selectedId={selectedItem?.id ?? ""}
                     userBucketLabels={userBucketLabels}
                     localQueueState={localQueueState}
-                    onOpenDetail={openItemDetail}
                     onMoveItemToBucket={moveItemToBucket}
                     onToggle={() => undefined}
                     onSelect={setSelectedId}
@@ -878,7 +762,6 @@ export function InboxPage() {
                     selectedId={selectedItem?.id ?? ""}
                     userBucketLabels={userBucketLabels}
                     localQueueState={localQueueState}
-                    onOpenDetail={openItemDetail}
                     onMoveItemToBucket={moveItemToBucket}
                     onToggle={() => undefined}
                     onSelect={setSelectedId}
@@ -891,7 +774,6 @@ export function InboxPage() {
                     selectedId={selectedItem?.id ?? ""}
                     userBucketLabels={userBucketLabels}
                     localQueueState={localQueueState}
-                    onOpenDetail={openItemDetail}
                     onMoveItemToBucket={moveItemToBucket}
                     onToggle={() => undefined}
                     onSelect={setSelectedId}
@@ -1520,25 +1402,38 @@ function SidebarBucketItem({
     onLabelChange(bucketId, draftLabel)
   }
 
+  function cancelDraftLabel() {
+    setDraftLabel(label)
+    setEditing(false)
+  }
+
   if (editing) {
     return (
-      <div className="grid grid-cols-[7px_1fr_auto] items-center gap-2 rounded-md bg-white px-2 py-1.5 shadow-sm ring-1 ring-border sm:py-2">
+      <div className="grid grid-cols-[7px_1fr_auto_auto_auto] items-center gap-2 rounded-md bg-white px-2 py-1.5 shadow-sm ring-1 ring-border sm:py-2">
         <span className={cn("h-[7px] w-[7px] rounded-full", laneToneClasses[tone])} />
         <Input
           value={draftLabel}
           onChange={(event) => setDraftLabel(event.target.value)}
-          onBlur={saveDraftLabel}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") saveDraftLabel()
-            if (event.key === "Escape") {
-              setDraftLabel(label)
-              setEditing(false)
-            }
-          }}
           autoFocus
           className="h-6 rounded-md px-2 text-xs"
         />
         <span className="text-xs text-muted-foreground/70">{count}</span>
+        <button
+          type="button"
+          aria-label={`Save ${label} bucket name`}
+          onClick={saveDraftLabel}
+          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
+        >
+          <Check className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          aria-label={`Cancel renaming ${label} bucket`}
+          onClick={cancelDraftLabel}
+          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
       </div>
     )
   }
@@ -1646,12 +1541,9 @@ function InboxHeader({
             value={searchQuery}
             onChange={(event) => onSearchQueryChange(event.target.value)}
             placeholder="Filter loaded PRs"
-            className="h-8 rounded-lg bg-background pr-3 pl-8 text-sm lg:pr-9"
+            className="h-8 rounded-lg bg-background pr-3 pl-8 text-sm"
           />
           <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Kbd className="absolute top-1/2 right-2 hidden -translate-y-1/2 lg:inline-flex">
-            /
-          </Kbd>
         </div>
         <Tabs
           value={groupMode}
@@ -1667,12 +1559,6 @@ function InboxHeader({
             </TabsTrigger>
           </TabsList>
         </Tabs>
-        <div className="ml-3 hidden items-center gap-1.5 text-xs text-muted-foreground lg:flex">
-          <Kbd>j</Kbd>
-          <span>/</span>
-          <Kbd>k</Kbd>
-          <span>to move</span>
-        </div>
       </div>
     </div>
   )
@@ -1697,7 +1583,6 @@ function ActionQueueList({
   selectedId,
   userBucketLabels,
   localQueueState,
-  onOpenDetail,
   onMoveItemToBucket,
   onSelect,
 }: {
@@ -1705,7 +1590,6 @@ function ActionQueueList({
   selectedId: string
   userBucketLabels: UserBucketLabels
   localQueueState: LocalQueueStateByPullRequestId
-  onOpenDetail: (id: string) => void
   onMoveItemToBucket: (itemId: string, bucketId: UserBucketId) => void
   onSelect: (id: string) => void
 }) {
@@ -1724,7 +1608,6 @@ function ActionQueueList({
               )}
               userBucketLabels={userBucketLabels}
               onSelect={() => onSelect(item.id)}
-              onOpenDetail={() => onOpenDetail(item.id)}
               onMoveToBucket={(bucketId) => onMoveItemToBucket(item.id, bucketId)}
             />
           ))}
@@ -1745,7 +1628,6 @@ function QueueLane({
   selectedId,
   userBucketLabels,
   localQueueState,
-  onOpenDetail,
   onMoveItemToBucket,
   onToggle,
   onSelect,
@@ -1756,7 +1638,6 @@ function QueueLane({
   selectedId: string
   userBucketLabels: UserBucketLabels
   localQueueState: LocalQueueStateByPullRequestId
-  onOpenDetail: (id: string) => void
   onMoveItemToBucket: (itemId: string, bucketId: UserBucketId) => void
   onToggle: () => void
   onSelect: (id: string) => void
@@ -1808,7 +1689,6 @@ function QueueLane({
               )}
               userBucketLabels={userBucketLabels}
               onSelect={() => onSelect(item.id)}
-              onOpenDetail={() => onOpenDetail(item.id)}
               onMoveToBucket={(bucketId) => onMoveItemToBucket(item.id, bucketId)}
             />
           ))}
@@ -1824,7 +1704,6 @@ function QueueRow({
   bucketId,
   userBucketLabels,
   onSelect,
-  onOpenDetail,
   onMoveToBucket,
 }: {
   item: ReviewQueueItemView
@@ -1832,7 +1711,6 @@ function QueueRow({
   bucketId: UserBucketId
   userBucketLabels: UserBucketLabels
   onSelect: () => void
-  onOpenDetail: () => void
   onMoveToBucket: (bucketId: UserBucketId) => void
 }) {
   const tone = toneForItem(item)
@@ -1842,19 +1720,9 @@ function QueueRow({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
       onClick={onSelect}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") {
-          event.preventDefault()
-          event.stopPropagation()
-          onOpenDetail()
-        }
-      }}
-      aria-pressed={selected}
       className={cn(
-        "relative grid w-full cursor-pointer grid-cols-[26px_1fr_auto] items-center gap-3 border-t border-border px-5 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
+        "relative grid w-full cursor-pointer grid-cols-[26px_1fr_auto] items-center gap-3 border-t border-border px-5 py-3 text-left transition-colors hover:bg-muted/40",
         selected && rowSelectedToneClasses[tone]
       )}
     >

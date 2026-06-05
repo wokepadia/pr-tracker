@@ -55,7 +55,7 @@ Implement this phase as feature checkpoints. Each checkpoint needs focused QA an
 
 1. Foundation: Rhea/shadcn styling, clean app shell, deterministic mock data, and routing skeleton.
 2. Inbox: `Inbox C` sidebar, header, action lanes, queue rows, quick peek placement, and row selection.
-3. Inbox interactions: keyboard movement, quick-peek updates, caught-up/snooze actions, and GitHub link behavior.
+3. Inbox interactions: row selection, quick-peek updates, caught-up/snooze actions, and GitHub link behavior.
 4. Detail: `Detail E` header, deterministic context band, activity timeline, unseen marker, and side rail.
 5. Polish: visual comparison against the HTML wireframe, empty/loading/error states only where needed, and final build/test pass.
 
@@ -138,7 +138,7 @@ Required content and placement:
 - Left: `Review Inbox`
 - Immediately after title: sync recency, such as `· synced 2m ago`
 - Right: grouping control, default `group: action`
-- Far right: keyboard hint, such as `j / k to move`
+- Far right: no keyboard shortcut hints.
 
 ### Queue Lanes
 
@@ -401,23 +401,13 @@ Phase 1 should implement these interactions even if backed by local/mock state:
 
 - Select PR row.
 - Update quick peek on selection.
-- Navigate rows with `j` and `k`.
-- Open selected PR detail with `Enter`.
 - Return to inbox from detail.
 - Mark caught up.
 - Snooze.
 - Pin/mute if visible.
 - Open in GitHub using external link.
 
-Keyboard shortcuts:
-
-- `j`: next row
-- `k`: previous row
-- `Enter`: open detail
-- `e`: open in GitHub
-- `s`: snooze
-- `c`: mark caught up
-- `/`: focus search/filter if present
+Do not implement global keyboard shortcuts in phase 1. All primary actions should be reachable through visible controls.
 
 ## Styling Requirements
 

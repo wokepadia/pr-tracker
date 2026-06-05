@@ -259,7 +259,7 @@ Criteria:
 
 ### Option C: Quick Actions Everywhere
 
-Expose the same actions in the row, quick peek footer, detail header or side rail, and keyboard command surface.
+Expose the same actions in the row, quick peek footer, and detail header or side rail.
 
 Criteria:
 

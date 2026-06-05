@@ -75,7 +75,7 @@ Each PR row should show:
 - Unseen activity count or "changed since last look" marker.
 - Lightweight activity facts, such as new commits, new replies, unresolved threads, re-review requested.
 
-Rows should be selected with keyboard navigation. Selection updates the quick peek panel without leaving the inbox.
+Rows should be selected with visible pointer controls. Selection updates the quick peek panel without leaving the inbox.
 
 ## Quick Peek Panel
 
@@ -182,18 +182,7 @@ Minimum v1 states:
 
 ## Interaction Requirements
 
-Keyboard support should be treated as part of v1:
-
-- `j` / `k` move selection.
-- `Enter` opens detail or GitHub depending on focused control.
-- `e` opens in GitHub.
-- `s` snoozes.
-- `m` mutes.
-- `p` pins.
-- `c` marks caught up.
-- `/` focuses search/filter.
-
-Mouse interactions should mirror keyboard behavior. Lane headers should collapse/expand. Row actions should not cause layout shift.
+Do not add global keyboard shortcuts in v1. Lane headers should collapse/expand through visible controls. Row actions should not cause layout shift.
 
 ## Visual Direction
 
@@ -246,6 +235,5 @@ Suggested shadcn components:
 - Tooltip
 - Scroll Area
 - Separator
-- Kbd
 
 Keep the first implementation deterministic and data-backed. If a fact cannot be computed from stored GitHub/local state, do not show it in v1.

@@ -38,7 +38,7 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { getPullRequest, markPullRequestSeen } from "@/api"
 import { formatCount, pluralize } from "@/lib/copy"
-import { cn, externalLinkProps, openExternalLink } from "@/lib/utils"
+import { cn, externalLinkProps } from "@/lib/utils"
 import {
   canMarkReviewItemCaughtUp,
   toReviewQueueItemView,
@@ -212,66 +212,6 @@ export function PullRequestPage() {
       setCaughtUpError(true)
     })
   }
-
-  useEffect(() => {
-    if (!item) return
-    const shortcutItem = item
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented) return
-      if (event.metaKey || event.ctrlKey || event.altKey) return
-      if (!["e", "s", "p", "m", "c"].includes(event.key)) return
-
-      const activeElement = document.activeElement
-      const activeTag = activeElement?.tagName
-      const isEditingText =
-        activeTag === "INPUT" ||
-        activeTag === "TEXTAREA" ||
-        activeTag === "SELECT" ||
-        activeElement?.getAttribute("contenteditable") === "true"
-      if (isEditingText) return
-      if (activeTag === "BUTTON" || activeTag === "A") return
-
-      event.preventDefault()
-
-      if (event.key === "e") {
-        openExternalLink(shortcutItem.url)
-        return
-      }
-
-      if (event.key === "s") {
-        const itemState = localQueueState[shortcutItem.id] ?? {}
-        if (itemState.snoozed) {
-          restorePullRequestById(shortcutItem.id)
-        } else if (!itemState.muted) {
-          snoozePullRequestById(shortcutItem.id)
-        }
-        return
-      }
-
-      if (event.key === "p") {
-        togglePinPullRequestById(shortcutItem.id)
-        return
-      }
-
-      if (event.key === "m") {
-        const itemState = localQueueState[shortcutItem.id] ?? {}
-        if (itemState.muted) {
-          restorePullRequestById(shortcutItem.id)
-        } else {
-          mutePullRequestById(shortcutItem.id)
-        }
-        return
-      }
-
-      if (canMarkReviewItemCaughtUp(shortcutItem, markSeenMutation.isPending)) {
-        void markCaughtUpById(shortcutItem.id)
-      }
-    }
-
-    window.addEventListener("keydown", onKeyDown)
-    return () => window.removeEventListener("keydown", onKeyDown)
-  }, [item, localQueueState, markSeenMutation])
 
   if (detailQuery.isLoading) {
     return <DetailStatusPanel title="Loading pull request" />
