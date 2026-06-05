@@ -30,6 +30,7 @@ import {
   useState,
   type ComponentType,
   type FormEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react"
 import { Link } from "@tanstack/react-router"
@@ -134,6 +135,10 @@ const REVIEW_WORKSPACE_MIN_WIDTH =
 const REVIEW_SIDEBAR_WIDTH = 212
 const INBOX_LOADING_STEP_INTERVAL_MS = 1050
 const githubReviewQueryStorageKey = "pr-tracker:github-review-query:v1"
+const bucketColumnWidthsStorageKey = "pr-tracker:user-bucket-column-widths:v1"
+const DEFAULT_BUCKET_COLUMN_WIDTH = 232
+const MIN_BUCKET_COLUMN_WIDTH = 200
+const MAX_BUCKET_COLUMN_WIDTH = 420
 const kanbanCollisionDetection: CollisionDetection = (args) => {
   const pointerCollisions = pointerWithin(args)
   return pointerCollisions.length > 0
@@ -148,6 +153,38 @@ function loadStoredGithubReviewQuery(): string {
 
 function saveStoredGithubReviewQuery(query: string): void {
   window.localStorage.setItem(githubReviewQueryStorageKey, query)
+}
+
+function loadStoredBucketColumnWidths(): Record<UserBucketId, number> {
+  if (typeof window === "undefined") return {}
+  const rawValue = window.localStorage.getItem(bucketColumnWidthsStorageKey)
+  if (!rawValue) return {}
+
+  try {
+    const value = JSON.parse(rawValue)
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+
+    return Object.fromEntries(
+      Object.entries(value).flatMap(([bucketId, width]) => {
+        return typeof width === "number" && Number.isFinite(width)
+          ? [[bucketId, clampBucketColumnWidth(width)]]
+          : []
+      })
+    )
+  } catch {
+    return {}
+  }
+}
+
+function saveStoredBucketColumnWidths(widths: Record<UserBucketId, number>): void {
+  window.localStorage.setItem(bucketColumnWidthsStorageKey, JSON.stringify(widths))
+}
+
+function clampBucketColumnWidth(width: number): number {
+  return Math.min(
+    MAX_BUCKET_COLUMN_WIDTH,
+    Math.max(MIN_BUCKET_COLUMN_WIDTH, Math.round(width))
+  )
 }
 
 interface LaneDefinition {
@@ -301,6 +338,9 @@ export function InboxPage() {
   const [groupMode, setGroupMode] = useState<QueueGroupMode>("action")
   const [searchQuery, setSearchQuery] = useState("")
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null)
+  const [bucketColumnWidths, setBucketColumnWidths] = useState<
+    Record<UserBucketId, number>
+  >(() => loadStoredBucketColumnWidths())
   const inboxView = useMemo(
     () => (inboxQuery.data ? buildInboxView(inboxQuery.data) : undefined),
     [inboxQuery.data]
@@ -488,6 +528,10 @@ export function InboxPage() {
   }, [userBucketItemOrder])
 
   useEffect(() => {
+    saveStoredBucketColumnWidths(bucketColumnWidths)
+  }, [bucketColumnWidths])
+
+  useEffect(() => {
     saveStoredSelectedQueueItemId(window.sessionStorage, selectedId)
   }, [selectedId])
 
@@ -629,6 +673,11 @@ export function InboxPage() {
       ]
 
       next[fallbackBucket.id] = mergedFallbackOrder
+      delete next[bucketId]
+      return next
+    })
+    setBucketColumnWidths((current) => {
+      const next = { ...current }
       delete next[bucketId]
       return next
     })
@@ -889,12 +938,19 @@ export function InboxPage() {
                       draggingItem={draggingItem}
                       draggingItemBucketId={draggingItemBucketId}
                       bucketLanes={bucketLanes}
+                      bucketColumnWidths={bucketColumnWidths}
                       sensors={dragSensors}
                       userBuckets={userBuckets}
                       onDragStart={handleKanbanDragStart}
                       onDragEnd={handleKanbanDragEnd}
                       onDragCancel={() => setDraggingItemId(null)}
                       onMoveItemToBucket={moveItemToBucket}
+                      onBucketColumnWidthChange={(bucketId, width) => {
+                        setBucketColumnWidths((current) => ({
+                          ...current,
+                          [bucketId]: clampBucketColumnWidth(width),
+                        }))
+                      }}
                       onSelect={setSelectedId}
                     />
                   ) : (
@@ -1672,12 +1728,14 @@ function KanbanBoard({
   draggingItem,
   draggingItemBucketId,
   bucketLanes,
+  bucketColumnWidths,
   sensors,
   userBuckets,
   onDragStart,
   onDragEnd,
   onDragCancel,
   onMoveItemToBucket,
+  onBucketColumnWidthChange,
   onSelect,
 }: {
   laneItems: Record<LaneId, ReviewQueueItemView[]>
@@ -1686,6 +1744,7 @@ function KanbanBoard({
   draggingItem?: ReviewQueueItemView
   draggingItemBucketId?: UserBucketId
   bucketLanes: LaneDefinition[]
+  bucketColumnWidths: Record<UserBucketId, number>
   sensors: ReturnType<typeof useSensors>
   userBuckets: UserBucketDefinition[]
   onDragStart: (event: DragStartEvent) => void
@@ -1696,12 +1755,38 @@ function KanbanBoard({
     bucketId: UserBucketId,
     overItemId?: string
   ) => void
+  onBucketColumnWidthChange: (bucketId: UserBucketId, width: number) => void
   onSelect: (id: string) => void
 }) {
   const totalCount = bucketLanes.reduce(
     (total, lane) => total + (laneItems[lane.id]?.length ?? 0),
     0
   )
+  const columnWidths = bucketLanes.map(
+    (lane) => bucketColumnWidths[lane.id] ?? DEFAULT_BUCKET_COLUMN_WIDTH
+  )
+  const boardMinWidth = columnWidths.reduce((total, width) => total + width, 0)
+
+  function startColumnResize(
+    event: ReactPointerEvent<HTMLButtonElement>,
+    bucketId: UserBucketId
+  ) {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = bucketColumnWidths[bucketId] ?? DEFAULT_BUCKET_COLUMN_WIDTH
+
+    function handlePointerMove(moveEvent: PointerEvent) {
+      onBucketColumnWidthChange(bucketId, startWidth + moveEvent.clientX - startX)
+    }
+
+    function handlePointerUp() {
+      window.removeEventListener("pointermove", handlePointerMove)
+      window.removeEventListener("pointerup", handlePointerUp)
+    }
+
+    window.addEventListener("pointermove", handlePointerMove)
+    window.addEventListener("pointerup", handlePointerUp, { once: true })
+  }
 
   return (
     <DndContext
@@ -1732,24 +1817,40 @@ function KanbanBoard({
         </div>
         <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
           <div
-            className="grid h-full"
+            className="flex h-full"
             style={{
-              gridTemplateColumns: `repeat(${bucketLanes.length}, minmax(232px, 1fr))`,
-              minWidth: `${Math.max(1, bucketLanes.length) * 232}px`,
+              minWidth: `${boardMinWidth}px`,
             }}
           >
-            {bucketLanes.map((lane) => (
-              <KanbanColumn
+            {bucketLanes.map((lane, index) => (
+              <div
                 key={lane.id}
-                lane={lane}
-                active={activeBucketId === lane.id}
-                items={laneItems[lane.id] ?? []}
-                selectedId={selectedId}
-                bucketLanes={bucketLanes}
-                userBuckets={userBuckets}
-                onMoveItemToBucket={onMoveItemToBucket}
-                onSelect={onSelect}
-              />
+                className="relative h-full flex-none"
+                style={{
+                  width: `${columnWidths[index] ?? DEFAULT_BUCKET_COLUMN_WIDTH}px`,
+                }}
+              >
+                <KanbanColumn
+                  lane={lane}
+                  active={activeBucketId === lane.id}
+                  items={laneItems[lane.id] ?? []}
+                  selectedId={selectedId}
+                  bucketLanes={bucketLanes}
+                  userBuckets={userBuckets}
+                  onMoveItemToBucket={onMoveItemToBucket}
+                  onSelect={onSelect}
+                />
+                {index < bucketLanes.length - 1 ? (
+                  <button
+                    type="button"
+                    aria-label={`Resize ${lane.label} column`}
+                    onPointerDown={(event) => startColumnResize(event, lane.id)}
+                    className="absolute top-0 right-[-4px] z-20 h-full w-2 cursor-col-resize bg-transparent outline-none transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10"
+                  >
+                    <span className="absolute top-0 left-1/2 h-full w-px -translate-x-1/2 bg-border" />
+                  </button>
+                ) : null}
+              </div>
             ))}
           </div>
         </div>
@@ -1808,7 +1909,7 @@ function KanbanColumn({
     <section
       ref={setNodeRef}
       className={cn(
-        "flex min-h-0 flex-col border-r border-border bg-background/70 last:border-r-0",
+        "flex h-full min-h-0 flex-col border-r border-border bg-background/70 last:border-r-0",
         active && "bg-amber-50/35",
         isOver && "bg-sky-50/60"
       )}
