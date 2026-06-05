@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest"
 import {
+  applyUserBucketItemOrder,
   bucketIdForLocalQueueItem,
   canMuteLocalQueueItem,
   canPinLocalQueueItem,
   canSnoozeLocalQueueItem,
+  createEmptyUserBucketItemOrder,
   defaultBucketIdForWorkflowLane,
   loadLocalQueueState,
+  loadUserBucketItemOrder,
   loadUserBucketLabels,
   saveLocalQueueState,
+  saveUserBucketItemOrder,
   saveUserBucketLabels,
   userBucketLabelFromId,
 } from "./local-queue-state"
@@ -160,6 +164,66 @@ describe("local queue state", () => {
     )
 
     expect(writes).toEqual([JSON.stringify(labels)])
+  })
+
+  it("loads and saves user bucket item order", () => {
+    const order = loadUserBucketItemOrder({
+      getItem: () =>
+        JSON.stringify({
+          inbox: ["pr_2", "pr_1", "pr_2", "", 42],
+          reviewing: ["pr_3"],
+          waiting: "not an array",
+          later: ["pr_4"],
+          done: [],
+          unknown: ["pr_5"],
+        }),
+    })
+
+    expect(order).toEqual({
+      inbox: ["pr_2", "pr_1"],
+      reviewing: ["pr_3"],
+      waiting: [],
+      later: ["pr_4"],
+      done: [],
+    })
+
+    const writes: string[] = []
+    saveUserBucketItemOrder(
+      {
+        setItem: (_key, value) => {
+          writes.push(value)
+        },
+      },
+      order
+    )
+
+    expect(writes).toEqual([JSON.stringify(order)])
+  })
+
+  it("recovers from missing or malformed user bucket item order", () => {
+    expect(loadUserBucketItemOrder({ getItem: () => null })).toEqual(
+      createEmptyUserBucketItemOrder()
+    )
+    expect(loadUserBucketItemOrder({ getItem: () => "not json" })).toEqual(
+      createEmptyUserBucketItemOrder()
+    )
+    expect(loadUserBucketItemOrder({ getItem: () => JSON.stringify([]) })).toEqual(
+      createEmptyUserBucketItemOrder()
+    )
+  })
+
+  it("applies user bucket item order and appends new items", () => {
+    const items = [{ id: "pr_1" }, { id: "pr_2" }, { id: "pr_3" }]
+    const order = {
+      ...createEmptyUserBucketItemOrder(),
+      inbox: ["missing", "pr_2", "pr_1"],
+    }
+
+    expect(applyUserBucketItemOrder(items, "inbox", order)).toEqual([
+      { id: "pr_2" },
+      { id: "pr_1" },
+      { id: "pr_3" },
+    ])
   })
 
   it("allows only one hiding state to control local triage", () => {

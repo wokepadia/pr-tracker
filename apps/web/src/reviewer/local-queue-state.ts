@@ -17,9 +17,11 @@ export interface UserBucketDefinition {
 }
 
 export type UserBucketLabels = Record<UserBucketId, string>
+export type UserBucketItemOrder = Record<UserBucketId, string[]>
 
 const LOCAL_QUEUE_STATE_KEY = "pr-tracker:reviewer-local-queue-state:v1"
 const USER_BUCKET_LABELS_KEY = "pr-tracker:user-bucket-labels:v1"
+const USER_BUCKET_ITEM_ORDER_KEY = "pr-tracker:user-bucket-item-order:v1"
 
 export const defaultUserBuckets: UserBucketDefinition[] = [
   { id: "inbox", label: "Inbox" },
@@ -34,6 +36,12 @@ export const userBucketIds = defaultUserBuckets.map((bucket) => bucket.id)
 export const defaultUserBucketLabels = Object.fromEntries(
   defaultUserBuckets.map((bucket) => [bucket.id, bucket.label])
 ) as UserBucketLabels
+
+export function createEmptyUserBucketItemOrder(): UserBucketItemOrder {
+  return Object.fromEntries(
+    userBucketIds.map((bucketId) => [bucketId, []])
+  ) as unknown as UserBucketItemOrder
+}
 
 export function loadLocalQueueState(
   storage: Pick<Storage, "getItem">
@@ -73,6 +81,42 @@ export function saveUserBucketLabels(
   labels: UserBucketLabels
 ): void {
   storage.setItem(USER_BUCKET_LABELS_KEY, JSON.stringify(labels))
+}
+
+export function loadUserBucketItemOrder(
+  storage: Pick<Storage, "getItem">
+): UserBucketItemOrder {
+  const rawValue = storage.getItem(USER_BUCKET_ITEM_ORDER_KEY)
+  if (!rawValue) return createEmptyUserBucketItemOrder()
+
+  try {
+    return parseUserBucketItemOrder(JSON.parse(rawValue))
+  } catch {
+    return createEmptyUserBucketItemOrder()
+  }
+}
+
+export function saveUserBucketItemOrder(
+  storage: Pick<Storage, "setItem">,
+  itemOrder: UserBucketItemOrder
+): void {
+  storage.setItem(USER_BUCKET_ITEM_ORDER_KEY, JSON.stringify(itemOrder))
+}
+
+export function applyUserBucketItemOrder<T extends { id: string }>(
+  items: T[],
+  bucketId: UserBucketId,
+  itemOrder: UserBucketItemOrder
+): T[] {
+  const itemById = new Map(items.map((item) => [item.id, item]))
+  const orderedItems = itemOrder[bucketId].flatMap((itemId) => {
+    const item = itemById.get(itemId)
+    return item ? [item] : []
+  })
+  const orderedIds = new Set(orderedItems.map((item) => item.id))
+  const unorderedItems = items.filter((item) => !orderedIds.has(item.id))
+
+  return [...orderedItems, ...unorderedItems]
 }
 
 export function userBucketLabelFromId(
@@ -211,6 +255,29 @@ function parseUserBucketLabels(value: unknown): UserBucketLabels {
       ] as const
     })
   ) as UserBucketLabels
+}
+
+function parseUserBucketItemOrder(value: unknown): UserBucketItemOrder {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return createEmptyUserBucketItemOrder()
+  }
+
+  return Object.fromEntries(
+    userBucketIds.map((bucketId) => {
+      const rawOrder = (value as Record<string, unknown>)[bucketId]
+      const seenItemIds = new Set<string>()
+      const itemIds = Array.isArray(rawOrder)
+        ? rawOrder.filter((itemId): itemId is string => {
+            if (typeof itemId !== "string" || itemId.length === 0) return false
+            if (seenItemIds.has(itemId)) return false
+            seenItemIds.add(itemId)
+            return true
+          })
+        : []
+
+      return [bucketId, itemIds] as const
+    })
+  ) as UserBucketItemOrder
 }
 
 function isUserBucketId(value: unknown): value is UserBucketId {
