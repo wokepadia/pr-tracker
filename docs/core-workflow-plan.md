@@ -157,7 +157,7 @@ The workflow needs these GitHub data categories:
 - Review threads: resolved/unresolved state and participants.
 - Issue comments: top-level PR conversation comments.
 - Timeline events: ready-for-review, converted-to-draft, review-requested, review-request-removed, committed, head-ref-force-pushed, merged, closed, reopened, renamed, labeled, assigned.
-- Commits and changed files: commit count, latest head SHA, file count, additions/deletions, optionally file paths.
+- Commits: commit count and latest head SHA.
 - Viewer relationship: whether the viewer reviewed, commented, was directly requested, or is subscribed/watching.
 - Local app state: last seen event, muted/pinned status, local notes/status, saved view membership.
 

@@ -213,7 +213,7 @@ Required sections and order:
 
 1. Since your last visit
 2. Open threads
-3. Files touched since last look
+3. Queue reason
 
 The "Since your last visit" section must be deterministic. Use structured bullets and counts from stored events. Do not generate prose.
 
@@ -231,11 +231,7 @@ Open threads section should show:
 - whether the author replied
 - whether each thread is resolved
 
-Files touched section should show:
-
-- file name
-- additions/deletions if available
-- only files changed since last look if that data exists
+Do not show a files-touched section in the reviewer inbox. It was removed from v1 because it was noisy and did not help decide the next reviewer action.
 
 ### Quick Peek Footer
 
@@ -388,7 +384,6 @@ Minimum PR queue item fields:
 - newCommitCount
 - newReplyCount
 - unresolvedThreadCount
-- changedFilesSinceLastSeen
 - isPinned
 - isMuted
 - snoozedUntil
@@ -399,7 +394,6 @@ Minimum detail fields:
 - activityEvents newest first
 - lastSeenMarkerTimestamp
 - reviewThreads
-- changedFiles
 
 ## Interaction Requirements
 

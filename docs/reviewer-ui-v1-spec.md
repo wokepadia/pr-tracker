@@ -93,8 +93,9 @@ The panel must use raw deterministic data, not AI prose. Good v1 modules:
 
 - Since your last visit: counts and bullets generated from events.
 - Open threads: unresolved/resolved counts, author replies, reviewer-owned threads.
-- Files touched since last look: file names and additions/deletions if available.
 - Current standing: my review state, other review states, draft/open/closed/merged state.
+
+Do not include a files-touched module in v1 reviewer surfaces; it was removed because it adds noise without clarifying reviewer ownership.
 
 Primary actions:
 
