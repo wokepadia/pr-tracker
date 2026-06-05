@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest"
 import {
+  bucketDropId,
   filterQueueItems,
   getEmptyPeekCopy,
   loadStoredSelectedQueueItemId,
+  moveItemInBucketItemOrder,
+  resolveKanbanDropTarget,
   resolveVisibleQueueItem,
   saveStoredSelectedQueueItemId,
 } from "./inbox-helpers"
+import { createEmptyUserBucketItemOrder } from "@/reviewer/local-queue-state"
 import type { ReviewQueueItemView } from "@/reviewer/view-model"
 
 describe("inbox queue search", () => {
@@ -143,6 +147,80 @@ describe("inbox selected item storage", () => {
     saveStoredSelectedQueueItemId(storage, "")
 
     expect(writes).toEqual([])
+  })
+})
+
+describe("inbox kanban ordering", () => {
+  const bucketIds = ["inbox", "reviewing", "waiting", "later", "done"] as const
+  const bucketItems = {
+    inbox: [{ id: "pr_1" }, { id: "pr_2" }],
+    reviewing: [{ id: "pr_3" }],
+    waiting: [],
+    later: [{ id: "pr_4" }],
+    done: [],
+  }
+
+  it("resolves card and empty-column drop targets", () => {
+    expect(resolveKanbanDropTarget("pr_3", [...bucketIds], bucketItems)).toEqual({
+      bucketId: "reviewing",
+      overItemId: "pr_3",
+    })
+    expect(
+      resolveKanbanDropTarget(bucketDropId("waiting"), [...bucketIds], bucketItems)
+    ).toEqual({
+      bucketId: "waiting",
+    })
+    expect(resolveKanbanDropTarget("missing", [...bucketIds], bucketItems)).toBeUndefined()
+  })
+
+  it("moves cards across buckets and preserves target position", () => {
+    const nextOrder = moveItemInBucketItemOrder({
+      current: createEmptyUserBucketItemOrder(),
+      itemId: "pr_2",
+      sourceBucketId: "inbox",
+      targetBucketId: "reviewing",
+      bucketItems,
+      overItemId: "pr_3",
+    })
+
+    expect(nextOrder.inbox).toEqual(["pr_1"])
+    expect(nextOrder.reviewing).toEqual(["pr_2", "pr_3"])
+  })
+
+  it("reorders cards within a bucket", () => {
+    const nextOrder = moveItemInBucketItemOrder({
+      current: createEmptyUserBucketItemOrder(),
+      itemId: "pr_2",
+      sourceBucketId: "inbox",
+      targetBucketId: "inbox",
+      bucketItems,
+      overItemId: "pr_1",
+    })
+
+    expect(nextOrder.inbox).toEqual(["pr_2", "pr_1"])
+  })
+
+  it("preserves stored IDs that are hidden by the current board filter", () => {
+    const current = {
+      ...createEmptyUserBucketItemOrder(),
+      inbox: ["hidden_pr", "pr_1", "pr_2"],
+      reviewing: ["hidden_reviewing", "pr_3"],
+    }
+    const nextOrder = moveItemInBucketItemOrder({
+      current,
+      itemId: "pr_2",
+      sourceBucketId: "inbox",
+      targetBucketId: "reviewing",
+      bucketItems,
+      overItemId: "pr_3",
+    })
+
+    expect(nextOrder.inbox).toEqual(["hidden_pr", "pr_1"])
+    expect(nextOrder.reviewing).toEqual([
+      "hidden_reviewing",
+      "pr_2",
+      "pr_3",
+    ])
   })
 })
 

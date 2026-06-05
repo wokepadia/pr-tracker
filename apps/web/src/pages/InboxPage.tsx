@@ -1,4 +1,25 @@
 import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  pointerWithin,
+  rectIntersection,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type CollisionDetection,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core"
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
+import {
   useMutation,
   useQuery,
   useQueryClient,
@@ -29,6 +50,7 @@ import {
   BellOff,
   GitCommitHorizontal,
   GitPullRequest,
+  GripVertical,
   Inbox,
   LoaderCircle,
   MessageSquareText,
@@ -70,23 +92,31 @@ import {
   canMuteLocalQueueItem,
   canPinLocalQueueItem,
   canSnoozeLocalQueueItem,
+  applyUserBucketItemOrder,
+  createEmptyUserBucketItemOrder,
   defaultUserBuckets,
   hasLocalQueueState,
   loadLocalQueueState,
+  loadUserBucketItemOrder,
   loadUserBucketLabels,
   saveLocalQueueState,
+  saveUserBucketItemOrder,
   saveUserBucketLabels,
   userBucketLabelFromId,
   type LocalPullRequestQueueState,
   type LocalQueueStateByPullRequestId,
   type UserBucketId,
+  type UserBucketItemOrder,
   type UserBucketLabels,
 } from "@/reviewer/local-queue-state"
 import {
+  bucketDropId,
   filterQueueItems,
   getEmptyPeekCopy,
   loadStoredSelectedQueueItemId,
+  moveItemInBucketItemOrder,
   resolveVisibleQueueItem,
+  resolveKanbanDropTarget,
   saveStoredSelectedQueueItemId,
   type QueueGroupMode,
 } from "./inbox-helpers"
@@ -94,14 +124,20 @@ import {
 type LaneId = UserBucketId
 type ActionQueueTabId = "home" | "new_activity" | LaneId
 
-const REVIEW_QUEUE_MIN_WIDTH = 520
-const QUICK_PEEK_MIN_WIDTH = 360
+const REVIEW_QUEUE_MIN_WIDTH = 680
+const QUICK_PEEK_MIN_WIDTH = 320
 const REVIEW_SPLIT_HANDLE_WIDTH = 8
 const REVIEW_WORKSPACE_MIN_WIDTH =
   REVIEW_QUEUE_MIN_WIDTH + QUICK_PEEK_MIN_WIDTH + REVIEW_SPLIT_HANDLE_WIDTH
 const REVIEW_SIDEBAR_WIDTH = 212
 const INBOX_LOADING_STEP_INTERVAL_MS = 1050
 const githubReviewQueryStorageKey = "pr-tracker:github-review-query:v1"
+const kanbanCollisionDetection: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args)
+  return pointerCollisions.length > 0
+    ? pointerCollisions
+    : rectIntersection(args)
+}
 
 function loadStoredGithubReviewQuery(): string {
   if (typeof window === "undefined") return ""
@@ -274,9 +310,15 @@ export function InboxPage() {
     }
     return loadUserBucketLabels(window.localStorage)
   })
+  const [userBucketItemOrder, setUserBucketItemOrder] =
+    useState<UserBucketItemOrder>(() => {
+      if (typeof window === "undefined") return createEmptyUserBucketItemOrder()
+      return loadUserBucketItemOrder(window.localStorage)
+    })
   const [failedCaughtUpItemId, setFailedCaughtUpItemId] = useState<string>()
   const [groupMode, setGroupMode] = useState<QueueGroupMode>("action")
   const [searchQuery, setSearchQuery] = useState("")
+  const [draggingItemId, setDraggingItemId] = useState<string | null>(null)
   const inboxView = useMemo(
     () => (inboxQuery.data ? buildInboxView(inboxQuery.data) : undefined),
     [inboxQuery.data]
@@ -342,22 +384,31 @@ export function InboxPage() {
               bucketIdForLocalQueueItem(localQueueState[item.id], item.laneId) ===
               lane.id
           )
+          acc[lane.id] = applyUserBucketItemOrder(
+            acc[lane.id],
+            lane.id,
+            userBucketItemOrder
+          )
           return acc
         },
         {} as Record<LaneId, ReviewQueueItemView[]>
       ),
-    [localQueueState, searchedActiveItems]
+    [localQueueState, searchedActiveItems, userBucketItemOrder]
+  )
+  const boardItems = useMemo(
+    () => lanes.flatMap((lane) => laneItems[lane.id]),
+    [laneItems]
   )
   const [activeActionTabId, setActiveActionTabId] =
     useState<ActionQueueTabId>("home")
   const visibleActionItems = useMemo(
     () =>
       activeActionTabId === "home"
-        ? searchedActiveItems
+        ? boardItems
         : activeActionTabId === "new_activity"
           ? searchedNewActivityItems
-          : laneItems[activeActionTabId],
-    [activeActionTabId, laneItems, searchedActiveItems, searchedNewActivityItems]
+          : boardItems,
+    [activeActionTabId, boardItems, searchedNewActivityItems]
   )
   const repositoryGroups = useMemo(
     () => buildRepositoryGroups(searchedActiveItems),
@@ -399,6 +450,25 @@ export function InboxPage() {
   const selectedItemIsPinned = Boolean(selectedItemLocalState.pinned)
   const selectedItemIsSnoozed = Boolean(selectedItemLocalState.snoozed)
   const selectedItemIsMuted = Boolean(selectedItemLocalState.muted)
+  const dragSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 6,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
+  const draggingItem = draggingItemId
+    ? activeItems.find((item) => item.id === draggingItemId)
+    : undefined
+  const draggingItemBucketId = draggingItem
+    ? bucketIdForLocalQueueItem(
+        localQueueState[draggingItem.id],
+        draggingItem.laneId
+      )
+    : undefined
 
   useEffect(() => {
     saveLocalQueueState(window.localStorage, localQueueState)
@@ -407,6 +477,10 @@ export function InboxPage() {
   useEffect(() => {
     saveUserBucketLabels(window.localStorage, userBucketLabels)
   }, [userBucketLabels])
+
+  useEffect(() => {
+    saveUserBucketItemOrder(window.localStorage, userBucketItemOrder)
+  }, [userBucketItemOrder])
 
   useEffect(() => {
     saveStoredSelectedQueueItemId(window.sessionStorage, selectedId)
@@ -503,11 +577,30 @@ export function InboxPage() {
     }))
   }
 
-  function moveItemToBucket(itemId: string, bucketId: UserBucketId) {
+  function moveItemToBucket(
+    itemId: string,
+    bucketId: UserBucketId,
+    overItemId?: string
+  ) {
+    const item = activeItems.find((candidate) => candidate.id === itemId)
+    const currentBucketId = item
+      ? bucketIdForLocalQueueItem(localQueueState[item.id], item.laneId)
+      : bucketId
+
     updateLocalItemState(itemId, (current) => ({
       ...current,
       bucketId,
     }))
+    setUserBucketItemOrder((current) =>
+      moveItemInBucketItemOrder({
+        current,
+        itemId,
+        sourceBucketId: currentBucketId,
+        targetBucketId: bucketId,
+        bucketItems: laneItems,
+        overItemId,
+      })
+    )
   }
 
   function moveSelectedToBucket(bucketId: UserBucketId) {
@@ -620,6 +713,29 @@ export function InboxPage() {
     saveStoredGithubReviewQuery("")
   }
 
+  function handleKanbanDragStart(event: DragStartEvent) {
+    const itemId = String(event.active.id)
+    setDraggingItemId(itemId)
+    setSelectedId(itemId)
+  }
+
+  function handleKanbanDragEnd(event: DragEndEvent) {
+    const itemId = String(event.active.id)
+    const target = resolveKanbanDropTarget(
+      event.over?.id,
+      lanes.map((lane) => lane.id),
+      laneItems
+    )
+
+    setDraggingItemId(null)
+
+    if (!target) return
+    moveItemToBucket(itemId, target.bucketId, target.overItemId)
+    setGroupMode("action")
+    setActiveActionTabId("home")
+    setSelectedId(itemId)
+  }
+
   if (inboxQuery.isLoading) {
     return <InboxLoadingScreen />
   }
@@ -668,7 +784,7 @@ export function InboxPage() {
         <ResizablePanelGroup
           id="review-inbox-split"
           orientation="horizontal"
-          defaultLayout={{ reviewQueue: 58, quickPeek: 42 }}
+          defaultLayout={{ reviewQueue: 68, quickPeek: 32 }}
           resizeTargetMinimumSize={{ fine: 12, coarse: 36 }}
           className="h-full min-h-[calc(100vh-48px)]"
           style={{ minWidth: REVIEW_WORKSPACE_MIN_WIDTH }}
@@ -695,24 +811,23 @@ export function InboxPage() {
               />
               <div className="min-h-0 flex-1 overflow-y-auto pt-2 pb-7">
                 {groupMode === "action" ? (
-                  activeActionTabId === "home" ? (
-                    lanes.map((lane) => (
-                      <QueueLane
-                        key={lane.id}
-                        group={{
-                          ...lane,
-                          label: userBucketLabelFromId(userBucketLabels, lane.id),
-                        }}
-                        isOpen
-                        items={laneItems[lane.id]}
-                        selectedId={selectedItem?.id ?? ""}
-                        userBucketLabels={userBucketLabels}
-                        localQueueState={localQueueState}
-                        onMoveItemToBucket={moveItemToBucket}
-                        onToggle={() => undefined}
-                        onSelect={setSelectedId}
-                      />
-                    ))
+                  activeActionTabId !== "new_activity" ? (
+                    <KanbanBoard
+                      laneItems={laneItems}
+                      selectedId={selectedItem?.id ?? ""}
+                      activeBucketId={
+                        activeActionTabId === "home" ? undefined : activeActionTabId
+                      }
+                      draggingItem={draggingItem}
+                      draggingItemBucketId={draggingItemBucketId}
+                      sensors={dragSensors}
+                      userBucketLabels={userBucketLabels}
+                      onDragStart={handleKanbanDragStart}
+                      onDragEnd={handleKanbanDragEnd}
+                      onDragCancel={() => setDraggingItemId(null)}
+                      onMoveItemToBucket={moveItemToBucket}
+                      onSelect={setSelectedId}
+                    />
                   ) : (
                     <ActionQueueList
                       items={visibleActionItems}
@@ -1401,6 +1516,376 @@ function formatSyncLabel(dataUpdatedAt: number): string {
   if (hours < 24) return `synced ${hours}h ago`
 
   return `synced ${Math.floor(hours / 24)}d ago`
+}
+
+function KanbanBoard({
+  laneItems,
+  selectedId,
+  activeBucketId,
+  draggingItem,
+  draggingItemBucketId,
+  sensors,
+  userBucketLabels,
+  onDragStart,
+  onDragEnd,
+  onDragCancel,
+  onMoveItemToBucket,
+  onSelect,
+}: {
+  laneItems: Record<LaneId, ReviewQueueItemView[]>
+  selectedId: string
+  activeBucketId?: LaneId
+  draggingItem?: ReviewQueueItemView
+  draggingItemBucketId?: UserBucketId
+  sensors: ReturnType<typeof useSensors>
+  userBucketLabels: UserBucketLabels
+  onDragStart: (event: DragStartEvent) => void
+  onDragEnd: (event: DragEndEvent) => void
+  onDragCancel: () => void
+  onMoveItemToBucket: (
+    itemId: string,
+    bucketId: UserBucketId,
+    overItemId?: string
+  ) => void
+  onSelect: (id: string) => void
+}) {
+  const totalCount = lanes.reduce(
+    (total, lane) => total + laneItems[lane.id].length,
+    0
+  )
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={kanbanCollisionDetection}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onDragCancel={onDragCancel}
+    >
+      <section className="flex h-full min-h-0 flex-col bg-muted/20">
+        <div className="border-b border-border bg-background px-5 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-foreground">
+                Review board
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {totalCount} active PRs arranged in editable user buckets
+              </p>
+            </div>
+            <Badge
+              variant="outline"
+              className="rounded-full border-border bg-card px-2.5 text-xs text-muted-foreground"
+            >
+              Board
+            </Badge>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
+          <div className="grid h-full min-w-[1160px] grid-cols-5">
+            {lanes.map((lane) => (
+              <KanbanColumn
+                key={lane.id}
+                lane={{
+                  ...lane,
+                  label: userBucketLabelFromId(userBucketLabels, lane.id),
+                }}
+                active={activeBucketId === lane.id}
+                items={laneItems[lane.id]}
+                selectedId={selectedId}
+                userBucketLabels={userBucketLabels}
+                onMoveItemToBucket={onMoveItemToBucket}
+                onSelect={onSelect}
+              />
+            ))}
+          </div>
+        </div>
+      </section>
+      <DragOverlay>
+        {draggingItem ? (
+          <div className="w-[252px] rotate-1 opacity-95 shadow-xl">
+            <QueueCard
+              item={draggingItem}
+              selected
+              bucketId={
+                draggingItemBucketId ??
+                bucketIdForLocalQueueItem(undefined, draggingItem.laneId)
+              }
+              userBucketLabels={userBucketLabels}
+              dragging
+              onSelect={() => undefined}
+              onMoveToBucket={() => undefined}
+            />
+          </div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
+  )
+}
+
+function KanbanColumn({
+  lane,
+  active,
+  items,
+  selectedId,
+  userBucketLabels,
+  onMoveItemToBucket,
+  onSelect,
+}: {
+  lane: LaneDefinition
+  active?: boolean
+  items: ReviewQueueItemView[]
+  selectedId: string
+  userBucketLabels: UserBucketLabels
+  onMoveItemToBucket: (
+    itemId: string,
+    bucketId: UserBucketId,
+    overItemId?: string
+  ) => void
+  onSelect: (id: string) => void
+}) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: bucketDropId(lane.id),
+  })
+
+  return (
+    <section
+      ref={setNodeRef}
+      className={cn(
+        "flex min-h-0 flex-col border-r border-border bg-background/70 last:border-r-0",
+        active && "bg-amber-50/35",
+        isOver && "bg-sky-50/60"
+      )}
+    >
+      <div className="sticky top-0 z-10 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className={cn("h-2 w-2 rounded-full", laneToneClasses[lane.tone])} />
+              <h3 className="truncate text-xs font-semibold uppercase text-foreground">
+                {lane.label}
+              </h3>
+            </div>
+            {lane.description ? (
+              <p className="mt-1 truncate text-xs text-muted-foreground">
+                {lane.description}
+              </p>
+            ) : null}
+          </div>
+          <Badge
+            variant="outline"
+            className={cn(
+              "h-6 rounded-full px-2 text-xs",
+              laneBadgeToneClasses[lane.tone]
+            )}
+          >
+            {items.length}
+          </Badge>
+        </div>
+      </div>
+      <SortableContext
+        items={items.map((item) => item.id)}
+        strategy={verticalListSortingStrategy}
+      >
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">
+          {items.length > 0 ? (
+            items.map((item) => (
+              <SortableQueueCard
+                key={item.id}
+                item={item}
+                selected={item.id === selectedId}
+                bucketId={lane.id}
+                userBucketLabels={userBucketLabels}
+                onSelect={() => onSelect(item.id)}
+                onMoveToBucket={(bucketId) =>
+                  onMoveItemToBucket(item.id, bucketId)
+                }
+              />
+            ))
+          ) : (
+            <div className="grid min-h-[140px] place-items-center rounded-md border border-dashed border-border bg-card/50 px-4 text-center text-xs leading-5 text-muted-foreground">
+              No PRs.
+            </div>
+          )}
+        </div>
+      </SortableContext>
+    </section>
+  )
+}
+
+function SortableQueueCard({
+  item,
+  selected,
+  bucketId,
+  userBucketLabels,
+  onSelect,
+  onMoveToBucket,
+}: {
+  item: ReviewQueueItemView
+  selected: boolean
+  bucketId: UserBucketId
+  userBucketLabels: UserBucketLabels
+  onSelect: () => void
+  onMoveToBucket: (bucketId: UserBucketId) => void
+}) {
+  const {
+    attributes,
+    isDragging,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({
+    id: item.id,
+    data: {
+      bucketId,
+      type: "review-card",
+    },
+  })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+
+  return (
+    <div ref={setNodeRef} style={style} className={cn(isDragging && "opacity-30")}>
+      <QueueCard
+        item={item}
+        selected={selected}
+        bucketId={bucketId}
+        userBucketLabels={userBucketLabels}
+        dragHandle={
+          <button
+            type="button"
+            ref={setActivatorNodeRef}
+            aria-label={`Drag ${item.title}`}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={(event) => event.stopPropagation()}
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+        }
+        onSelect={onSelect}
+        onMoveToBucket={onMoveToBucket}
+      />
+    </div>
+  )
+}
+
+function QueueCard({
+  item,
+  selected,
+  bucketId,
+  userBucketLabels,
+  dragHandle,
+  dragging,
+  onSelect,
+  onMoveToBucket,
+}: {
+  item: ReviewQueueItemView
+  selected: boolean
+  bucketId: UserBucketId
+  userBucketLabels: UserBucketLabels
+  dragHandle?: ReactNode
+  dragging?: boolean
+  onSelect: () => void
+  onMoveToBucket: (bucketId: UserBucketId) => void
+}) {
+  const tone = toneForItem(item)
+  const reReviewRequested = item.activityEvents.some((event) =>
+    event.isNew && event.action.toLowerCase().includes("requested your review")
+  )
+
+  return (
+    <article
+      onClick={onSelect}
+      data-selected={selected ? "true" : undefined}
+      className={cn(
+        "group relative rounded-md border border-border bg-card p-3 text-left shadow-sm transition hover:border-foreground/20 hover:shadow-md",
+        selected && "border-foreground/35 ring-2 ring-foreground/10",
+        dragging && "cursor-grabbing"
+      )}
+    >
+      <span
+        className={cn(
+          "absolute inset-y-0 left-0 w-[3px] rounded-l-md",
+          laneToneClasses[tone]
+        )}
+      />
+      <div className="flex items-start gap-2 pl-1">
+        {dragHandle}
+        <div className="min-w-0 flex-1">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="truncate font-medium">{item.repository}</span>
+            <span className="text-muted-foreground/40">#{item.number}</span>
+            {item.unseenEventCount > 0 ? (
+              <span className="rounded-full border border-sky-200 bg-sky-50 px-1.5 py-[1px] font-medium text-sky-800">
+                {formatCount(item.unseenEventCount, "new event")}
+              </span>
+            ) : null}
+          </div>
+          <h4 className="line-clamp-3 text-sm font-semibold leading-5 text-foreground">
+            {item.title}
+          </h4>
+        </div>
+      </div>
+      <div className="mt-3 border-t border-border pt-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span
+            className={cn(
+              "rounded-full border border-border px-2 py-[1px] text-xs text-muted-foreground",
+              item.waitingOn === "you" && laneBadgeToneClasses[tone]
+            )}
+          >
+            {queuePillLabel(item)}
+          </span>
+          {item.newCommitCount > 0 ? (
+            <FactChip icon={GitCommitHorizontal} text={`+${item.newCommitCount}`} active />
+          ) : null}
+          {item.newReplyCount > 0 ? (
+            <FactChip icon={MessageSquareText} text={`${item.newReplyCount}`} active />
+          ) : null}
+          {item.totalThreadCount > 0 ? (
+            <FactChip
+              icon={Inbox}
+              text={`${item.unresolvedThreadCount}/${item.totalThreadCount}`}
+              active={item.unresolvedThreadCount > 0}
+            />
+          ) : null}
+          {reReviewRequested ? <FactChip icon={Eye} text="requested" active /> : null}
+        </div>
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+            <AuthorAvatar
+              login={item.authorLogin}
+              avatarUrl={item.authorAvatarUrl}
+              className="h-6 w-6"
+            />
+            <span className="truncate">{item.authorLogin}</span>
+          </div>
+          <span
+            className={cn(
+              "shrink-0 text-xs text-muted-foreground",
+              item.waitingOn === "you" && "font-semibold text-foreground"
+            )}
+          >
+            {item.waitingAge}
+          </span>
+        </div>
+      </div>
+      <div className="mt-3">
+        <BucketMoveMenu
+          bucketId={bucketId}
+          userBucketLabels={userBucketLabels}
+          onMoveToBucket={onMoveToBucket}
+          compact
+        />
+      </div>
+    </article>
+  )
 }
 
 function ActionQueueList({
