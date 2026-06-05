@@ -9,7 +9,7 @@ export type LocalQueueStateByPullRequestId = Partial<
   Record<string, LocalPullRequestQueueState>
 >
 
-export type UserBucketId = "inbox" | "reviewing" | "waiting" | "later" | "done"
+export type UserBucketId = string
 
 export interface UserBucketDefinition {
   id: UserBucketId
@@ -21,7 +21,9 @@ export type UserBucketItemOrder = Record<UserBucketId, string[]>
 
 const LOCAL_QUEUE_STATE_KEY = "pr-tracker:reviewer-local-queue-state:v1"
 const USER_BUCKET_LABELS_KEY = "pr-tracker:user-bucket-labels:v1"
+const USER_BUCKETS_KEY = "pr-tracker:user-buckets:v1"
 const USER_BUCKET_ITEM_ORDER_KEY = "pr-tracker:user-bucket-item-order:v1"
+const CUSTOM_BUCKET_ID_PREFIX = "bucket"
 
 export const defaultUserBuckets: UserBucketDefinition[] = [
   { id: "inbox", label: "Inbox" },
@@ -37,10 +39,54 @@ export const defaultUserBucketLabels = Object.fromEntries(
   defaultUserBuckets.map((bucket) => [bucket.id, bucket.label])
 ) as UserBucketLabels
 
-export function createEmptyUserBucketItemOrder(): UserBucketItemOrder {
+export function createEmptyUserBucketItemOrder(
+  buckets: UserBucketDefinition[] = defaultUserBuckets
+): UserBucketItemOrder {
   return Object.fromEntries(
-    userBucketIds.map((bucketId) => [bucketId, []])
+    buckets.map((bucket) => [bucket.id, []])
   ) as unknown as UserBucketItemOrder
+}
+
+export function loadUserBuckets(
+  storage: Pick<Storage, "getItem">
+): UserBucketDefinition[] {
+  const rawValue = storage.getItem(USER_BUCKETS_KEY)
+  if (!rawValue) return defaultUserBucketsFromLegacyLabels(storage)
+
+  try {
+    return parseUserBuckets(JSON.parse(rawValue))
+  } catch {
+    return defaultUserBucketsFromLegacyLabels(storage)
+  }
+}
+
+export function saveUserBuckets(
+  storage: Pick<Storage, "setItem">,
+  buckets: UserBucketDefinition[]
+): void {
+  storage.setItem(USER_BUCKETS_KEY, JSON.stringify(normalizeUserBuckets(buckets)))
+}
+
+export function createUserBucket(
+  label: string,
+  existingBuckets: UserBucketDefinition[]
+): UserBucketDefinition {
+  const trimmedLabel = label.trim()
+  const safeLabel = trimmedLabel || "New label"
+  const baseId = toBucketIdBase(safeLabel)
+  const existingIds = new Set(existingBuckets.map((bucket) => bucket.id))
+  let id = baseId
+  let suffix = 2
+
+  while (existingIds.has(id)) {
+    id = `${baseId}-${suffix}`
+    suffix += 1
+  }
+
+  return {
+    id,
+    label: safeLabel,
+  }
 }
 
 export function loadLocalQueueState(
@@ -84,15 +130,16 @@ export function saveUserBucketLabels(
 }
 
 export function loadUserBucketItemOrder(
-  storage: Pick<Storage, "getItem">
+  storage: Pick<Storage, "getItem">,
+  buckets: UserBucketDefinition[] = defaultUserBuckets
 ): UserBucketItemOrder {
   const rawValue = storage.getItem(USER_BUCKET_ITEM_ORDER_KEY)
-  if (!rawValue) return createEmptyUserBucketItemOrder()
+  if (!rawValue) return createEmptyUserBucketItemOrder(buckets)
 
   try {
-    return parseUserBucketItemOrder(JSON.parse(rawValue))
+    return parseUserBucketItemOrder(JSON.parse(rawValue), buckets)
   } catch {
-    return createEmptyUserBucketItemOrder()
+    return createEmptyUserBucketItemOrder(buckets)
   }
 }
 
@@ -109,7 +156,7 @@ export function applyUserBucketItemOrder<T extends { id: string }>(
   itemOrder: UserBucketItemOrder
 ): T[] {
   const itemById = new Map(items.map((item) => [item.id, item]))
-  const orderedItems = itemOrder[bucketId].flatMap((itemId) => {
+  const orderedItems = (itemOrder[bucketId] ?? []).flatMap((itemId) => {
     const item = itemById.get(itemId)
     return item ? [item] : []
   })
@@ -120,10 +167,18 @@ export function applyUserBucketItemOrder<T extends { id: string }>(
 }
 
 export function userBucketLabelFromId(
-  labels: UserBucketLabels,
+  buckets: UserBucketDefinition[] | UserBucketLabels,
   bucketId: UserBucketId
 ): string {
-  return labels[bucketId] || defaultUserBucketLabels[bucketId]
+  if (Array.isArray(buckets)) {
+    return (
+      buckets.find((bucket) => bucket.id === bucketId)?.label ||
+      defaultUserBucketLabels[bucketId] ||
+      bucketId
+    )
+  }
+
+  return buckets[bucketId] || defaultUserBucketLabels[bucketId] || bucketId
 }
 
 export function defaultBucketIdForWorkflowLane(
@@ -237,7 +292,56 @@ function readBucketIdProperty(
   property: keyof LocalPullRequestQueueState
 ): UserBucketId | undefined {
   const propertyValue = (value as Record<string, unknown>)[property]
-  return isUserBucketId(propertyValue) ? propertyValue : undefined
+  return readUserBucketId(propertyValue)
+}
+
+function defaultUserBucketsFromLegacyLabels(
+  storage: Pick<Storage, "getItem">
+): UserBucketDefinition[] {
+  const labels = loadUserBucketLabels(storage)
+  return defaultUserBuckets.map((bucket) => ({
+    id: bucket.id,
+    label: userBucketLabelFromId(labels, bucket.id),
+  }))
+}
+
+function parseUserBuckets(value: unknown): UserBucketDefinition[] {
+  if (!Array.isArray(value)) return defaultUserBuckets
+
+  return normalizeUserBuckets(
+    value.flatMap((bucket) => {
+      if (!bucket || typeof bucket !== "object" || Array.isArray(bucket)) {
+        return []
+      }
+
+      const id = readUserBucketId((bucket as Record<string, unknown>).id)
+      const label = (bucket as Record<string, unknown>).label
+      if (!id || typeof label !== "string") return []
+
+      return [
+        {
+          id,
+          label,
+        },
+      ]
+    })
+  )
+}
+
+function normalizeUserBuckets(
+  buckets: UserBucketDefinition[]
+): UserBucketDefinition[] {
+  const seenIds = new Set<string>()
+  const normalizedBuckets = buckets.flatMap((bucket) => {
+    const id = readUserBucketId(bucket.id)
+    const label = bucket.label.trim()
+    if (!id || !label || seenIds.has(id)) return []
+
+    seenIds.add(id)
+    return [{ id, label }]
+  })
+
+  return normalizedBuckets.length > 0 ? normalizedBuckets : defaultUserBuckets
 }
 
 function parseUserBucketLabels(value: unknown): UserBucketLabels {
@@ -257,13 +361,16 @@ function parseUserBucketLabels(value: unknown): UserBucketLabels {
   ) as UserBucketLabels
 }
 
-function parseUserBucketItemOrder(value: unknown): UserBucketItemOrder {
+function parseUserBucketItemOrder(
+  value: unknown,
+  buckets: UserBucketDefinition[]
+): UserBucketItemOrder {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return createEmptyUserBucketItemOrder()
+    return createEmptyUserBucketItemOrder(buckets)
   }
 
   return Object.fromEntries(
-    userBucketIds.map((bucketId) => {
+    buckets.map(({ id: bucketId }) => {
       const rawOrder = (value as Record<string, unknown>)[bucketId]
       const seenItemIds = new Set<string>()
       const itemIds = Array.isArray(rawOrder)
@@ -280,6 +387,17 @@ function parseUserBucketItemOrder(value: unknown): UserBucketItemOrder {
   ) as UserBucketItemOrder
 }
 
-function isUserBucketId(value: unknown): value is UserBucketId {
-  return typeof value === "string" && userBucketIds.includes(value as UserBucketId)
+function readUserBucketId(value: unknown): UserBucketId | undefined {
+  const trimmedValue = typeof value === "string" ? value.trim() : ""
+  return trimmedValue ? trimmedValue : undefined
+}
+
+function toBucketIdBase(label: string): UserBucketId {
+  const normalizedLabel = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+
+  return normalizedLabel || CUSTOM_BUCKET_ID_PREFIX
 }

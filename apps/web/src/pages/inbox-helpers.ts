@@ -61,7 +61,7 @@ export function resolveKanbanDropTarget(
   if (typeof overId !== "string") return undefined
 
   for (const bucketId of bucketIds) {
-    if (bucketItems[bucketId].some((item) => item.id === overId)) {
+    if ((bucketItems[bucketId] ?? []).some((item) => item.id === overId)) {
       return { bucketId, overItemId: overId }
     }
   }
@@ -84,19 +84,19 @@ export function moveItemInBucketItemOrder({
   bucketItems: Record<UserBucketId, Array<{ id: string }>>
   overItemId?: string
 }): UserBucketItemOrder {
-  const sourceItemIds = bucketItems[sourceBucketId].map((item) => item.id)
-  const targetItemIds = bucketItems[targetBucketId].map((item) => item.id)
+  const sourceItemIds = (bucketItems[sourceBucketId] ?? []).map((item) => item.id)
+  const targetItemIds = (bucketItems[targetBucketId] ?? []).map((item) => item.id)
   const next = { ...current }
 
   if (sourceBucketId !== targetBucketId) {
     next[sourceBucketId] = mergeStoredAndVisibleItemIds(
-      current[sourceBucketId],
+      current[sourceBucketId] ?? [],
       sourceItemIds
     ).filter((id) => id !== itemId)
   }
 
   const targetOrder = mergeStoredAndVisibleItemIds(
-    current[targetBucketId],
+    current[targetBucketId] ?? [],
     targetItemIds
   ).filter((id) => id !== itemId)
   const targetIndex = overItemId ? targetOrder.indexOf(overItemId) : -1

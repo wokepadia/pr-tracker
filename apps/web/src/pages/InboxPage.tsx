@@ -385,7 +385,7 @@ export function InboxPage() {
               lane.id
           )
           acc[lane.id] = applyUserBucketItemOrder(
-            acc[lane.id],
+            acc[lane.id] ?? [],
             lane.id,
             userBucketItemOrder
           )
@@ -396,7 +396,7 @@ export function InboxPage() {
     [localQueueState, searchedActiveItems, userBucketItemOrder]
   )
   const boardItems = useMemo(
-    () => lanes.flatMap((lane) => laneItems[lane.id]),
+    () => lanes.flatMap((lane) => laneItems[lane.id] ?? []),
     [laneItems]
   )
   const [activeActionTabId, setActiveActionTabId] =
@@ -675,7 +675,7 @@ export function InboxPage() {
     setGroupMode("action")
     setActiveActionTabId(laneId)
 
-    const firstLaneItem = laneItems[laneId][0]
+    const firstLaneItem = laneItems[laneId]?.[0]
     if (firstLaneItem) {
       setSelectedId(firstLaneItem.id)
     }
@@ -1126,7 +1126,7 @@ function InboxSidebar({
   onBucketLabelChange: (bucketId: UserBucketId, label: string) => void
 }) {
   const activeTotal = lanes.reduce(
-    (total, lane) => total + laneItems[lane.id].length,
+    (total, lane) => total + (laneItems[lane.id]?.length ?? 0),
     0
   )
 
@@ -1164,12 +1164,12 @@ function InboxSidebar({
             key={lane.id}
             bucketId={lane.id}
             active={activeActionTabId === lane.id}
-            attention={laneItems[lane.id].length > 0}
+            attention={(laneItems[lane.id]?.length ?? 0) > 0}
             tone={lane.tone}
             label={userBucketLabelFromId(userBucketLabels, lane.id)}
-            count={laneItems[lane.id].length}
+            count={laneItems[lane.id]?.length ?? 0}
             onClick={
-              laneItems[lane.id].length > 0
+              (laneItems[lane.id]?.length ?? 0) > 0
                 ? () => onSelectLane(lane.id)
                 : undefined
             }
@@ -1550,7 +1550,7 @@ function KanbanBoard({
   onSelect: (id: string) => void
 }) {
   const totalCount = lanes.reduce(
-    (total, lane) => total + laneItems[lane.id].length,
+    (total, lane) => total + (laneItems[lane.id]?.length ?? 0),
     0
   )
 
@@ -1591,7 +1591,7 @@ function KanbanBoard({
                   label: userBucketLabelFromId(userBucketLabels, lane.id),
                 }}
                 active={activeBucketId === lane.id}
-                items={laneItems[lane.id]}
+                items={laneItems[lane.id] ?? []}
                 selectedId={selectedId}
                 userBucketLabels={userBucketLabels}
                 onMoveItemToBucket={onMoveItemToBucket}

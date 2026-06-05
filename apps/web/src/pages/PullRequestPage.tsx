@@ -89,7 +89,7 @@ const detailDotClasses: Record<DetailTone, string> = {
   quiet: "bg-slate-300",
 }
 
-const detailBucketToneClasses: Record<UserBucketId, DetailTone> = {
+const detailBucketToneClasses: Partial<Record<UserBucketId, DetailTone>> = {
   inbox: "hot",
   reviewing: "changed",
   waiting: "waiting",
@@ -679,7 +679,7 @@ function BucketMoveMenu({
         <DropdownMenuLabel>Move to bucket</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {defaultUserBuckets.map((bucket) => {
-          const tone = detailBucketToneClasses[bucket.id]
+          const tone = detailBucketToneClasses[bucket.id] ?? "quiet"
           return (
             <DropdownMenuItem
               key={bucket.id}

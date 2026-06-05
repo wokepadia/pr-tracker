@@ -6,12 +6,16 @@ import {
   canPinLocalQueueItem,
   canSnoozeLocalQueueItem,
   createEmptyUserBucketItemOrder,
+  createUserBucket,
   defaultBucketIdForWorkflowLane,
+  defaultUserBuckets,
   loadLocalQueueState,
   loadUserBucketItemOrder,
+  loadUserBuckets,
   loadUserBucketLabels,
   saveLocalQueueState,
   saveUserBucketItemOrder,
+  saveUserBuckets,
   saveUserBucketLabels,
   userBucketLabelFromId,
 } from "./local-queue-state"
@@ -54,12 +58,14 @@ describe("local queue state", () => {
         JSON.stringify({
           pr_1: { bucketId: "reviewing" },
           pr_2: { bucketId: "waiting", pinned: true },
+          pr_3: { bucketId: "blocked-by-author" },
         }),
     }
 
     expect(loadLocalQueueState(storage)).toEqual({
       pr_1: { bucketId: "reviewing" },
       pr_2: { bucketId: "waiting", pinned: true },
+      pr_3: { bucketId: "blocked-by-author" },
     })
   })
 
@@ -166,25 +172,101 @@ describe("local queue state", () => {
     expect(writes).toEqual([JSON.stringify(labels)])
   })
 
+  it("loads, saves, and migrates editable user buckets", () => {
+    const buckets = loadUserBuckets({
+      getItem: (key) =>
+        key === "pr-tracker:user-buckets:v1"
+          ? JSON.stringify([
+              { id: "inbox", label: "Now" },
+              { id: "blocked", label: "Blocked" },
+              { id: "blocked", label: "Duplicate" },
+              { id: "", label: "No id" },
+              { id: "empty-label", label: "   " },
+            ])
+          : null,
+    })
+
+    expect(buckets).toEqual([
+      { id: "inbox", label: "Now" },
+      { id: "blocked", label: "Blocked" },
+    ])
+    expect(userBucketLabelFromId(buckets, "blocked")).toBe("Blocked")
+
+    const writes: string[] = []
+    saveUserBuckets(
+      {
+        setItem: (_key, value) => {
+          writes.push(value)
+        },
+      },
+      buckets
+    )
+
+    expect(writes).toEqual([JSON.stringify(buckets)])
+  })
+
+  it("migrates old label storage when user buckets are missing", () => {
+    expect(
+      loadUserBuckets({
+        getItem: (key) =>
+          key === "pr-tracker:user-bucket-labels:v1"
+            ? JSON.stringify({ inbox: "Now", waiting: "Blocked" })
+            : null,
+      })
+    ).toEqual([
+      { id: "inbox", label: "Now" },
+      { id: "reviewing", label: "Reviewing" },
+      { id: "waiting", label: "Blocked" },
+      { id: "later", label: "Later" },
+      { id: "done", label: "Done" },
+    ])
+  })
+
+  it("falls back to default buckets when persisted user buckets are malformed", () => {
+    expect(loadUserBuckets({ getItem: () => "not json" })).toEqual(
+      defaultUserBuckets
+    )
+    expect(
+      loadUserBuckets({
+        getItem: () => JSON.stringify([{ id: "", label: "Nope" }]),
+      })
+    ).toEqual(defaultUserBuckets)
+  })
+
+  it("creates unique bucket ids from labels", () => {
+    expect(
+      createUserBucket("Waiting on author", [
+        { id: "waiting-on-author", label: "Waiting on author" },
+        { id: "waiting-on-author-2", label: "Waiting on author 2" },
+      ])
+    ).toEqual({
+      id: "waiting-on-author-3",
+      label: "Waiting on author",
+    })
+
+    expect(createUserBucket("   ", [])).toEqual({
+      id: "new-label",
+      label: "New label",
+    })
+  })
+
   it("loads and saves user bucket item order", () => {
+    const buckets = [
+      { id: "inbox", label: "Inbox" },
+      { id: "blocked", label: "Blocked" },
+    ]
     const order = loadUserBucketItemOrder({
       getItem: () =>
         JSON.stringify({
           inbox: ["pr_2", "pr_1", "pr_2", "", 42],
-          reviewing: ["pr_3"],
-          waiting: "not an array",
-          later: ["pr_4"],
-          done: [],
+          blocked: ["pr_3"],
           unknown: ["pr_5"],
         }),
-    })
+    }, buckets)
 
     expect(order).toEqual({
       inbox: ["pr_2", "pr_1"],
-      reviewing: ["pr_3"],
-      waiting: [],
-      later: ["pr_4"],
-      done: [],
+      blocked: ["pr_3"],
     })
 
     const writes: string[] = []
