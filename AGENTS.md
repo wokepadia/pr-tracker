@@ -42,4 +42,4 @@ Keep code readable, deterministic, and easy to review. Update tests and docs in 
 
 ## Commit Discipline Summary
 
-Each commit should be one minimal coherent idea that can be reviewed independently. Use `area: Imperative sentence.` summaries, keep them specific, and write a body when the reasoning is non-obvious. Amend/rebase away temporary fixup commits before review; the final history should explain the codebase evolution, not the messy development path.
+Commit at each logical step according to the Zulip-inspired discipline in [docs/commit-guidelines.md](docs/commit-guidelines.md). Each commit should be one minimal coherent idea that can be reviewed independently. Use `area: Imperative sentence.` summaries, keep them specific, and write a body when the reasoning is non-obvious. Amend/rebase away temporary fixup commits before review; the final history should explain the codebase evolution, not the messy development path.
