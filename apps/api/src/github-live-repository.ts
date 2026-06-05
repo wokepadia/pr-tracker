@@ -1,7 +1,6 @@
 import type {
   Actor,
   PullRequestActivity,
-  PullRequestChangedFile,
   PullRequestItem,
   ReviewDecision,
   ReviewDecisionEvent
@@ -15,7 +14,6 @@ import {
   getGithubClosedLookbackDays,
   getGithubTokenEnv,
   parseGithubRepositories,
-  type GitHubChangedFileSnapshot,
   type GitHubPullRequestSnapshot,
   type GitHubPullRequestSource,
   type GitHubReviewSnapshot
@@ -51,16 +49,19 @@ export function createGithubLiveRepository(input: {
     return resolvedViewerLogin;
   }
 
-  async function loadInbox(now = new Date().toISOString()): Promise<{
+  async function loadInbox(
+    now = new Date().toISOString(),
+    options?: { githubSearchQuery?: string }
+  ): Promise<{
     actors: Actor[];
     inbox: ReviewerInbox;
     pullRequests: PullRequestItem[];
     viewer: Actor;
   }> {
     const viewerLogin = await getViewerLogin();
-    const snapshots = await listPullRequests(input.source);
+    const snapshots = await listPullRequests(input.source, options);
     const pullRequests = snapshots.map(snapshotToPullRequestItem);
-    const actors = buildActors(pullRequests, [viewerLogin]);
+    const actors = buildActors(pullRequests, [viewerLogin], snapshots);
     const viewer = ensureActor(actors, viewerLogin);
     const inbox = buildReviewerInbox({
       viewer,
@@ -74,12 +75,37 @@ export function createGithubLiveRepository(input: {
   }
 
   return {
-    async getReviewerInbox(now) {
-      const { inbox } = await loadInbox(now);
+    async getReviewerInbox(now, options) {
+      const { inbox } = await loadInbox(now, options);
       return inbox;
     },
 
     async getPullRequest(id): Promise<PullRequestDetail | undefined> {
+      if (input.source.getPullRequest) {
+        const lookup = lookupFromLivePullRequestId(id);
+        if (lookup) {
+          const viewerLogin = await getViewerLogin();
+          const snapshot = await input.source.getPullRequest(lookup);
+          if (!snapshot) {
+            return undefined;
+          }
+
+          const pullRequests = [snapshotToPullRequestItem(snapshot)];
+          const actors = buildActors(pullRequests, [viewerLogin], [snapshot]);
+          const viewer = ensureActor(actors, viewerLogin);
+          const inbox = buildReviewerInbox({
+            viewer,
+            actors,
+            pullRequests,
+            now: new Date().toISOString(),
+            lastSeenAtByPullRequestId
+          });
+          const item = inbox.items[0];
+
+          return item ? { viewer, actors, item } : undefined;
+        }
+      }
+
       const { actors, inbox, viewer } = await loadInbox();
       const item = inbox.items.find((candidate) => candidate.pullRequest.id === id);
 
@@ -101,14 +127,15 @@ export function createGithubLiveRepository(input: {
 }
 
 function listPullRequests(
-  source: ViewerAwareGithubSource
+  source: ViewerAwareGithubSource,
+  options?: { githubSearchQuery?: string }
 ): Promise<GitHubPullRequestSnapshot[]> {
   if (source.listPullRequests) {
-    return source.listPullRequests();
+    return source.listPullRequests({ searchQuery: options?.githubSearchQuery });
   }
 
   if (source.listOpenPullRequests) {
-    return source.listOpenPullRequests();
+    return source.listOpenPullRequests({ searchQuery: options?.githubSearchQuery });
   }
 
   throw new Error("GitHub source must provide a pull request list method.");
@@ -124,7 +151,8 @@ export function createGithubLiveRepositoryFromEnv(
         token: tokenEnv.GITHUB_TOKEN,
         repositories: parseGithubRepositories(tokenEnv.GITHUB_REPOSITORIES),
         apiBaseUrl: tokenEnv.GITHUB_API_BASE_URL,
-        closedLookbackDays: getGithubClosedLookbackDays(env)
+        closedLookbackDays: getGithubClosedLookbackDays(env),
+        maxPullRequests: getGithubMaxPullRequests(env)
       }),
       viewerLogin: env.PR_TRACKER_VIEWER_LOGIN
     });
@@ -139,16 +167,30 @@ export function createGithubLiveRepositoryFromCredentials(input: {
   viewerLogin?: string;
   apiBaseUrl?: string;
   closedLookbackDays?: number;
+  maxPullRequests?: number;
 }): ReviewerInboxRepository {
   return createGithubLiveRepository({
     source: createGithubTokenPullRequestSource({
       token: input.token,
       repositories: input.repositories,
       apiBaseUrl: input.apiBaseUrl,
-      closedLookbackDays: input.closedLookbackDays
+      closedLookbackDays: input.closedLookbackDays,
+      maxPullRequests: input.maxPullRequests
     }),
     viewerLogin: input.viewerLogin
   });
+}
+
+function getGithubMaxPullRequests(
+  env: Record<string, string | undefined>
+): number | undefined {
+  const raw = env.GITHUB_MAX_PULL_REQUESTS;
+  if (!raw) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function snapshotToPullRequestItem(
@@ -159,12 +201,14 @@ function snapshotToPullRequestItem(
   const number = pullRequest.number ?? 0;
   const authorLogin = pullRequest.user?.login ?? "unknown";
   const updatedAt = pullRequest.updated_at ?? new Date().toISOString();
+  const reviews = compactReviewsForInbox(snapshot.reviews ?? []);
 
   return {
     id: livePullRequestId(repository, number),
     repository,
     number,
     title: pullRequest.title ?? "Untitled pull request",
+    description: cleanPullRequestDescription(pullRequest.body),
     url: pullRequest.html_url ?? `https://github.com/${repository}/pull/${number}`,
     authorId: authorLogin,
     state: pullRequest.merged ? "merged" : normalizePullRequestState(pullRequest.state),
@@ -175,15 +219,82 @@ function snapshotToPullRequestItem(
     requestedReviewerIds: (pullRequest.requested_reviewers ?? [])
       .map((reviewer) => reviewer.login)
       .filter((login): login is string => Boolean(login)),
-    reviews: (snapshot.reviews ?? []).flatMap(mapReview),
+    reviews: reviews.flatMap(mapReview),
     threads: [],
-    activity: buildActivity(snapshot),
-    changedFiles: mapChangedFiles(snapshot.changed_files, updatedAt)
+    activity: buildActivity({ ...snapshot, reviews })
   };
+}
+
+function cleanPullRequestDescription(value: string | null | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function compactReviewsForInbox(
+  reviews: GitHubReviewSnapshot[]
+): GitHubReviewSnapshot[] {
+  const latestByReviewer = new Map<string, GitHubReviewSnapshot>();
+  const newestReviews = reviews
+    .slice()
+    .sort(
+      (a, b) =>
+        Date.parse(b.submitted_at ?? "") - Date.parse(a.submitted_at ?? "")
+    );
+
+  for (const review of newestReviews) {
+    const reviewerLogin = review.user?.login;
+    if (!reviewerLogin || latestByReviewer.has(reviewerLogin)) {
+      continue;
+    }
+
+    latestByReviewer.set(reviewerLogin, review);
+  }
+
+  return uniqueReviewsById([...newestReviews.slice(0, 20), ...latestByReviewer.values()])
+    .sort(
+      (a, b) =>
+        Date.parse(a.submitted_at ?? "") - Date.parse(b.submitted_at ?? "")
+    );
+}
+
+function uniqueReviewsById(
+  reviews: GitHubReviewSnapshot[]
+): GitHubReviewSnapshot[] {
+  const seenIds = new Set<string>();
+  const uniqueReviews: GitHubReviewSnapshot[] = [];
+
+  for (const review of reviews) {
+    const id = review.node_id ?? String(review.id);
+    if (seenIds.has(id)) {
+      continue;
+    }
+
+    seenIds.add(id);
+    uniqueReviews.push(review);
+  }
+
+  return uniqueReviews;
 }
 
 function livePullRequestId(repository: string, number: number): string {
   return `github:${repository.replace("/", "~")}:${number}`;
+}
+
+function lookupFromLivePullRequestId(
+  id: string
+): { repository: string; number: number } | undefined {
+  const match = /^github:([^:]+):(\d+)$/.exec(id);
+  if (!match) {
+    return undefined;
+  }
+
+  const repository = match[1]?.replace("~", "/");
+  const number = Number.parseInt(match[2] ?? "", 10);
+  if (!repository || !Number.isFinite(number)) {
+    return undefined;
+  }
+
+  return { repository, number };
 }
 
 function normalizePullRequestState(state: string | undefined): PullRequestItem["state"] {
@@ -234,13 +345,16 @@ function buildActivity(snapshot: GitHubPullRequestSnapshot): PullRequestActivity
   const number = pullRequest.number ?? 0;
   const updatedAt = pullRequest.updated_at ?? new Date().toISOString();
   const authorLogin = pullRequest.user?.login ?? "unknown";
+  const pullRequestUrl = pullRequest.html_url ?? `https://github.com/${repository}/pull/${number}`;
   const activity: PullRequestActivity[] = [
     {
       id: `${livePullRequestId(repository, number)}:updated`,
       type: "pull_request",
       actorId: authorLogin,
       occurredAt: updatedAt,
-      title: `${authorLogin} updated this pull request`
+      title: `${authorLogin} updated this pull request`,
+      url: pullRequestUrl,
+      diffUrl: `${pullRequestUrl}/files`
     }
   ];
 
@@ -291,32 +405,56 @@ function reviewTitle(state: string | undefined): string {
   return "reviewed this pull request";
 }
 
-function mapChangedFiles(
-  files: GitHubChangedFileSnapshot[] | undefined,
-  changedAt: string
-): PullRequestChangedFile[] {
-  return (files ?? []).map((file) => ({
-    path: file.filename,
-    additions: file.additions,
-    deletions: file.deletions,
-    changedAt
-  }));
-}
-
 function buildActors(
   pullRequests: PullRequestItem[],
-  extraLogins: string[]
+  extraLogins: string[],
+  snapshots: GitHubPullRequestSnapshot[] = []
 ): Actor[] {
-  const logins = new Set(extraLogins);
+  const actors = new Map<string, Actor>();
 
-  for (const pullRequest of pullRequests) {
-    logins.add(pullRequest.authorId);
-    pullRequest.requestedReviewerIds.forEach((login) => logins.add(login));
-    pullRequest.reviews.forEach((review) => logins.add(review.reviewerId));
-    pullRequest.activity.forEach((event) => logins.add(event.actorId));
+  for (const login of extraLogins) {
+    upsertActor(actors, login);
   }
 
-  return Array.from(logins).map((login) => ({ id: login, login }));
+  for (const snapshot of snapshots) {
+    upsertActor(
+      actors,
+      snapshot.pull_request.user?.login,
+      snapshot.pull_request.user?.avatar_url
+    );
+    for (const reviewer of snapshot.pull_request.requested_reviewers ?? []) {
+      upsertActor(actors, reviewer.login, reviewer.avatar_url);
+    }
+    for (const review of snapshot.reviews ?? []) {
+      upsertActor(actors, review.user?.login, review.user?.avatar_url);
+    }
+  }
+
+  for (const pullRequest of pullRequests) {
+    upsertActor(actors, pullRequest.authorId);
+    pullRequest.requestedReviewerIds.forEach((login) => upsertActor(actors, login));
+    pullRequest.reviews.forEach((review) => upsertActor(actors, review.reviewerId));
+    pullRequest.activity.forEach((event) => upsertActor(actors, event.actorId));
+  }
+
+  return Array.from(actors.values());
+}
+
+function upsertActor(
+  actors: Map<string, Actor>,
+  login: string | undefined,
+  avatarUrl?: string
+): void {
+  if (!login) {
+    return;
+  }
+
+  const existing = actors.get(login);
+  actors.set(login, {
+    id: login,
+    login,
+    avatarUrl: existing?.avatarUrl ?? avatarUrl
+  });
 }
 
 function ensureActor(actors: Actor[], id: string): Actor {

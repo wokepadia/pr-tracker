@@ -31,11 +31,20 @@ function apiUrl(path: string): string {
   return `${apiBaseUrl}${path}`
 }
 
-export async function getReviewerInbox(): Promise<ReviewerInbox> {
-  const response = await fetch(apiUrl("/api/reviewer-inbox"))
+export async function getReviewerInbox(input?: {
+  githubSearchQuery?: string
+}): Promise<ReviewerInbox> {
+  const params = new URLSearchParams()
+  if (input?.githubSearchQuery?.trim()) {
+    params.set("githubSearchQuery", input.githubSearchQuery.trim())
+  }
+
+  const response = await fetch(
+    apiUrl(`/api/reviewer-inbox${params.size ? `?${params}` : ""}`)
+  )
 
   if (!response.ok) {
-    throw new Error("Failed to load reviewer inbox.")
+    throw new Error(await responseError(response, "Failed to load reviewer inbox."))
   }
 
   return response.json() as Promise<ReviewerInbox>
@@ -47,7 +56,7 @@ export async function getPullRequest(
   const response = await fetch(apiUrl(`/api/pull-requests/${id}`))
 
   if (!response.ok) {
-    throw new Error("Failed to load pull request.")
+    throw new Error(await responseError(response, "Failed to load pull request."))
   }
 
   return response.json() as Promise<PullRequestDetailResponse>
@@ -77,7 +86,7 @@ export async function getGithubSettingsStatus(): Promise<GithubSettingsStatus> {
   const response = await fetch(apiUrl("/api/local-settings/github"))
 
   if (!response.ok) {
-    throw new Error("Failed to load GitHub settings.")
+    throw new Error(await responseError(response, "Failed to load GitHub settings."))
   }
 
   return response.json() as Promise<GithubSettingsStatus>
@@ -93,11 +102,19 @@ export async function saveGithubSettings(
   })
 
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as {
-      error?: string
-    }
-    throw new Error(body.error ?? "Failed to save GitHub settings.")
+    throw new Error(await responseError(response, "Failed to save GitHub settings."))
   }
 
   return response.json() as Promise<GithubSettingsStatus>
+}
+
+async function responseError(
+  response: Response,
+  fallback: string
+): Promise<string> {
+  const body = (await response.json().catch(() => ({}))) as {
+    error?: string
+  }
+
+  return body.error ?? fallback
 }

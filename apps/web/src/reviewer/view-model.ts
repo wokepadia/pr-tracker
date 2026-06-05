@@ -1,7 +1,6 @@
 import type {
   Actor,
   PullRequestActivity,
-  PullRequestChangedFile,
   PullRequestItem,
   ReviewDecision,
 } from "@pr-tracker/core"
@@ -25,12 +24,6 @@ export interface ReviewerState {
   decision: ReviewDecision | "pending"
 }
 
-export interface ChangedFile {
-  path: string
-  additions?: number
-  deletions?: number
-}
-
 export interface ReviewThreadView {
   id: string
   author: string
@@ -47,6 +40,8 @@ export interface ActivityEventView {
   occurredAtIso: string
   isNew: boolean
   detail?: string
+  url?: string
+  diffUrl?: string
 }
 
 export interface ReviewQueueItemView {
@@ -54,7 +49,9 @@ export interface ReviewQueueItemView {
   repository: string
   number: number
   title: string
+  description?: string
   authorLogin: string
+  authorAvatarUrl?: string
   url: string
   workflowState: WorkflowState
   laneId: ReviewLaneId | "approved" | "caught_up" | "watching" | "stale"
@@ -72,7 +69,6 @@ export interface ReviewQueueItemView {
   newReplyCount: number
   unresolvedThreadCount: number
   totalThreadCount: number
-  changedFilesSinceLastSeen: ChangedFile[]
   reviewThreads: ReviewThreadView[]
   activityEvents: ActivityEventView[]
   isPinned: boolean
@@ -148,11 +144,8 @@ export function toReviewQueueItemView(
     .sort((a, b) => Date.parse(b.submittedAt) - Date.parse(a.submittedAt))
   const latestViewerReview = viewerReviews[0]
   const authorLogin = actorLogin(actorById, pullRequest.authorId)
+  const authorAvatarUrl = actorById.get(pullRequest.authorId)?.avatarUrl
   const waitingOn = getWaitingOn(item.workflowState)
-  const changedFilesSinceLastSeen = buildChangedFilesSinceLastSeen(
-    pullRequest.changedFiles,
-    lastSeenAt
-  )
   const lastMeaningfulAt =
     latestNewActivity?.occurredAt ??
     latestViewerReview?.submittedAt ??
@@ -163,7 +156,9 @@ export function toReviewQueueItemView(
     repository: pullRequest.repository,
     number: pullRequest.number,
     title: pullRequest.title,
+    description: pullRequest.description,
     authorLogin,
+    authorAvatarUrl,
     url: pullRequest.url,
     workflowState: item.workflowState,
     laneId: getLaneId(item.workflowState),
@@ -186,7 +181,6 @@ export function toReviewQueueItemView(
     unresolvedThreadCount: pullRequest.threads.filter((thread) => !thread.isResolved)
       .length,
     totalThreadCount: pullRequest.threads.length,
-    changedFilesSinceLastSeen,
     reviewThreads: pullRequest.threads.map((thread) => ({
       id: thread.id,
       author: thread.participantIds
@@ -205,21 +199,6 @@ export function toReviewQueueItemView(
     isPinned: false,
     isMuted: item.workflowState === "watching",
   }
-}
-
-function buildChangedFilesSinceLastSeen(
-  changedFiles: PullRequestChangedFile[] | undefined,
-  lastSeenAt: string | undefined
-): ChangedFile[] {
-  if (!changedFiles?.length) return []
-
-  return changedFiles
-    .filter((file) => !file.changedAt || isNewerThan(file.changedAt, lastSeenAt))
-    .map((file) => ({
-      path: file.path,
-      additions: file.additions,
-      deletions: file.deletions,
-    }))
 }
 
 export function actorLogin(
@@ -330,6 +309,8 @@ function toActivityEventView(
     occurredAtIso: event.occurredAt,
     isNew: isNewerThan(event.occurredAt, lastSeenAt),
     detail: event.body,
+    url: event.url,
+    diffUrl: event.diffUrl,
   }
 }
 

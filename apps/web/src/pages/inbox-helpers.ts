@@ -92,6 +92,7 @@ function buildSearchTextForItem(item: ReviewQueueItemView): string {
   return normalizeSearchText(
     [
       item.title,
+      item.description ?? "",
       item.repository,
       `#${item.number}`,
       String(item.number),
@@ -105,7 +106,6 @@ function buildSearchTextForItem(item: ReviewQueueItemView): string {
         event.detail ?? "",
       ]),
       ...item.reviewThreads.map((thread) => thread.excerpt),
-      ...item.changedFilesSinceLastSeen.map((file) => file.path),
     ].join(" ")
   )
 }

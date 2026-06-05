@@ -95,27 +95,6 @@ describe("reviewer view model", () => {
     })
   })
 
-  it("exposes files touched since the reviewer last looked", () => {
-    const view = buildInboxView(buildSampleInbox())
-
-    const updatedAfterApproval = view.items.find((item) => item.id === "pr_2")
-    const waitingOnAuthor = view.items.find((item) => item.id === "pr_3")
-
-    expect(updatedAfterApproval?.changedFilesSinceLastSeen).toEqual([
-      {
-        path: "apps/web/src/reviewer/local-queue-state.ts",
-        additions: 54,
-        deletions: 8,
-      },
-      {
-        path: "apps/web/src/pages/InboxPage.tsx",
-        additions: 31,
-        deletions: 12,
-      },
-    ])
-    expect(waitingOnAuthor?.changedFilesSinceLastSeen).toEqual([])
-  })
-
   it("normalizes activity text without duplicating the actor", () => {
     const view = buildInboxView(buildSampleInbox())
 
@@ -126,6 +105,52 @@ describe("reviewer view model", () => {
       actor: "maya",
       action: "requested your review",
       isNew: true,
+    })
+  })
+
+  it("maps author avatar URLs into queue rows", () => {
+    const view = toReviewQueueItemView(
+      {
+        workflowState: "needs_review",
+        reason: "You are requested as a reviewer.",
+        unseenActivityCount: 0,
+        pullRequest: {
+          id: "pr_avatar",
+          repository: "acme/api",
+          number: 145,
+          title: "Show author avatars",
+          description: "Adds avatars beside each pull request author.",
+          url: "https://github.com/acme/api/pull/145",
+          authorId: "maya",
+          state: "open",
+          isDraft: false,
+          createdAt: "2026-05-30T08:00:00.000Z",
+          updatedAt: "2026-06-02T11:00:00.000Z",
+          latestCommitSha: "c3",
+          requestedReviewerIds: [],
+          reviews: [],
+          threads: [],
+          activity: [],
+        },
+      },
+      new Map([
+        ["viewer", { id: "viewer", login: "you" }],
+        [
+          "maya",
+          {
+            id: "maya",
+            login: "maya",
+            avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
+          },
+        ],
+      ]),
+      "viewer"
+    )
+
+    expect(view).toMatchObject({
+      authorLogin: "maya",
+      authorAvatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
+      description: "Adds avatars beside each pull request author.",
     })
   })
 
@@ -181,6 +206,56 @@ describe("reviewer view model", () => {
     )
 
     expect(view.waitingAge).toBe("1h")
+  })
+
+  it("maps pull request activity links into activity event views", () => {
+    const actorById = new Map([
+      ["viewer", { id: "viewer", login: "you" }],
+      ["maya", { id: "maya", login: "maya" }],
+    ])
+    const view = toReviewQueueItemView(
+      {
+        workflowState: "needs_review",
+        reason: "You are requested as a reviewer.",
+        lastSeenAt: "2026-06-01T08:00:00.000Z",
+        unseenActivityCount: 1,
+        pullRequest: {
+          id: "pr_linked_activity",
+          repository: "acme/api",
+          number: 146,
+          title: "Link update activity",
+          url: "https://github.com/acme/api/pull/146",
+          authorId: "maya",
+          state: "open",
+          isDraft: false,
+          createdAt: "2026-05-30T08:00:00.000Z",
+          updatedAt: "2026-06-02T11:00:00.000Z",
+          latestCommitSha: "c3",
+          requestedReviewerIds: ["viewer"],
+          reviews: [],
+          threads: [],
+          activity: [
+            {
+              id: "updated",
+              type: "pull_request",
+              actorId: "maya",
+              occurredAt: "2026-06-02T11:00:00.000Z",
+              title: "maya updated this pull request",
+              url: "https://github.com/acme/api/pull/146",
+              diffUrl: "https://github.com/acme/api/pull/146/files",
+            },
+          ],
+        },
+      },
+      actorById,
+      "viewer"
+    )
+
+    expect(view.activityEvents[0]).toMatchObject({
+      action: "updated this pull request",
+      url: "https://github.com/acme/api/pull/146",
+      diffUrl: "https://github.com/acme/api/pull/146/files",
+    })
   })
 
   it("keeps the latest review decision for other reviewers", () => {

@@ -31,35 +31,14 @@ describe("api app", () => {
       items: Array<{
         pullRequest: {
           id: string;
-          changedFiles?: Array<{
-            path: string;
-            additions?: number;
-            deletions?: number;
-            changedAt?: string;
-          }>;
         };
       }>;
       sections: { needs_review: unknown[] };
     };
-    const changedAfterReview = body.items.find((item) => item.pullRequest.id === "pr_2");
 
     expect(response.status).toBe(200);
     expect(body.items).toHaveLength(3);
     expect(body.sections.needs_review).toHaveLength(1);
-    expect(changedAfterReview?.pullRequest.changedFiles).toEqual([
-      {
-        path: "apps/web/src/reviewer/local-queue-state.ts",
-        additions: 54,
-        deletions: 8,
-        changedAt: "2026-06-01T09:12:00.000Z"
-      },
-      {
-        path: "apps/web/src/pages/InboxPage.tsx",
-        additions: 31,
-        deletions: 12,
-        changedAt: "2026-06-01T09:12:00.000Z"
-      }
-    ]);
   });
 
   it("serves pull request detail", async () => {
@@ -201,6 +180,32 @@ describe("api app", () => {
     expect(statusBody).toEqual(saveBody);
   });
 
+  it("passes reviewer inbox GitHub search query overrides through the repository boundary", async () => {
+    let seenSearchQuery: string | undefined;
+    const app = createApp({
+      repository: {
+        async getReviewerInbox(now, options) {
+          seenSearchQuery = options?.githubSearchQuery;
+          return createSampleRepository().getReviewerInbox(now);
+        },
+        async getPullRequest() {
+          return undefined;
+        },
+        async markSeen() {
+          return undefined;
+        }
+      },
+      webhookSink: createMemoryWebhookSink()
+    });
+
+    const response = await app.request(
+      "/api/reviewer-inbox?githubSearchQuery=is%3Aopen%20assignee%3A%40me"
+    );
+
+    expect(response.status).toBe(200);
+    expect(seenSearchQuery).toBe("is:open assignee:@me");
+  });
+
   it("serves reviewer inbox data from a live GitHub source", async () => {
     const app = createApp({
       repository: createGithubLiveRepository({
@@ -215,23 +220,20 @@ describe("api app", () => {
                 pull_request: {
                   number: 42,
                   title: "Ship reviewer inbox",
+                  body: "Adds the reviewer inbox surface for local use.",
                   html_url: "https://github.com/acme/web/pull/42",
                   state: "open",
                   draft: false,
                   created_at: "2026-06-01T08:00:00.000Z",
                   updated_at: "2026-06-01T09:00:00.000Z",
-                  user: { login: "author" },
+                  user: {
+                    login: "author",
+                    avatar_url: "https://avatars.githubusercontent.com/u/1?v=4"
+                  },
                   head: { sha: "head-sha" },
                   requested_reviewers: [{ login: "viewer" }]
                 },
-                reviews: [],
-                changed_files: [
-                  {
-                    filename: "apps/web/src/pages/InboxPage.tsx",
-                    additions: 12,
-                    deletions: 4
-                  }
-                ]
+                reviews: []
               }
             ];
           }
@@ -243,12 +245,14 @@ describe("api app", () => {
     const response = await app.request("/api/reviewer-inbox");
     const body = (await response.json()) as {
       viewer: { login: string };
+      actors: Array<{ login: string; avatarUrl?: string }>;
       items: Array<{
         workflowState: string;
         pullRequest: {
           id: string;
           repository: string;
-          changedFiles?: Array<{ path: string; additions?: number; deletions?: number }>;
+          description?: string;
+          activity: Array<{ title: string; url?: string; diffUrl?: string }>;
         };
       }>;
       sections: { needs_review: unknown[] };
@@ -256,19 +260,24 @@ describe("api app", () => {
 
     expect(response.status).toBe(200);
     expect(body.viewer.login).toBe("viewer");
+    expect(body.actors.find((actor) => actor.login === "author")).toMatchObject({
+      login: "author",
+      avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4"
+    });
     expect(body.items).toHaveLength(1);
     expect(body.items[0]).toMatchObject({
       workflowState: "needs_review",
       pullRequest: {
         id: "github:acme~web:42",
         repository: "acme/web",
-        changedFiles: [
-          {
-            path: "apps/web/src/pages/InboxPage.tsx",
-            additions: 12,
-            deletions: 4
-          }
-        ]
+        description: "Adds the reviewer inbox surface for local use.",
+        activity: expect.arrayContaining([
+          expect.objectContaining({
+            title: "author updated this pull request",
+            url: "https://github.com/acme/web/pull/42",
+            diffUrl: "https://github.com/acme/web/pull/42/files"
+          })
+        ])
       }
     });
     expect(body.sections.needs_review).toHaveLength(1);
@@ -336,6 +345,58 @@ describe("api app", () => {
       pullRequest: { id: "github:acme~api:7" },
       workflowState: "caught_up",
       unseenActivityCount: 0
+    });
+  });
+
+  it("serves live GitHub pull request details by encoded pull request id", async () => {
+    const app = createApp({
+      repository: createGithubLiveRepository({
+        viewerLogin: "viewer",
+        source: {
+          async listPullRequests() {
+            return [];
+          },
+          async getPullRequest(input) {
+            expect(input).toEqual({ repository: "acme/api", number: 7 });
+            return {
+              repository: { full_name: "acme/api" },
+              pull_request: {
+                number: 7,
+                title: "Handle requested changes",
+                body: "Explains why the requested changes matter.",
+                html_url: "https://github.com/acme/api/pull/7",
+                state: "open",
+                draft: false,
+                created_at: "2026-06-01T08:00:00.000Z",
+                updated_at: "2026-06-01T09:00:00.000Z",
+                user: { login: "author" },
+                head: { sha: "new-sha" },
+                requested_reviewers: ["viewer"].map((login) => ({ login }))
+              },
+              reviews: []
+            };
+          }
+        }
+      }),
+      webhookSink: createMemoryWebhookSink()
+    });
+
+    const response = await app.request(
+      "/api/pull-requests/github:acme~api:7"
+    );
+    const body = (await response.json()) as {
+      item: {
+        pullRequest: {
+          id: string;
+          description?: string;
+        };
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.item.pullRequest).toMatchObject({
+      id: "github:acme~api:7",
+      description: "Explains why the requested changes matter."
     });
   });
 

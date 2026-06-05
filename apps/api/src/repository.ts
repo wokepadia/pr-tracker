@@ -16,8 +16,12 @@ export interface PullRequestDetail {
   item: ClassifiedPullRequest;
 }
 
+export interface ReviewerInboxOptions {
+  githubSearchQuery?: string;
+}
+
 export interface ReviewerInboxRepository {
-  getReviewerInbox(now: string): Promise<ReviewerInbox>;
+  getReviewerInbox(now: string, options?: ReviewerInboxOptions): Promise<ReviewerInbox>;
   getPullRequest(id: string): Promise<PullRequestDetail | undefined>;
   markSeen(input: {
     pullRequestId: string;

@@ -65,7 +65,8 @@ function createLocalSettingsRepository(
           apiBaseUrl: credentials.apiBaseUrl,
           closedLookbackDays: parsePositiveInteger(
             env.GITHUB_CLOSED_LOOKBACK_DAYS
-          )
+          ),
+          maxPullRequests: parsePositiveInteger(env.GITHUB_MAX_PULL_REQUESTS)
         })
       };
     }
@@ -74,8 +75,8 @@ function createLocalSettingsRepository(
   }
 
   return {
-    async getReviewerInbox(now) {
-      return (await getRepository()).getReviewerInbox(now);
+    async getReviewerInbox(now, options) {
+      return (await getRepository()).getReviewerInbox(now, options);
     },
 
     async getPullRequest(id) {

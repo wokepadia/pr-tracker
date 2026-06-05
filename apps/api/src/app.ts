@@ -97,12 +97,44 @@ export function createApp(options?: {
   });
 
   app.get("/api/reviewer-inbox", async (c) => {
-    return c.json(await repository.getReviewerInbox(new Date().toISOString()));
+    try {
+      const rawGithubSearchQuery = c.req.query("githubSearchQuery");
+      const githubSearchQuery = rawGithubSearchQuery?.trim();
+      return c.json(
+        await repository.getReviewerInbox(new Date().toISOString(), {
+          githubSearchQuery: githubSearchQuery || undefined
+        })
+      );
+    } catch (error) {
+      return c.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to load reviewer inbox."
+        },
+        502
+      );
+    }
   });
 
   app.get("/api/pull-requests/:id", async (c) => {
     const id = c.req.param("id");
-    const detail = await repository.getPullRequest(id);
+    let detail: Awaited<ReturnType<ReviewerInboxRepository["getPullRequest"]>>;
+
+    try {
+      detail = await repository.getPullRequest(id);
+    } catch (error) {
+      return c.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to load pull request."
+        },
+        502
+      );
+    }
 
     if (!detail) {
       return c.json({ error: "Pull request not found." }, 404);

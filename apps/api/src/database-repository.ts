@@ -3,7 +3,6 @@ import { createOrm } from "@pr-tracker/db";
 import type {
   Actor,
   PullRequestActivity,
-  PullRequestChangedFile,
   PullRequestItem,
   ReviewDecision,
   ReviewDecisionEvent,
@@ -213,6 +212,7 @@ async function loadPullRequests(
         repository: row.repository,
         number: row.number,
         title: row.title,
+        description: descriptionFromRawPayload(row.raw_payload),
         url: row.url,
         authorId: row.author_login,
         state: row.state as PullRequestItem["state"],
@@ -223,11 +223,28 @@ async function loadPullRequests(
         requestedReviewerIds: reviewerRows.map((reviewer) => reviewer.reviewer_login),
         reviews: reviewRows.map(toReview),
         threads: threadRows.map(toThread),
-        activity: activityRows.map(toActivity),
-        changedFiles: toChangedFiles(row.raw_payload)
+        activity: activityRows.map((activityRow) => toActivity(activityRow, row.url))
       };
     })
   );
+}
+
+function descriptionFromRawPayload(rawPayload: unknown): string | undefined {
+  if (
+    typeof rawPayload !== "object" ||
+    rawPayload === null ||
+    !("body" in rawPayload)
+  ) {
+    return undefined;
+  }
+
+  const body = (rawPayload as { body?: unknown }).body;
+  if (typeof body !== "string") {
+    return undefined;
+  }
+
+  const trimmed = body.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 async function loadLastSeen(
@@ -305,68 +322,19 @@ function toThread(row: ThreadRow): ReviewThread {
   };
 }
 
-function toActivity(row: ActivityRow): PullRequestActivity {
+function toActivity(row: ActivityRow, pullRequestUrl: string): PullRequestActivity {
+  const hasDiff = row.event_type === "pull_request" || row.event_type === "commit";
+
   return {
     id: row.id,
     type: row.event_type,
     actorId: row.actor_login,
     occurredAt: toIso(row.occurred_at),
     title: row.title,
-    body: row.body ?? undefined
+    body: row.body ?? undefined,
+    url: hasDiff ? pullRequestUrl : undefined,
+    diffUrl: hasDiff ? `${pullRequestUrl}/files` : undefined
   };
-}
-
-function toChangedFiles(rawPayload: unknown): PullRequestChangedFile[] | undefined {
-  const payload =
-    typeof rawPayload === "string" ? parseJson(rawPayload) : rawPayload;
-
-  if (!isObject(payload)) {
-    return undefined;
-  }
-
-  const changedFiles = Array.isArray(payload.changedFiles)
-    ? payload.changedFiles
-    : Array.isArray(payload.changed_files)
-      ? payload.changed_files
-      : undefined;
-
-  if (!changedFiles) {
-    return undefined;
-  }
-
-  return changedFiles.flatMap((file) => {
-    if (!isObject(file)) return [];
-
-    const path = stringProperty(file, "path") ?? stringProperty(file, "filename");
-    if (!path) return [];
-
-    return {
-      path,
-      additions: typeof file.additions === "number" ? file.additions : undefined,
-      deletions: typeof file.deletions === "number" ? file.deletions : undefined,
-      changedAt: typeof file.changedAt === "string" ? file.changedAt : undefined
-    };
-  });
-}
-
-function stringProperty(
-  value: Record<string, unknown>,
-  property: string
-): string | undefined {
-  const propertyValue = value[property];
-  return typeof propertyValue === "string" ? propertyValue : undefined;
-}
-
-function parseJson(value: string): unknown {
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    return undefined;
-  }
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function toIso(value: Date | string): string {

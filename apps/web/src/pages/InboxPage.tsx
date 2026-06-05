@@ -8,6 +8,7 @@ import {
   useMemo,
   useState,
   type ComponentType,
+  type FormEvent,
   type ReactNode,
 } from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
@@ -27,6 +28,7 @@ import {
   GitCommitHorizontal,
   GitPullRequest,
   Inbox,
+  LoaderCircle,
   MessageSquareText,
   PanelRight,
   Pin,
@@ -35,13 +37,18 @@ import {
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ActivityEventLine } from "@/components/ActivityEventLine"
 import { Input } from "@/components/ui/input"
 import { Kbd } from "@/components/ui/kbd"
+import { MarkdownContent } from "@/components/MarkdownContent"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { getReviewerInbox, markPullRequestSeen } from "@/api"
+import {
+  getReviewerInbox,
+  markPullRequestSeen,
+} from "@/api"
 import { formatCount } from "@/lib/copy"
-import { cn } from "@/lib/utils"
+import { cn, externalLinkProps, openExternalLink } from "@/lib/utils"
 import {
   buildInboxView,
   canMarkReviewItemCaughtUp,
@@ -76,12 +83,29 @@ const REVIEW_SPLIT_HANDLE_WIDTH = 8
 const REVIEW_WORKSPACE_MIN_WIDTH =
   REVIEW_QUEUE_MIN_WIDTH + QUICK_PEEK_MIN_WIDTH + REVIEW_SPLIT_HANDLE_WIDTH
 const REVIEW_SIDEBAR_WIDTH = 212
+const INBOX_LOADING_STEP_INTERVAL_MS = 1050
+const githubReviewQueryStorageKey = "pr-tracker:github-review-query:v1"
+
+function loadStoredGithubReviewQuery(): string {
+  if (typeof window === "undefined") return ""
+  return window.localStorage.getItem(githubReviewQueryStorageKey) ?? ""
+}
+
+function saveStoredGithubReviewQuery(query: string): void {
+  window.localStorage.setItem(githubReviewQueryStorageKey, query)
+}
 
 interface LaneDefinition {
   id: LaneId
   label: string
   tone: "hot" | "changed" | "waiting" | "success" | "quiet"
   description?: string
+}
+
+interface InboxLoadingStep {
+  label: string
+  detail: string
+  progress: string
 }
 
 interface QueueGroupDefinition {
@@ -164,12 +188,61 @@ const sidebarBucketLabels: Record<LaneId, string> = {
   watching: "Watching / stale",
 }
 
+const inboxLoadingSteps: InboxLoadingStep[] = [
+  {
+    label: "Opening inbox request",
+    detail: "Calling the local reviewer inbox endpoint.",
+    progress: "Requesting /api/reviewer-inbox",
+  },
+  {
+    label: "Checking GitHub source",
+    detail: "Reading the configured token, viewer login, and repository scope.",
+    progress: "Resolving local GitHub settings",
+  },
+  {
+    label: "Identifying reviewer",
+    detail: "Confirming which GitHub user the queue should be computed for.",
+    progress: "Matching PR facts to the current reviewer",
+  },
+  {
+    label: "Collecting pull requests",
+    detail: "Scanning configured repositories for open reviewable PRs.",
+    progress: "Fetching active pull request metadata",
+  },
+  {
+    label: "Reading review history",
+    detail: "Loading review decisions, comments, threads, commits, and changed files.",
+    progress: "Fetching per-PR review activity",
+  },
+  {
+    label: "Normalizing activity",
+    detail: "Turning GitHub events into deterministic reviewer activity records.",
+    progress: "Building ordered activity events",
+  },
+  {
+    label: "Classifying queue state",
+    detail: "Computing needs review, changed since, waiting, approved, and watching lanes.",
+    progress: "Applying reviewer workflow rules",
+  },
+  {
+    label: "Preparing workspace",
+    detail: "Arranging lanes, quick peek context, and the initial keyboard selection.",
+    progress: "Rendering the review inbox",
+  },
+]
+
 export function InboxPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [githubSearchQueryDraft, setGithubSearchQueryDraft] = useState(() =>
+    loadStoredGithubReviewQuery()
+  )
+  const [appliedGithubSearchQuery, setAppliedGithubSearchQuery] =
+    useState<string | undefined>(() => loadStoredGithubReviewQuery() || undefined)
   const inboxQuery = useQuery({
-    queryKey: ["reviewer-inbox"],
-    queryFn: getReviewerInbox,
+    queryKey: ["reviewer-inbox", appliedGithubSearchQuery ?? ""],
+    queryFn: () =>
+      getReviewerInbox({ githubSearchQuery: appliedGithubSearchQuery }),
   })
   const markSeenMutation = useMutation({
     mutationFn: markPullRequestSeen,
@@ -451,7 +524,7 @@ export function InboxPage() {
 
   function openSelectedGitHub() {
     if (!selectedItem) return
-    window.open(selectedItem.url, "_blank", "noreferrer")
+    openExternalLink(selectedItem.url)
   }
 
   function focusHome() {
@@ -486,6 +559,20 @@ export function InboxPage() {
     if (searchedMutedItems.length === 0) return
     setGroupMode("muted")
     setSelectedId(searchedMutedItems[0]?.id ?? "")
+  }
+
+  function applyGithubSearchQuery(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const nextQuery = githubSearchQueryDraft.trim()
+    setGithubSearchQueryDraft(nextQuery)
+    setAppliedGithubSearchQuery(nextQuery || undefined)
+    saveStoredGithubReviewQuery(nextQuery)
+  }
+
+  function resetGithubSearchQuery() {
+    setGithubSearchQueryDraft("")
+    setAppliedGithubSearchQuery(undefined)
+    saveStoredGithubReviewQuery("")
   }
 
   useEffect(() => {
@@ -583,14 +670,18 @@ export function InboxPage() {
   ])
 
   if (inboxQuery.isLoading) {
-    return <InboxStatusPanel title="Loading review inbox" />
+    return <InboxLoadingScreen />
   }
 
   if (inboxQuery.isError || !inboxView) {
     return (
       <InboxStatusPanel
         title="Could not load review inbox"
-        detail="The API is not reachable. Start the full app with the API server, then reload."
+        detail={
+          inboxQuery.error instanceof Error
+            ? inboxQuery.error.message
+            : "The API is not reachable. Start the full app with the API server, then reload."
+        }
       />
     )
   }
@@ -639,7 +730,12 @@ export function InboxPage() {
                 activeCount={searchedActiveItems.length}
                 searchQuery={searchQuery}
                 syncLabel={formatSyncLabel(inboxQuery.dataUpdatedAt)}
+                githubSearchQuery={githubSearchQueryDraft}
+                isGithubSearchPending={inboxQuery.isFetching}
                 onGroupModeChange={setGroupMode}
+                onGithubSearchQueryChange={setGithubSearchQueryDraft}
+                onGithubSearchQueryReset={resetGithubSearchQuery}
+                onGithubSearchQuerySubmit={applyGithubSearchQuery}
                 onSearchQueryChange={setSearchQuery}
               />
               <div className="min-h-0 flex-1 overflow-y-auto pt-2 pb-7">
@@ -735,6 +831,329 @@ export function InboxPage() {
         </ResizablePanelGroup>
       </section>
     </div>
+  )
+}
+
+function useInboxLoadingProgress(): {
+  activeStepIndex: number
+  elapsedSeconds: number
+} {
+  const [elapsedMs, setElapsedMs] = useState(0)
+
+  useEffect(() => {
+    const startedAt = Date.now()
+    const timer = globalThis.setInterval(() => {
+      setElapsedMs(Date.now() - startedAt)
+    }, 250)
+
+    return () => globalThis.clearInterval(timer)
+  }, [])
+
+  return {
+    activeStepIndex: Math.min(
+      inboxLoadingSteps.length - 1,
+      Math.floor(elapsedMs / INBOX_LOADING_STEP_INTERVAL_MS)
+    ),
+    elapsedSeconds: Math.floor(elapsedMs / 1000),
+  }
+}
+
+function InboxLoadingScreen() {
+  const { activeStepIndex, elapsedSeconds } = useInboxLoadingProgress()
+  const activeStep = inboxLoadingSteps[activeStepIndex] ?? inboxLoadingSteps[0]!
+  const slowRequest = elapsedSeconds >= 8
+
+  return (
+    <div
+      className="grid min-h-[calc(100vh-48px)] overflow-x-auto bg-background"
+      style={{
+        gridTemplateColumns: `${REVIEW_SIDEBAR_WIDTH}px minmax(${REVIEW_WORKSPACE_MIN_WIDTH}px, 1fr)`,
+      }}
+    >
+      <LoadingSidebar />
+
+      <section
+        className="min-w-0 bg-background"
+        style={{ minWidth: REVIEW_WORKSPACE_MIN_WIDTH }}
+      >
+        <div className="flex min-h-[calc(100vh-48px)] min-w-0">
+          <div
+            className="flex min-w-0 flex-col border-r border-border"
+            style={{ width: `calc(58% - ${REVIEW_SPLIT_HANDLE_WIDTH / 2}px)` }}
+          >
+            <div className="flex h-[73px] items-center gap-4 border-b border-border px-5">
+              <div className="min-w-0 flex-1">
+                <div className="mb-2 h-4 w-40 rounded-sm bg-foreground/12" />
+                <div className="h-3 w-64 rounded-sm bg-muted" />
+              </div>
+              <div className="h-8 w-52 rounded-md border border-border bg-muted/40" />
+              <div className="h-8 w-36 rounded-md border border-border bg-muted/40" />
+            </div>
+
+            <div className="border-b border-border px-5 py-3">
+              <div className="flex items-center gap-2">
+                {["Needs you", "Changed since", "Waiting", "Approved"].map(
+                  (label, index) => (
+                    <div
+                      key={label}
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-xs",
+                        index === 0
+                          ? "border-amber-200 bg-amber-50 text-amber-800"
+                          : "border-border bg-muted/30 text-muted-foreground"
+                      )}
+                    >
+                      {label}
+                    </div>
+                  )
+                )}
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-hidden pt-2">
+              <LoadingQueueLane
+                label="Needs your review"
+                count="--"
+                tone="hot"
+                rows={3}
+              />
+              <LoadingQueueLane
+                label="Changed since you last looked"
+                count="--"
+                tone="changed"
+                rows={3}
+              />
+              <LoadingQueueLane
+                label="Waiting on author"
+                count="--"
+                tone="waiting"
+                rows={2}
+              />
+            </div>
+          </div>
+
+          <div className="w-2 bg-background">
+            <div className="mx-auto h-full w-px bg-border" />
+          </div>
+
+          <div
+            className="min-w-0 flex-1 bg-muted/20"
+            style={{ minWidth: QUICK_PEEK_MIN_WIDTH }}
+          >
+            <div className="flex h-full min-h-[calc(100vh-48px)] flex-col">
+              <div className="border-b border-border px-5 py-5" aria-live="polite">
+                <div className="mb-4 flex items-center gap-3">
+                  <div className="relative flex h-9 w-9 flex-none items-center justify-center rounded-full bg-foreground text-background">
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    <span className="absolute inset-0 rounded-full ring-4 ring-foreground/10" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-mono text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                      {activeStep.progress}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Waiting {elapsedSeconds}s for the reviewer inbox response
+                    </div>
+                  </div>
+                </div>
+                <h1 className="text-xl font-semibold tracking-tight text-foreground">
+                  {activeStep.label}
+                </h1>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+                  {activeStep.detail}
+                </p>
+                <div className="mt-5 h-1 overflow-hidden rounded-full bg-border">
+                  <div
+                    className="h-full w-1/3 animate-pulse rounded-full bg-foreground"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-6 px-5 py-5">
+                <div>
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="font-mono text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                      Request progress
+                    </div>
+                    <div className="font-mono text-xs text-muted-foreground">
+                      local API · pending
+                    </div>
+                  </div>
+                  <ol className="space-y-1">
+                    {inboxLoadingSteps.map((step, index) => (
+                      <LoadingStepRow
+                        key={step.label}
+                        step={step}
+                        state={
+                          index < activeStepIndex
+                            ? "done"
+                            : index === activeStepIndex
+                              ? "active"
+                              : "pending"
+                        }
+                      />
+                    ))}
+                  </ol>
+                </div>
+
+                <div className="border-l-2 border-border pl-4 text-sm leading-6 text-muted-foreground">
+                  {slowRequest
+                    ? "Still waiting on GitHub/API data. Larger repositories can spend most of the first load on per-PR reviews and changed-file metadata."
+                    : "Keeping the main inbox request open while the API resolves source data and builds deterministic queue classifications."}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function LoadingSidebar() {
+  return (
+    <aside className="flex min-h-[calc(100vh-48px)] flex-col border-r border-border bg-sidebar px-3 py-4 text-sidebar-foreground">
+      <div className="mb-4 flex items-center gap-2 px-2 py-1">
+        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-foreground text-[11px] font-semibold text-background">
+          PR
+        </div>
+        <div className="h-3 w-24 rounded-sm bg-sidebar-foreground/20" />
+      </div>
+      <div className="space-y-5">
+        <LoadingSidebarSection rows={5} />
+        <LoadingSidebarSection rows={4} />
+      </div>
+      <div className="mt-auto hidden rounded-md border border-sidebar-border bg-sidebar-accent/45 p-3 sm:block">
+        <div className="mb-2 h-2.5 w-28 rounded-sm bg-sidebar-foreground/15" />
+        <div className="h-2.5 w-full rounded-sm bg-sidebar-foreground/10" />
+      </div>
+    </aside>
+  )
+}
+
+function LoadingSidebarSection({ rows }: { rows: number }) {
+  return (
+    <div>
+      <div className="mb-2 h-2.5 w-20 rounded-sm bg-sidebar-foreground/15 px-2" />
+      <div className="space-y-1">
+        {Array.from({ length: rows }, (_, index) => (
+          <div
+            key={index}
+            className="flex items-center gap-2 rounded-md px-2 py-2"
+          >
+            <div className="h-2 w-2 rounded-full bg-sidebar-foreground/20" />
+            <div className="h-2.5 flex-1 rounded-sm bg-sidebar-foreground/12" />
+            <div className="h-2.5 w-5 rounded-sm bg-sidebar-foreground/10" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function LoadingQueueLane({
+  label,
+  count,
+  tone,
+  rows,
+}: {
+  label: string
+  count: string
+  tone: LaneDefinition["tone"]
+  rows: number
+}) {
+  return (
+    <section className="border-b border-border">
+      <div className="flex items-center gap-3 px-5 py-3">
+        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className={cn("h-2 w-2 rounded-full", laneToneClasses[tone])} />
+        <div className="font-mono text-xs uppercase tracking-[0.12em] text-muted-foreground">
+          {label}
+        </div>
+        <Badge variant="outline" className="ml-auto font-mono text-[11px]">
+          {count}
+        </Badge>
+      </div>
+      <div>
+        {Array.from({ length: rows }, (_, index) => (
+          <LoadingQueueRow key={index} tone={tone} />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function LoadingQueueRow({ tone }: { tone: LaneDefinition["tone"] }) {
+  return (
+    <div className="relative flex items-center gap-4 border-t border-border px-5 py-4">
+      <span className={cn("absolute inset-y-0 left-0 w-0.5", laneToneClasses[tone])} />
+      <div className="h-8 w-8 rounded-full border border-border bg-muted" />
+      <div className="min-w-0 flex-1 space-y-2">
+        <div className="h-3.5 w-3/5 rounded-sm bg-foreground/12" />
+        <div className="flex gap-2">
+          <div className="h-2.5 w-24 rounded-sm bg-muted" />
+          <div className="h-2.5 w-14 rounded-sm bg-muted" />
+          <div className="h-2.5 w-28 rounded-sm bg-muted" />
+        </div>
+      </div>
+      <div className="hidden w-24 space-y-2 lg:block">
+        <div className="ml-auto h-3 w-14 rounded-sm bg-foreground/10" />
+        <div className="ml-auto h-2.5 w-20 rounded-sm bg-muted" />
+      </div>
+      <div className="hidden gap-1 xl:flex">
+        <div className="h-7 w-7 rounded-md border border-border bg-muted/40" />
+        <div className="h-7 w-7 rounded-md border border-border bg-muted/40" />
+      </div>
+    </div>
+  )
+}
+
+function LoadingStepRow({
+  step,
+  state,
+}: {
+  step: InboxLoadingStep
+  state: "done" | "active" | "pending"
+}) {
+  return (
+    <li
+      className={cn(
+        "flex gap-3 rounded-md px-2 py-2.5 transition-colors",
+        state === "active" && "bg-background",
+        state === "done" && "text-foreground",
+        state === "pending" && "text-muted-foreground"
+      )}
+    >
+      <div
+        className={cn(
+          "mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full border",
+          state === "done" && "border-emerald-200 bg-emerald-50 text-emerald-700",
+          state === "active" && "border-foreground bg-foreground text-background",
+          state === "pending" && "border-border bg-muted/30 text-muted-foreground"
+        )}
+      >
+        {state === "done" ? (
+          <Check className="h-3 w-3" />
+        ) : state === "active" ? (
+          <LoaderCircle className="h-3 w-3 animate-spin" />
+        ) : (
+          <span className="h-1.5 w-1.5 rounded-full bg-current opacity-50" />
+        )}
+      </div>
+      <div className="min-w-0">
+        <div
+          className={cn(
+            "text-sm font-medium",
+            state === "pending" ? "text-muted-foreground" : "text-foreground"
+          )}
+        >
+          {step.label}
+        </div>
+        <div className="mt-1 text-xs leading-5 text-muted-foreground">
+          {step.detail}
+        </div>
+      </div>
+    </li>
   )
 }
 
@@ -989,18 +1408,65 @@ function InboxHeader({
   activeCount,
   searchQuery,
   syncLabel,
+  githubSearchQuery,
+  isGithubSearchPending,
   onGroupModeChange,
+  onGithubSearchQueryChange,
+  onGithubSearchQueryReset,
+  onGithubSearchQuerySubmit,
   onSearchQueryChange,
 }: {
   groupMode: QueueGroupMode
   activeCount: number
   searchQuery: string
   syncLabel: string
+  githubSearchQuery: string
+  isGithubSearchPending: boolean
   onGroupModeChange: (mode: QueueGroupMode) => void
+  onGithubSearchQueryChange: (query: string) => void
+  onGithubSearchQueryReset: () => void
+  onGithubSearchQuerySubmit: (event: FormEvent<HTMLFormElement>) => void
   onSearchQueryChange: (query: string) => void
 }) {
   return (
     <div className="grid gap-3 border-b border-border bg-white px-5 py-4">
+      <form
+        className="flex min-w-0 items-center gap-2"
+        onSubmit={onGithubSearchQuerySubmit}
+      >
+        <div className="relative min-w-0 flex-1">
+          <Input
+            id="github-review-query"
+            type="search"
+            value={githubSearchQuery}
+            onChange={(event) => onGithubSearchQueryChange(event.target.value)}
+            placeholder="is:open user-review-requested:@me"
+            className="h-8 rounded-lg bg-background pr-3 pl-8 font-mono text-[13px]"
+            aria-label="GitHub review search query"
+          />
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        </div>
+        <Button
+          type="submit"
+          size="sm"
+          variant="outline"
+          disabled={isGithubSearchPending}
+          className="h-8"
+        >
+          Apply
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          disabled={githubSearchQuery.trim().length === 0 || isGithubSearchPending}
+          onClick={onGithubSearchQueryReset}
+          className="h-8 w-8"
+          aria-label="Reset GitHub review query"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+        </Button>
+      </form>
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -1017,7 +1483,7 @@ function InboxHeader({
             type="search"
             value={searchQuery}
             onChange={(event) => onSearchQueryChange(event.target.value)}
-            placeholder="Search PRs, repos, authors, files"
+            placeholder="Filter loaded PRs"
             className="h-8 rounded-lg bg-background pr-3 pl-8 text-sm lg:pr-9"
           />
           <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -1177,7 +1643,6 @@ function QueueRow({
   onSelect: () => void
   onOpenDetail: () => void
 }) {
-  const initials = item.authorLogin.slice(0, 2).toUpperCase()
   const tone = toneForItem(item)
   const reReviewRequested = item.activityEvents.some((event) =>
     event.isNew && event.action.toLowerCase().includes("requested your review")
@@ -1205,9 +1670,11 @@ function QueueRow({
           laneToneClasses[tone]
         )}
       />
-      <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-border bg-white text-xs text-muted-foreground">
-        {initials}
-      </span>
+      <AuthorAvatar
+        login={item.authorLogin}
+        avatarUrl={item.authorAvatarUrl}
+        className="h-[26px] w-[26px]"
+      />
       <span className="min-w-0">
         <span className="flex min-w-0 items-start gap-2 sm:items-center">
           <span className="line-clamp-2 min-w-0 flex-1 text-sm font-medium text-foreground sm:truncate sm:line-clamp-1">
@@ -1283,6 +1750,39 @@ function FactChip({
   )
 }
 
+function AuthorAvatar({
+  login,
+  avatarUrl,
+  className,
+}: {
+  login: string
+  avatarUrl?: string
+  className?: string
+}) {
+  const initials = login.slice(0, 2).toUpperCase()
+
+  return (
+    <span
+      className={cn(
+        "flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-white text-xs text-muted-foreground",
+        className
+      )}
+    >
+      {avatarUrl ? (
+        <img
+          src={avatarUrl}
+          alt={`${login} avatar`}
+          className="h-full w-full object-cover"
+          loading="lazy"
+          referrerPolicy="no-referrer"
+        />
+      ) : (
+        initials
+      )}
+    </span>
+  )
+}
+
 function QuickPeekPanel({
   item,
   isPinned,
@@ -1354,6 +1854,21 @@ function QuickPeekPanel({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        {item.description ? (
+          <>
+            <section>
+              <div className="text-xs text-muted-foreground">
+                PR description
+              </div>
+              <div className="mt-3 rounded-md border border-border bg-muted/30 p-3">
+                <MarkdownContent source={item.description} compact />
+              </div>
+            </section>
+
+            <Separator className="my-4 bg-border" />
+          </>
+        ) : null}
+
         <section className="rounded-md border border-border bg-card p-3.5">
           <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
             <Clock3 className="h-3.5 w-3.5" />
@@ -1416,31 +1931,6 @@ function QuickPeekPanel({
           </div>
         </section>
 
-        {item.changedFilesSinceLastSeen.length > 0 ? (
-          <Separator className="my-4 bg-border" />
-        ) : null}
-
-        {item.changedFilesSinceLastSeen.length > 0 ? (
-          <section>
-            <div className="text-xs text-muted-foreground">
-              Files touched since last look · {item.changedFilesSinceLastSeen.length}
-            </div>
-            <div className="mt-3 space-y-1">
-              {item.changedFilesSinceLastSeen.map((file) => (
-                <div
-                  key={file.path}
-                  className="flex items-center justify-between gap-4 rounded-[4px] px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted/30"
-                >
-                  <span className="truncate">{file.path}</span>
-                  <span className="text-muted-foreground">
-                    +{file.additions} / -{file.deletions}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
         <Separator className="my-4 bg-border" />
 
         <section>
@@ -1466,7 +1956,7 @@ function QuickPeekPanel({
                     className="rounded-md border border-border bg-muted/30 p-3 text-sm leading-5 text-foreground"
                   >
                     <div>
-                      <b>{event.actor}</b> {event.action}
+                      <ActivityEventLine event={event} />
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground/70">
                       {event.occurredAt}
@@ -1487,7 +1977,7 @@ function QuickPeekPanel({
           </div>
         ) : null}
         <Button asChild className="col-span-2 h-9">
-          <a href={item.url} target="_blank" rel="noreferrer">
+          <a href={item.url} {...externalLinkProps}>
             Open in GitHub to review
             <ExternalLink className="h-4 w-4" />
           </a>

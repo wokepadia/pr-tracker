@@ -16,16 +16,19 @@ import {
   Check,
   Clock3,
   ExternalLink,
+  FileText,
   GitCommitHorizontal,
   MessageSquareText,
   Pin,
   RotateCcw,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { ActivityEventLine } from "@/components/ActivityEventLine"
+import { MarkdownContent } from "@/components/MarkdownContent"
 import { Separator } from "@/components/ui/separator"
 import { getPullRequest, markPullRequestSeen } from "@/api"
 import { formatCount, pluralize } from "@/lib/copy"
-import { cn } from "@/lib/utils"
+import { cn, externalLinkProps, openExternalLink } from "@/lib/utils"
 import {
   canMarkReviewItemCaughtUp,
   toReviewQueueItemView,
@@ -188,7 +191,7 @@ export function PullRequestPage() {
       event.preventDefault()
 
       if (event.key === "e") {
-        window.open(shortcutItem.url, "_blank", "noreferrer")
+        openExternalLink(shortcutItem.url)
         return
       }
 
@@ -281,6 +284,7 @@ export function PullRequestPage() {
       />
       <div className="grid grid-cols-1 gap-0 border-t border-border xl:grid-cols-[62fr_38fr]">
         <main className="min-w-0 px-7 py-6">
+          <DescriptionPanel description={loadedItem.description} />
           <div className="mb-4 text-xs text-muted-foreground">
             Activity · newest first
           </div>
@@ -307,6 +311,24 @@ export function PullRequestPage() {
         />
       </div>
     </div>
+  )
+}
+
+function DescriptionPanel({ description }: { description?: string }) {
+  return (
+    <section className="mb-6 rounded-md border border-border bg-card p-4">
+      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+        <FileText className="h-3.5 w-3.5" />
+        PR description
+      </div>
+      {description ? (
+        <MarkdownContent className="mt-3 max-w-4xl" source={description} />
+      ) : (
+        <div className="mt-3 text-sm leading-6 text-muted-foreground">
+          No description provided.
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -381,7 +403,7 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
           {userReviewStanding(item.userLastReviewDecision)}
         </div>
         <Button asChild className="h-9">
-          <a href={item.url} target="_blank" rel="noreferrer">
+          <a href={item.url} {...externalLinkProps}>
             Open in GitHub
             <ExternalLink className="h-4 w-4" />
           </a>
@@ -454,16 +476,6 @@ function ContextBand({
       label: "threads open",
       show: item.totalThreadCount > 0,
       hot: item.unresolvedThreadCount > 0,
-    },
-    {
-      id: "files",
-      value: String(item.changedFilesSinceLastSeen.length),
-      label: pluralize(
-        item.changedFilesSinceLastSeen.length,
-        "file touched",
-        "files touched"
-      ),
-      show: item.changedFilesSinceLastSeen.length > 0,
     },
     {
       id: "review",
@@ -553,7 +565,7 @@ function ContextBand({
               <div key={event.id} className="flex gap-2">
                 <span className={cn("mt-2 h-1.5 w-1.5 rounded-full", detailDotClasses[tone])} />
                 <span>
-                  <b>{event.actor}</b> {event.action}
+                  <ActivityEventLine event={event} />
                   {event.detail ? ` - ${event.detail}` : ""}
                 </span>
               </div>
@@ -678,7 +690,7 @@ function TimelineItem({
       <div className="text-xs text-muted-foreground/70">{event.occurredAt}</div>
       <div>
         <div className="text-sm leading-5 text-foreground">
-          <b>{event.actor}</b> {event.action}
+          <ActivityEventLine event={event} />
         </div>
         {event.detail ? (
           <div className="mt-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm leading-5 text-muted-foreground">
@@ -718,14 +730,6 @@ function DetailSideRail({
   onCaughtUp: () => void
 }) {
   const canMarkCaughtUp = canMarkReviewItemCaughtUp(item, isMarkingSeen)
-  const totalAdditions = item.changedFilesSinceLastSeen.reduce(
-    (total, file) => total + (file.additions ?? 0),
-    0
-  )
-  const totalDeletions = item.changedFilesSinceLastSeen.reduce(
-    (total, file) => total + (file.deletions ?? 0),
-    0
-  )
 
   return (
     <aside className="border-t border-border bg-card px-5 py-6 xl:border-l xl:border-t-0">
@@ -737,7 +741,7 @@ function DetailSideRail({
             </div>
           ) : null}
           <Button asChild className="h-9 justify-center">
-            <a href={item.url} target="_blank" rel="noreferrer">
+            <a href={item.url} {...externalLinkProps}>
               {newEventCount > 0
                 ? `Review ${formatCount(newEventCount, "new event")}`
                 : "Review in GitHub"}
@@ -818,31 +822,7 @@ function DetailSideRail({
           label="attention"
           value={detailAttentionLabel(item)}
         />
-        {item.changedFilesSinceLastSeen.length > 0 ? (
-          <RailKeyValue
-            label="size"
-            value={`+${totalAdditions} / -${totalDeletions}`}
-          />
-        ) : null}
       </RailCard>
-
-      {item.changedFilesSinceLastSeen.length > 0 ? (
-        <RailCard title="Changed files">
-          <div className="grid gap-1">
-            {item.changedFilesSinceLastSeen.map((file) => (
-              <div
-                key={file.path}
-                className="flex items-center justify-between gap-3 rounded-[4px] px-1 py-1 text-xs text-muted-foreground"
-              >
-                <span className="truncate">{file.path}</span>
-                <span className="text-muted-foreground">
-                  +{file.additions} / -{file.deletions}
-                </span>
-              </div>
-            ))}
-          </div>
-        </RailCard>
-      ) : null}
     </aside>
   )
 }
