@@ -50,17 +50,15 @@ import {
   canMuteLocalQueueItem,
   canPinLocalQueueItem,
   canSnoozeLocalQueueItem,
-  defaultUserBuckets,
   hasLocalQueueState,
   loadLocalQueueState,
-  loadUserBucketLabels,
+  loadUserBuckets,
   saveLocalQueueState,
-  saveUserBucketLabels,
   userBucketLabelFromId,
   type LocalPullRequestQueueState,
   type LocalQueueStateByPullRequestId,
+  type UserBucketDefinition,
   type UserBucketId,
-  type UserBucketLabels,
 } from "@/reviewer/local-queue-state"
 import { detailAttentionLabel } from "./pull-request-helpers"
 import type { ReviewDecision } from "@pr-tracker/core"
@@ -106,13 +104,9 @@ export function PullRequestPage() {
       if (typeof window === "undefined") return {}
       return loadLocalQueueState(window.localStorage)
     })
-  const [userBucketLabels, setUserBucketLabels] = useState<UserBucketLabels>(() => {
-    if (typeof window === "undefined") {
-      return Object.fromEntries(
-        defaultUserBuckets.map((bucket) => [bucket.id, bucket.label])
-      ) as UserBucketLabels
-    }
-    return loadUserBucketLabels(window.localStorage)
+  const [userBuckets] = useState<UserBucketDefinition[]>(() => {
+    if (typeof window === "undefined") return []
+    return loadUserBuckets(window.localStorage)
   })
   const detailQuery = useQuery({
     queryKey: ["pull-request", pullRequestId],
@@ -139,10 +133,6 @@ export function PullRequestPage() {
   useEffect(() => {
     saveLocalQueueState(window.localStorage, localQueueState)
   }, [localQueueState])
-
-  useEffect(() => {
-    saveUserBucketLabels(window.localStorage, userBucketLabels)
-  }, [userBucketLabels])
 
   function updateLocalItemState(
     itemId: string,
@@ -234,9 +224,9 @@ export function PullRequestPage() {
       event.isNew && event.action.toLowerCase().includes("requested your review")
   ).length
   const loadedItemLocalState = localQueueState[loadedItem.id] ?? {}
-  const bucketId = bucketIdForLocalQueueItem(
-    loadedItemLocalState,
-    loadedItem.laneId
+  const bucketId = bucketIdForAvailableBucketId(
+    bucketIdForLocalQueueItem(loadedItemLocalState, loadedItem.laneId),
+    userBuckets
   )
   const isPinned = Boolean(loadedItemLocalState.pinned)
   const isSnoozed = Boolean(loadedItemLocalState.snoozed)
@@ -272,7 +262,7 @@ export function PullRequestPage() {
       <ContextBand
         item={loadedItem}
         bucketId={bucketId}
-        userBucketLabels={userBucketLabels}
+        userBuckets={userBuckets}
         newEventCount={newEvents.length}
         reviewRequestCount={reviewRequestCount}
         onMoveToBucket={movePullRequest}
@@ -293,7 +283,7 @@ export function PullRequestPage() {
         <DetailSideRail
           item={loadedItem}
           bucketId={bucketId}
-          userBucketLabels={userBucketLabels}
+          userBuckets={userBuckets}
           newEventCount={newEvents.length}
           isPinned={isPinned}
           isSnoozed={isSnoozed}
@@ -445,14 +435,14 @@ function DetailFact({
 function ContextBand({
   item,
   bucketId,
-  userBucketLabels,
+  userBuckets,
   newEventCount,
   reviewRequestCount,
   onMoveToBucket,
 }: {
   item: ReviewQueueItemView
   bucketId: UserBucketId
-  userBucketLabels: UserBucketLabels
+  userBuckets: UserBucketDefinition[]
   newEventCount: number
   reviewRequestCount: number
   onMoveToBucket: (bucketId: UserBucketId) => void
@@ -517,7 +507,7 @@ function ContextBand({
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <BucketMoveMenu
             bucketId={bucketId}
-            userBucketLabels={userBucketLabels}
+            userBuckets={userBuckets}
             onMoveToBucket={onMoveToBucket}
           />
           {newEventCount > 0 ? (
@@ -651,12 +641,12 @@ function ChangeCard({
 
 function BucketMoveMenu({
   bucketId,
-  userBucketLabels,
+  userBuckets,
   onMoveToBucket,
   fullWidth,
 }: {
   bucketId: UserBucketId
-  userBucketLabels: UserBucketLabels
+  userBuckets: UserBucketDefinition[]
   onMoveToBucket: (bucketId: UserBucketId) => void
   fullWidth?: boolean
 }) {
@@ -672,13 +662,13 @@ function BucketMoveMenu({
           )}
         >
           <ChevronsLeftRight className="h-3.5 w-3.5" />
-          Bucket: {userBucketLabelFromId(userBucketLabels, bucketId)}
+          Bucket: {userBucketLabelFromId(userBuckets, bucketId)}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-48 rounded-lg">
         <DropdownMenuLabel>Move to bucket</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {defaultUserBuckets.map((bucket) => {
+        {userBuckets.map((bucket) => {
           const tone = detailBucketToneClasses[bucket.id] ?? "quiet"
           return (
             <DropdownMenuItem
@@ -687,7 +677,7 @@ function BucketMoveMenu({
               onClick={() => onMoveToBucket(bucket.id)}
             >
               <span className={cn("h-2 w-2 rounded-full", detailDotClasses[tone])} />
-              {userBucketLabelFromId(userBucketLabels, bucket.id)}
+              {bucket.label}
             </DropdownMenuItem>
           )
         })}
@@ -769,7 +759,7 @@ function TimelineItem({
 function DetailSideRail({
   item,
   bucketId,
-  userBucketLabels,
+  userBuckets,
   newEventCount,
   isPinned,
   isSnoozed,
@@ -785,7 +775,7 @@ function DetailSideRail({
 }: {
   item: ReviewQueueItemView
   bucketId: UserBucketId
-  userBucketLabels: UserBucketLabels
+  userBuckets: UserBucketDefinition[]
   newEventCount: number
   isPinned: boolean
   isSnoozed: boolean
@@ -820,7 +810,7 @@ function DetailSideRail({
           </Button>
           <BucketMoveMenu
             bucketId={bucketId}
-            userBucketLabels={userBucketLabels}
+            userBuckets={userBuckets}
             onMoveToBucket={onMoveToBucket}
             fullWidth
           />
@@ -958,6 +948,15 @@ function detailToneForItem(item: ReviewQueueItemView): DetailTone {
   if (item.waitingOn === "author") return "waiting"
   if (item.laneId === "approved") return "success"
   return "quiet"
+}
+
+function bucketIdForAvailableBucketId(
+  bucketId: UserBucketId,
+  userBuckets: UserBucketDefinition[]
+): UserBucketId {
+  return userBuckets.some((bucket) => bucket.id === bucketId)
+    ? bucketId
+    : userBuckets[0]?.id ?? bucketId
 }
 
 function requestStateLabel(item: ReviewQueueItemView): string {

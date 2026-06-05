@@ -56,9 +56,11 @@ import {
   MessageSquareText,
   PanelRight,
   Pin,
+  Plus,
   RotateCcw,
   Search,
   Sparkles,
+  Trash2,
   X,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -93,21 +95,21 @@ import {
   canPinLocalQueueItem,
   canSnoozeLocalQueueItem,
   applyUserBucketItemOrder,
+  createUserBucket,
   createEmptyUserBucketItemOrder,
-  defaultUserBuckets,
   hasLocalQueueState,
   loadLocalQueueState,
+  loadUserBuckets,
   loadUserBucketItemOrder,
-  loadUserBucketLabels,
   saveLocalQueueState,
+  saveUserBuckets,
   saveUserBucketItemOrder,
-  saveUserBucketLabels,
   userBucketLabelFromId,
   type LocalPullRequestQueueState,
   type LocalQueueStateByPullRequestId,
+  type UserBucketDefinition,
   type UserBucketId,
   type UserBucketItemOrder,
-  type UserBucketLabels,
 } from "@/reviewer/local-queue-state"
 import {
   bucketDropId,
@@ -168,7 +170,7 @@ interface QueueGroupDefinition {
   description?: string
 }
 
-const laneDescriptions: Record<LaneId, string> = {
+const defaultLaneDescriptions: Record<string, string> = {
   inbox: "Default place for active PRs",
   reviewing: "PRs you are actively reviewing",
   waiting: "Waiting for another person",
@@ -176,37 +178,20 @@ const laneDescriptions: Record<LaneId, string> = {
   done: "Finished or caught up",
 }
 
-const lanes: LaneDefinition[] = [
-  {
-    id: "inbox",
-    label: "Inbox",
-    tone: "hot",
-    description: laneDescriptions.inbox,
-  },
-  {
-    id: "reviewing",
-    label: "Reviewing",
-    tone: "changed",
-    description: laneDescriptions.reviewing,
-  },
-  {
-    id: "waiting",
-    label: "Waiting",
-    tone: "waiting",
-    description: laneDescriptions.waiting,
-  },
-  {
-    id: "later",
-    label: "Later",
-    tone: "quiet",
-    description: laneDescriptions.later,
-  },
-  {
-    id: "done",
-    label: "Done",
-    tone: "success",
-    description: laneDescriptions.done,
-  },
+const defaultLaneTones: Record<string, LaneDefinition["tone"]> = {
+  inbox: "hot",
+  reviewing: "changed",
+  waiting: "waiting",
+  later: "quiet",
+  done: "success",
+}
+
+const customLaneToneCycle: LaneDefinition["tone"][] = [
+  "changed",
+  "waiting",
+  "quiet",
+  "success",
+  "hot",
 ]
 
 const laneToneClasses: Record<LaneDefinition["tone"], string> = {
@@ -302,18 +287,15 @@ export function InboxPage() {
       if (typeof window === "undefined") return {}
       return loadLocalQueueState(window.localStorage)
     })
-  const [userBucketLabels, setUserBucketLabels] = useState<UserBucketLabels>(() => {
-    if (typeof window === "undefined") {
-      return Object.fromEntries(
-        defaultUserBuckets.map((bucket) => [bucket.id, bucket.label])
-      ) as UserBucketLabels
-    }
-    return loadUserBucketLabels(window.localStorage)
+  const [userBuckets, setUserBuckets] = useState<UserBucketDefinition[]>(() => {
+    if (typeof window === "undefined") return []
+    return loadUserBuckets(window.localStorage)
   })
   const [userBucketItemOrder, setUserBucketItemOrder] =
     useState<UserBucketItemOrder>(() => {
       if (typeof window === "undefined") return createEmptyUserBucketItemOrder()
-      return loadUserBucketItemOrder(window.localStorage)
+      const buckets = loadUserBuckets(window.localStorage)
+      return loadUserBucketItemOrder(window.localStorage, buckets)
     })
   const [failedCaughtUpItemId, setFailedCaughtUpItemId] = useState<string>()
   const [groupMode, setGroupMode] = useState<QueueGroupMode>("action")
@@ -323,6 +305,15 @@ export function InboxPage() {
     () => (inboxQuery.data ? buildInboxView(inboxQuery.data) : undefined),
     [inboxQuery.data]
   )
+  const bucketLanes = useMemo(
+    () => userBuckets.map((bucket, index) => bucketToLaneDefinition(bucket, index)),
+    [userBuckets]
+  )
+  const availableBucketIds = useMemo(
+    () => new Set(userBuckets.map((bucket) => bucket.id)),
+    [userBuckets]
+  )
+  const fallbackBucketId = userBuckets[0]?.id ?? "inbox"
   const activeItems = useMemo(
     () =>
       inboxView?.items.filter((item) => {
@@ -377,11 +368,16 @@ export function InboxPage() {
   )
   const laneItems = useMemo(
     () =>
-      lanes.reduce(
+      bucketLanes.reduce(
         (acc, lane) => {
           acc[lane.id] = searchedActiveItems.filter(
             (item) =>
-              bucketIdForLocalQueueItem(localQueueState[item.id], item.laneId) ===
+              bucketIdForAvailableUserBucket(
+                item,
+                localQueueState,
+                availableBucketIds,
+                fallbackBucketId
+              ) ===
               lane.id
           )
           acc[lane.id] = applyUserBucketItemOrder(
@@ -393,11 +389,18 @@ export function InboxPage() {
         },
         {} as Record<LaneId, ReviewQueueItemView[]>
       ),
-    [localQueueState, searchedActiveItems, userBucketItemOrder]
+    [
+      availableBucketIds,
+      bucketLanes,
+      fallbackBucketId,
+      localQueueState,
+      searchedActiveItems,
+      userBucketItemOrder,
+    ]
   )
   const boardItems = useMemo(
-    () => lanes.flatMap((lane) => laneItems[lane.id] ?? []),
-    [laneItems]
+    () => bucketLanes.flatMap((lane) => laneItems[lane.id] ?? []),
+    [bucketLanes, laneItems]
   )
   const [activeActionTabId, setActiveActionTabId] =
     useState<ActionQueueTabId>("home")
@@ -464,9 +467,11 @@ export function InboxPage() {
     ? activeItems.find((item) => item.id === draggingItemId)
     : undefined
   const draggingItemBucketId = draggingItem
-    ? bucketIdForLocalQueueItem(
-        localQueueState[draggingItem.id],
-        draggingItem.laneId
+    ? bucketIdForAvailableUserBucket(
+        draggingItem,
+        localQueueState,
+        availableBucketIds,
+        fallbackBucketId
       )
     : undefined
 
@@ -475,8 +480,8 @@ export function InboxPage() {
   }, [localQueueState])
 
   useEffect(() => {
-    saveUserBucketLabels(window.localStorage, userBucketLabels)
-  }, [userBucketLabels])
+    saveUserBuckets(window.localStorage, userBuckets)
+  }, [userBuckets])
 
   useEffect(() => {
     saveUserBucketItemOrder(window.localStorage, userBucketItemOrder)
@@ -570,11 +575,67 @@ export function InboxPage() {
 
   function updateBucketLabel(bucketId: UserBucketId, label: string) {
     const trimmedLabel = label.trim()
-    setUserBucketLabels((current) => ({
-      ...current,
-      [bucketId]:
-        trimmedLabel || defaultUserBuckets.find((bucket) => bucket.id === bucketId)?.label || bucketId,
-    }))
+    setUserBuckets((current) =>
+      current.map((bucket) =>
+        bucket.id === bucketId
+          ? {
+              ...bucket,
+              label: trimmedLabel || bucket.label,
+            }
+          : bucket
+      )
+    )
+  }
+
+  function addBucket() {
+    setUserBuckets((current) => {
+      const nextBucket = createUserBucket("New label", current)
+      setActiveActionTabId(nextBucket.id)
+      setGroupMode("action")
+      setUserBucketItemOrder((currentOrder) => ({
+        ...currentOrder,
+        [nextBucket.id]: [],
+      }))
+      return [...current, nextBucket]
+    })
+  }
+
+  function deleteBucket(bucketId: UserBucketId) {
+    const fallbackBucket = userBuckets.find((bucket) => bucket.id !== bucketId)
+    if (!fallbackBucket) return
+
+    setUserBuckets((current) => current.filter((bucket) => bucket.id !== bucketId))
+    setLocalQueueState((current) => {
+      const next = { ...current }
+
+      for (const [itemId, itemState] of Object.entries(next)) {
+        if (itemState?.bucketId === bucketId) {
+          next[itemId] = {
+            ...itemState,
+            bucketId: fallbackBucket.id,
+          }
+        }
+      }
+
+      return next
+    })
+    setUserBucketItemOrder((current) => {
+      const next = { ...current }
+      const mergedFallbackOrder = [
+        ...(next[fallbackBucket.id] ?? []),
+        ...(next[bucketId] ?? []).filter(
+          (itemId) => !(next[fallbackBucket.id] ?? []).includes(itemId)
+        ),
+      ]
+
+      next[fallbackBucket.id] = mergedFallbackOrder
+      delete next[bucketId]
+      return next
+    })
+
+    if (activeActionTabId === bucketId) {
+      setActiveActionTabId(fallbackBucket.id)
+    }
   }
 
   function moveItemToBucket(
@@ -584,7 +645,12 @@ export function InboxPage() {
   ) {
     const item = activeItems.find((candidate) => candidate.id === itemId)
     const currentBucketId = item
-      ? bucketIdForLocalQueueItem(localQueueState[item.id], item.laneId)
+      ? bucketIdForAvailableUserBucket(
+          item,
+          localQueueState,
+          availableBucketIds,
+          fallbackBucketId
+        )
       : bucketId
 
     updateLocalItemState(itemId, (current) => ({
@@ -721,9 +787,9 @@ export function InboxPage() {
 
   function handleKanbanDragEnd(event: DragEndEvent) {
     const itemId = String(event.active.id)
-    const target = resolveKanbanDropTarget(
-      event.over?.id,
-      lanes.map((lane) => lane.id),
+      const target = resolveKanbanDropTarget(
+        event.over?.id,
+      bucketLanes.map((lane) => lane.id),
       laneItems
     )
 
@@ -762,7 +828,7 @@ export function InboxPage() {
     >
       <InboxSidebar
         laneItems={laneItems}
-        userBucketLabels={userBucketLabels}
+        bucketLanes={bucketLanes}
         activeActionTabId={groupMode === "action" ? activeActionTabId : undefined}
         newActivityCount={searchedNewActivityItems.length}
         pinnedActive={groupMode === "pinned"}
@@ -777,6 +843,8 @@ export function InboxPage() {
         onSelectPinned={focusPinned}
         onSelectSnoozed={focusSnoozed}
         onSelectMuted={focusMuted}
+        onAddBucket={addBucket}
+        onDeleteBucket={deleteBucket}
         onBucketLabelChange={updateBucketLabel}
       />
 
@@ -820,8 +888,9 @@ export function InboxPage() {
                       }
                       draggingItem={draggingItem}
                       draggingItemBucketId={draggingItemBucketId}
+                      bucketLanes={bucketLanes}
                       sensors={dragSensors}
-                      userBucketLabels={userBucketLabels}
+                      userBuckets={userBuckets}
                       onDragStart={handleKanbanDragStart}
                       onDragEnd={handleKanbanDragEnd}
                       onDragCancel={() => setDraggingItemId(null)}
@@ -832,7 +901,9 @@ export function InboxPage() {
                     <ActionQueueList
                       items={visibleActionItems}
                       selectedId={selectedItem?.id ?? ""}
-                      userBucketLabels={userBucketLabels}
+                      bucketLanes={bucketLanes}
+                      userBuckets={userBuckets}
+                      fallbackBucketId={fallbackBucketId}
                       localQueueState={localQueueState}
                       onMoveItemToBucket={moveItemToBucket}
                       onSelect={setSelectedId}
@@ -846,7 +917,9 @@ export function InboxPage() {
                       isOpen={openRepositoryIds.has(group.id)}
                       items={group.items}
                       selectedId={selectedItem?.id ?? ""}
-                      userBucketLabels={userBucketLabels}
+                      bucketLanes={bucketLanes}
+                      userBuckets={userBuckets}
+                      fallbackBucketId={fallbackBucketId}
                       localQueueState={localQueueState}
                       onMoveItemToBucket={moveItemToBucket}
                       onToggle={() => {
@@ -863,7 +936,9 @@ export function InboxPage() {
                     isOpen
                     items={searchedPinnedItems}
                     selectedId={selectedItem?.id ?? ""}
-                    userBucketLabels={userBucketLabels}
+                    bucketLanes={bucketLanes}
+                    userBuckets={userBuckets}
+                    fallbackBucketId={fallbackBucketId}
                     localQueueState={localQueueState}
                     onMoveItemToBucket={moveItemToBucket}
                     onToggle={() => undefined}
@@ -875,7 +950,9 @@ export function InboxPage() {
                     isOpen
                     items={searchedSnoozedItems}
                     selectedId={selectedItem?.id ?? ""}
-                    userBucketLabels={userBucketLabels}
+                    bucketLanes={bucketLanes}
+                    userBuckets={userBuckets}
+                    fallbackBucketId={fallbackBucketId}
                     localQueueState={localQueueState}
                     onMoveItemToBucket={moveItemToBucket}
                     onToggle={() => undefined}
@@ -887,7 +964,9 @@ export function InboxPage() {
                     isOpen
                     items={searchedMutedItems}
                     selectedId={selectedItem?.id ?? ""}
-                    userBucketLabels={userBucketLabels}
+                    bucketLanes={bucketLanes}
+                    userBuckets={userBuckets}
+                    fallbackBucketId={fallbackBucketId}
                     localQueueState={localQueueState}
                     onMoveItemToBucket={moveItemToBucket}
                     onToggle={() => undefined}
@@ -913,11 +992,14 @@ export function InboxPage() {
             {selectedItem ? (
               <QuickPeekPanel
                 item={selectedItem}
-                bucketId={bucketIdForLocalQueueItem(
-                  selectedItemLocalState,
-                  selectedItem.laneId
+                bucketId={bucketIdForAvailableUserBucket(
+                  selectedItem,
+                  localQueueState,
+                  availableBucketIds,
+                  fallbackBucketId
                 )}
-                userBucketLabels={userBucketLabels}
+                userBuckets={userBuckets}
+                bucketLanes={bucketLanes}
                 isPinned={selectedItemIsPinned}
                 isSnoozed={selectedItemIsSnoozed}
                 isMuted={selectedItemIsMuted}
@@ -1090,7 +1172,7 @@ function LoadingStepRow({
 
 function InboxSidebar({
   laneItems,
-  userBucketLabels,
+  bucketLanes,
   activeActionTabId,
   newActivityCount,
   pinnedActive,
@@ -1105,10 +1187,12 @@ function InboxSidebar({
   onSelectPinned,
   onSelectSnoozed,
   onSelectMuted,
+  onAddBucket,
+  onDeleteBucket,
   onBucketLabelChange,
 }: {
   laneItems: Record<LaneId, ReviewQueueItemView[]>
-  userBucketLabels: UserBucketLabels
+  bucketLanes: LaneDefinition[]
   activeActionTabId?: ActionQueueTabId
   newActivityCount: number
   pinnedActive: boolean
@@ -1123,9 +1207,11 @@ function InboxSidebar({
   onSelectPinned: () => void
   onSelectSnoozed: () => void
   onSelectMuted: () => void
+  onAddBucket: () => void
+  onDeleteBucket: (bucketId: UserBucketId) => void
   onBucketLabelChange: (bucketId: UserBucketId, label: string) => void
 }) {
-  const activeTotal = lanes.reduce(
+  const activeTotal = bucketLanes.reduce(
     (total, lane) => total + (laneItems[lane.id]?.length ?? 0),
     0
   )
@@ -1159,23 +1245,33 @@ function InboxSidebar({
         />
       </SidebarSection>
       <SidebarSection label="Buckets">
-        {lanes.map((lane) => (
+        {bucketLanes.map((lane) => (
           <SidebarBucketItem
             key={lane.id}
             bucketId={lane.id}
             active={activeActionTabId === lane.id}
             attention={(laneItems[lane.id]?.length ?? 0) > 0}
             tone={lane.tone}
-            label={userBucketLabelFromId(userBucketLabels, lane.id)}
+            label={lane.label}
             count={laneItems[lane.id]?.length ?? 0}
             onClick={
               (laneItems[lane.id]?.length ?? 0) > 0
                 ? () => onSelectLane(lane.id)
                 : undefined
             }
+            canDelete={bucketLanes.length > 1}
+            onDelete={onDeleteBucket}
             onLabelChange={onBucketLabelChange}
           />
         ))}
+        <button
+          type="button"
+          onClick={onAddBucket}
+          className="mt-1 grid w-full grid-cols-[7px_1fr] items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-muted-foreground transition hover:bg-muted/40 hover:text-foreground sm:text-sm"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          <span>Add label</span>
+        </button>
       </SidebarSection>
       <SidebarSection label="Stashed">
         <SidebarItem
@@ -1319,6 +1415,8 @@ function SidebarBucketItem({
   attention,
   tone,
   onClick,
+  canDelete,
+  onDelete,
   onLabelChange,
 }: {
   bucketId: UserBucketId
@@ -1328,6 +1426,8 @@ function SidebarBucketItem({
   attention?: boolean
   tone: LaneDefinition["tone"]
   onClick?: () => void
+  canDelete: boolean
+  onDelete: (bucketId: UserBucketId) => void
   onLabelChange: (bucketId: UserBucketId, label: string) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -1379,7 +1479,7 @@ function SidebarBucketItem({
   }
 
   return (
-    <div className="group grid grid-cols-[1fr_24px] items-center gap-1">
+    <div className="group grid grid-cols-[1fr_24px_24px] items-center gap-1">
       <SidebarItem
         active={active}
         attention={attention}
@@ -1395,6 +1495,15 @@ function SidebarBucketItem({
         className="flex h-7 w-6 items-center justify-center rounded-md text-muted-foreground/60 opacity-0 transition hover:bg-muted hover:text-foreground group-hover:opacity-100 focus:opacity-100"
       >
         <Edit3 className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        aria-label={`Delete ${label} label`}
+        disabled={!canDelete}
+        onClick={() => onDelete(bucketId)}
+        className="flex h-7 w-6 items-center justify-center rounded-md text-muted-foreground/60 opacity-0 transition hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-0 group-hover:opacity-100 focus:opacity-100"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
       </button>
     </div>
   )
@@ -1518,14 +1627,53 @@ function formatSyncLabel(dataUpdatedAt: number): string {
   return `synced ${Math.floor(hours / 24)}d ago`
 }
 
+function bucketToLaneDefinition(
+  bucket: UserBucketDefinition,
+  index: number
+): LaneDefinition {
+  return {
+    id: bucket.id,
+    label: bucket.label,
+    tone:
+      defaultLaneTones[bucket.id] ??
+      customLaneToneCycle[index % customLaneToneCycle.length] ??
+      "quiet",
+    description: defaultLaneDescriptions[bucket.id],
+  }
+}
+
+function bucketIdForAvailableUserBucket(
+  item: ReviewQueueItemView,
+  localQueueState: LocalQueueStateByPullRequestId,
+  availableBucketIds: Set<UserBucketId>,
+  fallbackBucketId: UserBucketId
+): UserBucketId {
+  return bucketIdForAvailableBucketId(
+    bucketIdForLocalQueueItem(localQueueState[item.id], item.laneId),
+    [...availableBucketIds].map((id) => ({ id, label: id })),
+    fallbackBucketId
+  )
+}
+
+function bucketIdForAvailableBucketId(
+  bucketId: UserBucketId,
+  userBuckets: UserBucketDefinition[],
+  fallbackBucketId: UserBucketId
+): UserBucketId {
+  return userBuckets.some((bucket) => bucket.id === bucketId)
+    ? bucketId
+    : fallbackBucketId
+}
+
 function KanbanBoard({
   laneItems,
   selectedId,
   activeBucketId,
   draggingItem,
   draggingItemBucketId,
+  bucketLanes,
   sensors,
-  userBucketLabels,
+  userBuckets,
   onDragStart,
   onDragEnd,
   onDragCancel,
@@ -1537,8 +1685,9 @@ function KanbanBoard({
   activeBucketId?: LaneId
   draggingItem?: ReviewQueueItemView
   draggingItemBucketId?: UserBucketId
+  bucketLanes: LaneDefinition[]
   sensors: ReturnType<typeof useSensors>
-  userBucketLabels: UserBucketLabels
+  userBuckets: UserBucketDefinition[]
   onDragStart: (event: DragStartEvent) => void
   onDragEnd: (event: DragEndEvent) => void
   onDragCancel: () => void
@@ -1549,7 +1698,7 @@ function KanbanBoard({
   ) => void
   onSelect: (id: string) => void
 }) {
-  const totalCount = lanes.reduce(
+  const totalCount = bucketLanes.reduce(
     (total, lane) => total + (laneItems[lane.id]?.length ?? 0),
     0
   )
@@ -1582,18 +1731,22 @@ function KanbanBoard({
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
-          <div className="grid h-full min-w-[1160px] grid-cols-5">
-            {lanes.map((lane) => (
+          <div
+            className="grid h-full"
+            style={{
+              gridTemplateColumns: `repeat(${bucketLanes.length}, minmax(232px, 1fr))`,
+              minWidth: `${Math.max(1, bucketLanes.length) * 232}px`,
+            }}
+          >
+            {bucketLanes.map((lane) => (
               <KanbanColumn
                 key={lane.id}
-                lane={{
-                  ...lane,
-                  label: userBucketLabelFromId(userBucketLabels, lane.id),
-                }}
+                lane={lane}
                 active={activeBucketId === lane.id}
                 items={laneItems[lane.id] ?? []}
                 selectedId={selectedId}
-                userBucketLabels={userBucketLabels}
+                bucketLanes={bucketLanes}
+                userBuckets={userBuckets}
                 onMoveItemToBucket={onMoveItemToBucket}
                 onSelect={onSelect}
               />
@@ -1611,7 +1764,8 @@ function KanbanBoard({
                 draggingItemBucketId ??
                 bucketIdForLocalQueueItem(undefined, draggingItem.laneId)
               }
-              userBucketLabels={userBucketLabels}
+              bucketLanes={bucketLanes}
+              userBuckets={userBuckets}
               dragging
               onSelect={() => undefined}
               onMoveToBucket={() => undefined}
@@ -1628,7 +1782,8 @@ function KanbanColumn({
   active,
   items,
   selectedId,
-  userBucketLabels,
+  bucketLanes,
+  userBuckets,
   onMoveItemToBucket,
   onSelect,
 }: {
@@ -1636,7 +1791,8 @@ function KanbanColumn({
   active?: boolean
   items: ReviewQueueItemView[]
   selectedId: string
-  userBucketLabels: UserBucketLabels
+  bucketLanes: LaneDefinition[]
+  userBuckets: UserBucketDefinition[]
   onMoveItemToBucket: (
     itemId: string,
     bucketId: UserBucketId,
@@ -1695,7 +1851,8 @@ function KanbanColumn({
                 item={item}
                 selected={item.id === selectedId}
                 bucketId={lane.id}
-                userBucketLabels={userBucketLabels}
+                bucketLanes={bucketLanes}
+                userBuckets={userBuckets}
                 onSelect={() => onSelect(item.id)}
                 onMoveToBucket={(bucketId) =>
                   onMoveItemToBucket(item.id, bucketId)
@@ -1717,14 +1874,16 @@ function SortableQueueCard({
   item,
   selected,
   bucketId,
-  userBucketLabels,
+  bucketLanes,
+  userBuckets,
   onSelect,
   onMoveToBucket,
 }: {
   item: ReviewQueueItemView
   selected: boolean
   bucketId: UserBucketId
-  userBucketLabels: UserBucketLabels
+  bucketLanes: LaneDefinition[]
+  userBuckets: UserBucketDefinition[]
   onSelect: () => void
   onMoveToBucket: (bucketId: UserBucketId) => void
 }) {
@@ -1754,7 +1913,8 @@ function SortableQueueCard({
         item={item}
         selected={selected}
         bucketId={bucketId}
-        userBucketLabels={userBucketLabels}
+        bucketLanes={bucketLanes}
+        userBuckets={userBuckets}
         dragHandle={
           <button
             type="button"
@@ -1779,7 +1939,8 @@ function QueueCard({
   item,
   selected,
   bucketId,
-  userBucketLabels,
+  bucketLanes,
+  userBuckets,
   dragHandle,
   dragging,
   onSelect,
@@ -1788,7 +1949,8 @@ function QueueCard({
   item: ReviewQueueItemView
   selected: boolean
   bucketId: UserBucketId
-  userBucketLabels: UserBucketLabels
+  bucketLanes: LaneDefinition[]
+  userBuckets: UserBucketDefinition[]
   dragHandle?: ReactNode
   dragging?: boolean
   onSelect: () => void
@@ -1879,7 +2041,8 @@ function QueueCard({
       <div className="mt-3">
         <BucketMoveMenu
           bucketId={bucketId}
-          userBucketLabels={userBucketLabels}
+          bucketLanes={bucketLanes}
+          userBuckets={userBuckets}
           onMoveToBucket={onMoveToBucket}
           compact
         />
@@ -1891,14 +2054,18 @@ function QueueCard({
 function ActionQueueList({
   items,
   selectedId,
-  userBucketLabels,
+  bucketLanes,
+  userBuckets,
+  fallbackBucketId,
   localQueueState,
   onMoveItemToBucket,
   onSelect,
 }: {
   items: ReviewQueueItemView[]
   selectedId: string
-  userBucketLabels: UserBucketLabels
+  bucketLanes: LaneDefinition[]
+  userBuckets: UserBucketDefinition[]
+  fallbackBucketId: UserBucketId
   localQueueState: LocalQueueStateByPullRequestId
   onMoveItemToBucket: (itemId: string, bucketId: UserBucketId) => void
   onSelect: (id: string) => void
@@ -1916,7 +2083,9 @@ function ActionQueueList({
                 localQueueState[item.id],
                 item.laneId
               )}
-              userBucketLabels={userBucketLabels}
+              bucketLanes={bucketLanes}
+              userBuckets={userBuckets}
+              fallbackBucketId={fallbackBucketId}
               onSelect={() => onSelect(item.id)}
               onMoveToBucket={(bucketId) => onMoveItemToBucket(item.id, bucketId)}
             />
@@ -1936,7 +2105,9 @@ function QueueLane({
   isOpen,
   items,
   selectedId,
-  userBucketLabels,
+  bucketLanes,
+  userBuckets,
+  fallbackBucketId,
   localQueueState,
   onMoveItemToBucket,
   onToggle,
@@ -1946,7 +2117,9 @@ function QueueLane({
   isOpen: boolean
   items: ReviewQueueItemView[]
   selectedId: string
-  userBucketLabels: UserBucketLabels
+  bucketLanes: LaneDefinition[]
+  userBuckets: UserBucketDefinition[]
+  fallbackBucketId: UserBucketId
   localQueueState: LocalQueueStateByPullRequestId
   onMoveItemToBucket: (itemId: string, bucketId: UserBucketId) => void
   onToggle: () => void
@@ -1997,7 +2170,9 @@ function QueueLane({
                 localQueueState[item.id],
                 item.laneId
               )}
-              userBucketLabels={userBucketLabels}
+              bucketLanes={bucketLanes}
+              userBuckets={userBuckets}
+              fallbackBucketId={fallbackBucketId}
               onSelect={() => onSelect(item.id)}
               onMoveToBucket={(bucketId) => onMoveItemToBucket(item.id, bucketId)}
             />
@@ -2012,14 +2187,18 @@ function QueueRow({
   item,
   selected,
   bucketId,
-  userBucketLabels,
+  bucketLanes,
+  userBuckets,
+  fallbackBucketId,
   onSelect,
   onMoveToBucket,
 }: {
   item: ReviewQueueItemView
   selected: boolean
   bucketId: UserBucketId
-  userBucketLabels: UserBucketLabels
+  bucketLanes: LaneDefinition[]
+  userBuckets: UserBucketDefinition[]
+  fallbackBucketId: UserBucketId
   onSelect: () => void
   onMoveToBucket: (bucketId: UserBucketId) => void
 }) {
@@ -2085,8 +2264,9 @@ function QueueRow({
       </span>
       <span className="flex min-w-[74px] flex-col items-end gap-1">
         <BucketMoveMenu
-          bucketId={bucketId}
-          userBucketLabels={userBucketLabels}
+          bucketId={bucketIdForAvailableBucketId(bucketId, userBuckets, fallbackBucketId)}
+          bucketLanes={bucketLanes}
+          userBuckets={userBuckets}
           onMoveToBucket={onMoveToBucket}
           compact
         />
@@ -2108,12 +2288,14 @@ function QueueRow({
 
 function BucketMoveMenu({
   bucketId,
-  userBucketLabels,
+  bucketLanes,
+  userBuckets,
   onMoveToBucket,
   compact,
 }: {
   bucketId: UserBucketId
-  userBucketLabels: UserBucketLabels
+  bucketLanes: LaneDefinition[]
+  userBuckets: UserBucketDefinition[]
   onMoveToBucket: (bucketId: UserBucketId) => void
   compact?: boolean
 }) {
@@ -2134,7 +2316,7 @@ function BucketMoveMenu({
         >
           <ChevronsLeftRight className="h-3.5 w-3.5" />
           <span className="truncate">
-            {userBucketLabelFromId(userBucketLabels, bucketId)}
+            {userBucketLabelFromId(userBuckets, bucketId)}
           </span>
         </Button>
       </DropdownMenuTrigger>
@@ -2145,14 +2327,14 @@ function BucketMoveMenu({
       >
         <DropdownMenuLabel>Move to bucket</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {lanes.map((lane) => (
+        {bucketLanes.map((lane) => (
           <DropdownMenuItem
             key={lane.id}
             disabled={lane.id === bucketId}
             onClick={() => onMoveToBucket(lane.id)}
           >
             <span className={cn("h-2 w-2 rounded-full", laneToneClasses[lane.tone])} />
-            {userBucketLabelFromId(userBucketLabels, lane.id)}
+            {lane.label}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
@@ -2218,7 +2400,8 @@ function AuthorAvatar({
 function QuickPeekPanel({
   item,
   bucketId,
-  userBucketLabels,
+  userBuckets,
+  bucketLanes,
   isPinned,
   isSnoozed,
   isMuted,
@@ -2233,7 +2416,8 @@ function QuickPeekPanel({
 }: {
   item: ReviewQueueItemView
   bucketId: UserBucketId
-  userBucketLabels: UserBucketLabels
+  userBuckets: UserBucketDefinition[]
+  bucketLanes: LaneDefinition[]
   isPinned: boolean
   isSnoozed: boolean
   isMuted: boolean
@@ -2278,7 +2462,8 @@ function QuickPeekPanel({
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <BucketMoveMenu
             bucketId={bucketId}
-            userBucketLabels={userBucketLabels}
+            bucketLanes={bucketLanes}
+            userBuckets={userBuckets}
             onMoveToBucket={onMoveToBucket}
           />
           {item.unseenEventCount > 0 ? (
