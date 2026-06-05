@@ -229,9 +229,9 @@ const inboxLoadingSteps: InboxLoadingStep[] = [
     progress: "Building ordered activity events",
   },
   {
-    label: "Classifying queue state",
-    detail: "Computing needs review, changed since, waiting, approved, and watching lanes.",
-    progress: "Applying reviewer workflow rules",
+    label: "Preparing queue signals",
+    detail: "Computing reviewer activity signals and default bucket placement.",
+    progress: "Applying reviewer queue rules",
   },
   {
     label: "Preparing workspace",
@@ -855,246 +855,71 @@ function InboxLoadingScreen() {
   const slowRequest = elapsedSeconds >= 8
 
   return (
-    <div
-      className="grid min-h-[calc(100vh-48px)] overflow-x-auto bg-background"
-      style={{
-        gridTemplateColumns: `${REVIEW_SIDEBAR_WIDTH}px minmax(${REVIEW_WORKSPACE_MIN_WIDTH}px, 1fr)`,
-      }}
-    >
-      <LoadingSidebar />
-
+    <div className="grid min-h-[calc(100vh-48px)] place-items-center bg-muted/20 px-6 py-10">
       <section
-        className="min-w-0 bg-background"
-        style={{ minWidth: REVIEW_WORKSPACE_MIN_WIDTH }}
+        className="w-full max-w-[620px] overflow-hidden rounded-lg border border-border bg-card shadow-sm"
+        aria-live="polite"
       >
-        <div className="flex min-h-[calc(100vh-48px)] min-w-0">
-          <div
-            className="flex min-w-0 flex-col border-r border-border"
-            style={{ width: `calc(58% - ${REVIEW_SPLIT_HANDLE_WIDTH / 2}px)` }}
-          >
-            <div className="flex h-[73px] items-center gap-4 border-b border-border px-5">
-              <div className="min-w-0 flex-1">
-                <div className="mb-2 h-4 w-40 rounded-sm bg-foreground/12" />
-                <div className="h-3 w-64 rounded-sm bg-muted" />
-              </div>
-              <div className="h-8 w-52 rounded-md border border-border bg-muted/40" />
-              <div className="h-8 w-36 rounded-md border border-border bg-muted/40" />
+        <div className="border-b border-border px-5 py-5">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="relative flex h-9 w-9 flex-none items-center justify-center rounded-full bg-foreground text-background">
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+              <span className="absolute inset-0 rounded-full ring-4 ring-foreground/10" />
             </div>
-
-            <div className="border-b border-border px-5 py-3">
-              <div className="flex items-center gap-2">
-                {["Needs you", "Changed since", "Waiting", "Approved"].map(
-                  (label, index) => (
-                    <div
-                      key={label}
-                      className={cn(
-                        "rounded-full border px-3 py-1.5 text-xs",
-                        index === 0
-                          ? "border-amber-200 bg-amber-50 text-amber-800"
-                          : "border-border bg-muted/30 text-muted-foreground"
-                      )}
-                    >
-                      {label}
-                    </div>
-                  )
-                )}
+            <div className="min-w-0">
+              <div className="font-mono text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                {activeStep.progress}
               </div>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-hidden pt-2">
-              <LoadingQueueLane
-                label="Needs your review"
-                count="--"
-                tone="hot"
-                rows={3}
-              />
-              <LoadingQueueLane
-                label="Changed since you last looked"
-                count="--"
-                tone="changed"
-                rows={3}
-              />
-              <LoadingQueueLane
-                label="Waiting on author"
-                count="--"
-                tone="waiting"
-                rows={2}
-              />
+              <div className="mt-1 text-xs text-muted-foreground">
+                Waiting {elapsedSeconds}s for the reviewer inbox response
+              </div>
             </div>
           </div>
-
-          <div className="w-2 bg-background">
-            <div className="mx-auto h-full w-px bg-border" />
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            {activeStep.label}
+          </h1>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+            {activeStep.detail}
+          </p>
+          <div className="mt-5 h-1 overflow-hidden rounded-full bg-border">
+            <div className="h-full w-1/3 animate-pulse rounded-full bg-foreground" />
           </div>
+        </div>
 
-          <div
-            className="min-w-0 flex-1 bg-muted/20"
-            style={{ minWidth: QUICK_PEEK_MIN_WIDTH }}
-          >
-            <div className="flex h-full min-h-[calc(100vh-48px)] flex-col">
-              <div className="border-b border-border px-5 py-5" aria-live="polite">
-                <div className="mb-4 flex items-center gap-3">
-                  <div className="relative flex h-9 w-9 flex-none items-center justify-center rounded-full bg-foreground text-background">
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                    <span className="absolute inset-0 rounded-full ring-4 ring-foreground/10" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-mono text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                      {activeStep.progress}
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      Waiting {elapsedSeconds}s for the reviewer inbox response
-                    </div>
-                  </div>
-                </div>
-                <h1 className="text-xl font-semibold tracking-tight text-foreground">
-                  {activeStep.label}
-                </h1>
-                <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-                  {activeStep.detail}
-                </p>
-                <div className="mt-5 h-1 overflow-hidden rounded-full bg-border">
-                  <div
-                    className="h-full w-1/3 animate-pulse rounded-full bg-foreground"
-                  />
-                </div>
+        <div className="grid gap-5 px-5 py-5">
+          <div>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="font-mono text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                Request progress
               </div>
-
-              <div className="grid gap-6 px-5 py-5">
-                <div>
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div className="font-mono text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                      Request progress
-                    </div>
-                    <div className="font-mono text-xs text-muted-foreground">
-                      local API · pending
-                    </div>
-                  </div>
-                  <ol className="space-y-1">
-                    {inboxLoadingSteps.map((step, index) => (
-                      <LoadingStepRow
-                        key={step.label}
-                        step={step}
-                        state={
-                          index < activeStepIndex
-                            ? "done"
-                            : index === activeStepIndex
-                              ? "active"
-                              : "pending"
-                        }
-                      />
-                    ))}
-                  </ol>
-                </div>
-
-                <div className="border-l-2 border-border pl-4 text-sm leading-6 text-muted-foreground">
-                  {slowRequest
-                    ? "Still waiting on GitHub/API data. Larger repositories can spend most of the first load on per-PR reviews and changed-file metadata."
-                    : "Keeping the main inbox request open while the API resolves source data and builds deterministic queue classifications."}
-                </div>
+              <div className="font-mono text-xs text-muted-foreground">
+                local API · pending
               </div>
             </div>
+            <ol className="space-y-1">
+              {inboxLoadingSteps.map((step, index) => (
+                <LoadingStepRow
+                  key={step.label}
+                  step={step}
+                  state={
+                    index < activeStepIndex
+                      ? "done"
+                      : index === activeStepIndex
+                        ? "active"
+                        : "pending"
+                  }
+                />
+              ))}
+            </ol>
+          </div>
+
+          <div className="border-l-2 border-border pl-4 text-sm leading-6 text-muted-foreground">
+            {slowRequest
+              ? "Still waiting on GitHub/API data. Larger repositories can spend most of the first load on per-PR reviews and activity metadata."
+              : "Keeping the main inbox request open while the API resolves source data and builds deterministic queue classifications."}
           </div>
         </div>
       </section>
-    </div>
-  )
-}
-
-function LoadingSidebar() {
-  return (
-    <aside className="flex min-h-[calc(100vh-48px)] flex-col border-r border-border bg-sidebar px-3 py-4 text-sidebar-foreground">
-      <div className="mb-4 flex items-center gap-2 px-2 py-1">
-        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-foreground text-[11px] font-semibold text-background">
-          PR
-        </div>
-        <div className="h-3 w-24 rounded-sm bg-sidebar-foreground/20" />
-      </div>
-      <div className="space-y-5">
-        <LoadingSidebarSection rows={5} />
-        <LoadingSidebarSection rows={4} />
-      </div>
-      <div className="mt-auto hidden rounded-md border border-sidebar-border bg-sidebar-accent/45 p-3 sm:block">
-        <div className="mb-2 h-2.5 w-28 rounded-sm bg-sidebar-foreground/15" />
-        <div className="h-2.5 w-full rounded-sm bg-sidebar-foreground/10" />
-      </div>
-    </aside>
-  )
-}
-
-function LoadingSidebarSection({ rows }: { rows: number }) {
-  return (
-    <div>
-      <div className="mb-2 h-2.5 w-20 rounded-sm bg-sidebar-foreground/15 px-2" />
-      <div className="space-y-1">
-        {Array.from({ length: rows }, (_, index) => (
-          <div
-            key={index}
-            className="flex items-center gap-2 rounded-md px-2 py-2"
-          >
-            <div className="h-2 w-2 rounded-full bg-sidebar-foreground/20" />
-            <div className="h-2.5 flex-1 rounded-sm bg-sidebar-foreground/12" />
-            <div className="h-2.5 w-5 rounded-sm bg-sidebar-foreground/10" />
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function LoadingQueueLane({
-  label,
-  count,
-  tone,
-  rows,
-}: {
-  label: string
-  count: string
-  tone: LaneDefinition["tone"]
-  rows: number
-}) {
-  return (
-    <section className="border-b border-border">
-      <div className="flex items-center gap-3 px-5 py-3">
-        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className={cn("h-2 w-2 rounded-full", laneToneClasses[tone])} />
-        <div className="font-mono text-xs uppercase tracking-[0.12em] text-muted-foreground">
-          {label}
-        </div>
-        <Badge variant="outline" className="ml-auto font-mono text-[11px]">
-          {count}
-        </Badge>
-      </div>
-      <div>
-        {Array.from({ length: rows }, (_, index) => (
-          <LoadingQueueRow key={index} tone={tone} />
-        ))}
-      </div>
-    </section>
-  )
-}
-
-function LoadingQueueRow({ tone }: { tone: LaneDefinition["tone"] }) {
-  return (
-    <div className="relative flex items-center gap-4 border-t border-border px-5 py-4">
-      <span className={cn("absolute inset-y-0 left-0 w-0.5", laneToneClasses[tone])} />
-      <div className="h-8 w-8 rounded-full border border-border bg-muted" />
-      <div className="min-w-0 flex-1 space-y-2">
-        <div className="h-3.5 w-3/5 rounded-sm bg-foreground/12" />
-        <div className="flex gap-2">
-          <div className="h-2.5 w-24 rounded-sm bg-muted" />
-          <div className="h-2.5 w-14 rounded-sm bg-muted" />
-          <div className="h-2.5 w-28 rounded-sm bg-muted" />
-        </div>
-      </div>
-      <div className="hidden w-24 space-y-2 lg:block">
-        <div className="ml-auto h-3 w-14 rounded-sm bg-foreground/10" />
-        <div className="ml-auto h-2.5 w-20 rounded-sm bg-muted" />
-      </div>
-      <div className="hidden gap-1 xl:flex">
-        <div className="h-7 w-7 rounded-md border border-border bg-muted/40" />
-        <div className="h-7 w-7 rounded-md border border-border bg-muted/40" />
-      </div>
     </div>
   )
 }
