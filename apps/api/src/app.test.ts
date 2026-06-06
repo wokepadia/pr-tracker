@@ -1,7 +1,11 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { syncPullRequestsToLocalSqlite } from "@pr-tracker/db";
+import {
+  listLocalPullRequestRows,
+  openLocalDatabase,
+  syncPullRequestsToLocalSqlite
+} from "@pr-tracker/db";
 import { describe, expect, it, vi } from "vitest";
 import { createApp } from "./app";
 import { createConfiguredRepository } from "./configured-repository";
@@ -303,6 +307,58 @@ describe("api app", () => {
       expect(searchedInbox.items.map((item) => item.pullRequest.id)).toEqual([
         "github:acme~web:42"
       ]);
+    } finally {
+      await repository.close?.();
+    }
+  });
+
+  it("downloads an unencrypted SQLite backup from local storage", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "pr-tracker-api-backup-"));
+    const databasePath = join(directory, "pr-tracker.sqlite");
+    const downloadedBackupPath = join(directory, "downloaded-backup.sqlite");
+    const repository = createLocalSqliteRepository({ path: databasePath });
+    const app = createApp({
+      repository,
+      localDatabasePath: databasePath,
+      webhookSink: createMemoryWebhookSink()
+    });
+
+    try {
+      const inboxResponse = await app.request("/api/reviewer-inbox");
+      expect(inboxResponse.status).toBe(200);
+      await inboxResponse.json();
+
+      const backupResponse = await app.request(
+        "/api/local-settings/sqlite-backup"
+      );
+      if (backupResponse.status !== 200) {
+        throw new Error(await backupResponse.text());
+      }
+      expect(backupResponse.status).toBe(200);
+      expect(backupResponse.headers.get("content-type")).toBe(
+        "application/vnd.sqlite3"
+      );
+      expect(backupResponse.headers.get("content-disposition")).toMatch(
+        /^attachment; filename="review-ninja-sqlite-backup-\d{14}\.sqlite"$/
+      );
+
+      await writeFile(
+        downloadedBackupPath,
+        Buffer.from(await backupResponse.arrayBuffer())
+      );
+      const backup = openLocalDatabase({
+        path: downloadedBackupPath,
+        initialize: false
+      });
+      try {
+        expect(listLocalPullRequestRows(backup.db).map((row) => row.id)).toEqual([
+          "pr_1",
+          "pr_2",
+          "pr_3"
+        ]);
+      } finally {
+        backup.close();
+      }
     } finally {
       await repository.close?.();
     }

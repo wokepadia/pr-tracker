@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
@@ -28,6 +28,11 @@ export interface LocalDatabase {
 export interface OpenLocalDatabaseOptions {
   path?: string;
   initialize?: boolean;
+}
+
+export interface CreateLocalDatabaseBackupOptions {
+  sourcePath?: string;
+  destinationPath: string;
 }
 
 export interface LocalPullRequestRow {
@@ -166,9 +171,33 @@ export function openLocalDatabase(
   };
 }
 
+export function createLocalDatabaseBackup(
+  options: CreateLocalDatabaseBackupOptions
+): void {
+  const sourcePath = options.sourcePath ?? defaultLocalDatabasePath();
+  if (sourcePath === ":memory:") {
+    throw new Error("Cannot back up an in-memory SQLite database.");
+  }
+  if (!existsSync(sourcePath)) {
+    throw new Error("Local SQLite database file does not exist.");
+  }
+
+  mkdirSync(dirname(options.destinationPath), { recursive: true });
+  const db = new DatabaseSync(sourcePath);
+  try {
+    db.exec(`vacuum main into ${sqliteStringLiteral(options.destinationPath)}`);
+  } finally {
+    db.close();
+  }
+}
+
 export function initializeLocalDatabase(db: DatabaseSync): void {
   db.exec(localDesktopSchemaSql);
   ensureLocalBoardItemNotesColumn(db);
+}
+
+function sqliteStringLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
 }
 
 export function seedLocalSampleData(

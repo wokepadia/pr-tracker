@@ -58,6 +58,12 @@ cached deterministic data.
 The "mark seen" action and board state are stored in SQLite and survive API
 restarts.
 
+The settings page can create an unencrypted `.sqlite` backup of the local
+database. The backup does not include the GitHub token because tokens are stored
+in the operating system keychain, but it can include repository names, pull
+request titles, comments, review activity, and local queue state. You are
+responsible for storing backup files safely.
+
 No GitHub writes are made from the app in this phase. Review submission still happens in GitHub.
 
 ## Legacy Live Mode

@@ -1,9 +1,20 @@
-import { useQuery } from "@tanstack/react-query"
+import {
+  useMutation,
+  useQuery,
+} from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import {
+  AlertTriangle,
+  Check,
+  Database,
+  Download,
   KeyRound,
+  Loader2,
 } from "lucide-react"
-import { getGithubSettingsStatus } from "@/api"
+import {
+  createSqliteBackup,
+  getGithubSettingsStatus,
+} from "@/api"
 import { GithubSettingsForm } from "@/components/GithubSettingsForm"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -14,6 +25,9 @@ export function SettingsPage() {
   const settingsQuery = useQuery({
     queryKey: ["github-settings"],
     queryFn: getGithubSettingsStatus,
+  })
+  const backupMutation = useMutation({
+    mutationFn: createSqliteBackup,
   })
 
   const tokenConfigured = settingsQuery.data?.tokenConfigured ?? false
@@ -63,6 +77,75 @@ export function SettingsPage() {
           <Separator className="my-5" />
 
           <GithubSettingsForm settings={settingsQuery.data} />
+        </Card>
+
+        <Card className="rounded-md border-border p-5 shadow-none">
+          <div className="flex items-start justify-between gap-5">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <Database className="h-4 w-4" />
+                SQLite backup
+              </div>
+              <h2 className="mt-2 text-lg font-semibold tracking-normal text-foreground">
+                Unencrypted local database backup
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                Create a plain SQLite backup of the local reviewer database.
+                This does not include your GitHub token, which is stored in the
+                operating system keychain.
+              </p>
+            </div>
+            <Button
+              className="rounded-md"
+              disabled={backupMutation.isPending}
+              type="button"
+              variant="outline"
+              onClick={() => backupMutation.mutate()}
+            >
+              {backupMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              Create backup
+            </Button>
+          </div>
+
+          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-900">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                This SQLite backup is not encrypted. It can contain repository
+                names, PR titles, comments, review activity, and your local
+                queue state. You are responsible for storing it safely.
+              </div>
+            </div>
+          </div>
+
+          {backupMutation.error ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {backupMutation.error.message}
+            </div>
+          ) : null}
+
+          {backupMutation.data ? (
+            <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm leading-6 text-emerald-800">
+              <Check className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                Created {backupMutation.data.filename}
+                {backupMutation.data.path ? (
+                  <>
+                    <span className="text-emerald-700"> at </span>
+                    <span className="break-all font-mono text-xs">
+                      {backupMutation.data.path}
+                    </span>
+                  </>
+                ) : (
+                  "."
+                )}
+              </div>
+            </div>
+          ) : null}
         </Card>
       </div>
     </div>

@@ -1,5 +1,9 @@
+import { mkdtemp } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import {
+  createLocalDatabaseBackup,
   defaultLocalBoardId,
   listLocalActivityEventRows,
   listLocalBoardItemStateRows,
@@ -163,6 +167,38 @@ describe("local SQLite storage", () => {
       ]);
     } finally {
       local.close();
+    }
+  });
+
+  it("creates an unencrypted backup of the local SQLite file", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "pr-tracker-db-backup-"));
+    const sourcePath = join(directory, "source.sqlite");
+    const backupPath = join(directory, "backup.sqlite");
+    const local = openLocalDatabase({ path: sourcePath });
+
+    try {
+      seedLocalSampleData(local.db);
+    } finally {
+      local.close();
+    }
+
+    createLocalDatabaseBackup({
+      sourcePath,
+      destinationPath: backupPath
+    });
+
+    const backup = openLocalDatabase({
+      path: backupPath,
+      initialize: false
+    });
+    try {
+      expect(listLocalPullRequestRows(backup.db).map((row) => row.id)).toEqual([
+        "pr_1",
+        "pr_2",
+        "pr_3"
+      ]);
+    } finally {
+      backup.close();
     }
   });
 

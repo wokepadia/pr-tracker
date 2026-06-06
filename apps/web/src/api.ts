@@ -25,6 +25,11 @@ export interface OnboardingState {
   version: number
 }
 
+export interface SqliteBackupResult {
+  filename: string
+  path?: string
+}
+
 export interface SaveGithubSettingsInput {
   token?: string
   repositories: string
@@ -189,6 +194,33 @@ export async function saveGithubSettings(
   return response.json() as Promise<GithubSettingsStatus>
 }
 
+export async function createSqliteBackup(): Promise<SqliteBackupResult> {
+  if (isTauri()) {
+    return (await getDesktopApi()).createDesktopSqliteBackup()
+  }
+
+  const response = await fetch(apiUrl("/api/local-settings/sqlite-backup"))
+
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Failed to create SQLite backup."))
+  }
+
+  const filename =
+    filenameFromContentDisposition(response.headers.get("content-disposition")) ??
+    `review-ninja-sqlite-backup-${backupTimestamp()}.sqlite`
+  const backupUrl = URL.createObjectURL(await response.blob())
+  const link = document.createElement("a")
+  link.href = backupUrl
+  link.download = filename
+  link.rel = "noopener"
+  document.body.append(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(backupUrl)
+
+  return { filename }
+}
+
 export async function getOnboardingState(): Promise<OnboardingState> {
   if (isTauri()) {
     return (await getDesktopApi()).getDesktopOnboardingState()
@@ -232,4 +264,13 @@ async function responseError(
   }
 
   return body.error ?? fallback
+}
+
+function filenameFromContentDisposition(value: string | null): string | undefined {
+  const match = value?.match(/filename="([^"]+)"/)
+  return match?.[1]
+}
+
+function backupTimestamp(now = new Date()): string {
+  return now.toISOString().replaceAll(/\D/g, "").slice(0, 14)
 }

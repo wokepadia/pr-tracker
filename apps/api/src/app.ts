@@ -1,5 +1,12 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import {
+  createLocalDatabaseBackup,
+  defaultLocalDatabasePath
+} from "@pr-tracker/db";
 import { normalizeWebhookEvent } from "@pr-tracker/github";
 import { getApiConfig } from "./config";
 import {
@@ -23,6 +30,7 @@ export function createApp(options?: {
   repository?: ReviewerInboxRepository;
   settingsOptions?: LocalGithubSettingsOptions;
   onboardingOptions?: LocalOnboardingSettingsOptions;
+  localDatabasePath?: string;
   webhookSink?: WebhookSink;
 }): Hono {
   const app = new Hono();
@@ -152,6 +160,42 @@ export function createApp(options?: {
         },
         400
       );
+    }
+  });
+
+  app.get("/api/local-settings/sqlite-backup", async () => {
+    const backupDirectory = await mkdtemp(join(tmpdir(), "pr-tracker-backup-"));
+    const backupFilename = `review-ninja-sqlite-backup-${backupTimestamp()}.sqlite`;
+    const backupPath = join(backupDirectory, backupFilename);
+
+    try {
+      createLocalDatabaseBackup({
+        sourcePath:
+          options?.localDatabasePath ??
+          process.env.PR_TRACKER_LOCAL_DB_PATH ??
+          defaultLocalDatabasePath(),
+        destinationPath: backupPath
+      });
+
+      const backup = await readFile(backupPath);
+      return new Response(backup, {
+        headers: {
+          "content-disposition": `attachment; filename="${backupFilename}"`,
+          "content-type": "application/vnd.sqlite3"
+        }
+      });
+    } catch (error) {
+      return Response.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to create SQLite backup."
+        },
+        { status: 500 }
+      );
+    } finally {
+      await rm(backupDirectory, { recursive: true, force: true });
     }
   });
 
@@ -316,4 +360,8 @@ function isBoardState(value: unknown): value is BoardState {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function backupTimestamp(now = new Date()): string {
+  return now.toISOString().replaceAll(/\D/g, "").slice(0, 14);
 }

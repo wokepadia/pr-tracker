@@ -28,6 +28,7 @@ import type {
   OnboardingState,
   PullRequestDetailResponse,
   SaveGithubSettingsInput,
+  SqliteBackupResult,
 } from "@/api"
 import { localDesktopSchemaSql } from "../../../../packages/db/src/local-schema"
 
@@ -353,6 +354,17 @@ export async function saveDesktopGithubSettings(
   lastSuccessfulSyncFingerprint = undefined
 
   return getDesktopGithubSettingsStatus()
+}
+
+export async function createDesktopSqliteBackup(): Promise<SqliteBackupResult> {
+  const db = await getDatabase()
+  const { downloadDir, join } = await import("@tauri-apps/api/path")
+  const filename = `review-ninja-sqlite-backup-${backupTimestamp()}.sqlite`
+  const path = await join(await downloadDir(), filename)
+
+  await db.execute(`vacuum main into ${sqliteStringLiteral(path)}`)
+
+  return { filename, path }
 }
 
 export async function getDesktopOnboardingState(): Promise<OnboardingState> {
@@ -1727,6 +1739,14 @@ function cleanPullRequestDescription(value: string | null | undefined): string |
 function cleanOptionalString(value: string | undefined): string | undefined {
   const trimmed = value?.trim()
   return trimmed ? trimmed : undefined
+}
+
+function sqliteStringLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`
+}
+
+function backupTimestamp(now = new Date()): string {
+  return now.toISOString().replaceAll(/\D/g, "").slice(0, 17)
 }
 
 function cleanOptionalText(value: string | undefined): string | null {
