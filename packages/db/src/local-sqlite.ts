@@ -94,6 +94,7 @@ export interface LocalBoardItemStateRow {
   column_id: string | null;
   sort_order: number;
   last_seen_at: string | null;
+  notes: string | null;
   is_snoozed: number;
   is_muted: number;
   is_pinned: number;
@@ -121,6 +122,7 @@ export interface SaveLocalBoardItemInput {
   snoozed?: boolean;
   muted?: boolean;
   pinned?: boolean;
+  notes?: string;
 }
 
 export interface SaveLocalBoardStateInput {
@@ -166,6 +168,7 @@ export function openLocalDatabase(
 
 export function initializeLocalDatabase(db: DatabaseSync): void {
   db.exec(localDesktopSchemaSql);
+  ensureLocalBoardItemNotesColumn(db);
 }
 
 export function seedLocalSampleData(
@@ -400,6 +403,7 @@ export function listLocalBoardItemStateRows(
           column_id,
           sort_order,
           last_seen_at,
+          notes,
           is_snoozed,
           is_muted,
           is_pinned,
@@ -491,6 +495,7 @@ export function saveLocalBoardState(
             pull_request_id,
             column_id,
             sort_order,
+            notes,
             is_snoozed,
             is_muted,
             is_pinned,
@@ -498,11 +503,12 @@ export function saveLocalBoardState(
             updated_at,
             archived_at
           )
-          values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)
+          values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)
           on conflict(board_id, pull_request_id)
           do update set
             column_id = excluded.column_id,
             sort_order = excluded.sort_order,
+            notes = excluded.notes,
             is_snoozed = excluded.is_snoozed,
             is_muted = excluded.is_muted,
             is_pinned = excluded.is_pinned,
@@ -515,6 +521,7 @@ export function saveLocalBoardState(
         item.pullRequestId,
         item.columnId,
         item.sortOrder,
+        cleanOptionalText(item.notes),
         boolToSqlite(Boolean(item.snoozed)),
         boolToSqlite(Boolean(item.muted)),
         boolToSqlite(Boolean(item.pinned)),
@@ -947,6 +954,15 @@ function buildSnapshotActivity(
   );
 }
 
+function ensureLocalBoardItemNotesColumn(db: DatabaseSync): void {
+  const rows = db
+    .prepare(`pragma table_info(board_items)`)
+    .all() as Array<{ name: string }>;
+  if (rows.some((row) => row.name === "notes")) return;
+
+  db.exec(`alter table board_items add column notes text`);
+}
+
 function snapshotReviewTitle(state: string | undefined): string {
   const normalizedState = state?.toLowerCase();
   if (normalizedState === "approved") {
@@ -1305,4 +1321,9 @@ function transaction<T>(db: DatabaseSync, callback: () => T): T {
 
 function boolToSqlite(value: boolean): number {
   return value ? 1 : 0;
+}
+
+function cleanOptionalText(value: string | undefined): string | null {
+  if (!value?.trim()) return null;
+  return value.replace(/\r\n?/g, "\n");
 }

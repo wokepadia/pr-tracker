@@ -361,6 +361,7 @@ create table if not exists board_items (
   viewer_review_state text,
   viewer_has_unresolved_threads integer not null default 0,
   needs_attention_reason text,
+  notes text,
   is_snoozed integer not null default 0,
   is_muted integer not null default 0,
   is_pinned integer not null default 0,

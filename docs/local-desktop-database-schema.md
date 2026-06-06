@@ -146,10 +146,10 @@ resizable Kanban layout.
 
 `board_items` determines which cached PRs appear on the board. It links a board
 to a PR and stores local workflow state such as column placement, sort order,
-pinned/muted/snoozed state, and last-seen timestamps. It also carries a few
-viewer relationship fields so hot-path board queries do not need to repeatedly
-derive "I authored this", "I am requested", or "I have unresolved threads" by
-joining the whole GitHub cache.
+pinned/muted/snoozed state, private notes, and last-seen timestamps. It also
+carries a few viewer relationship fields so hot-path board queries do not need
+to repeatedly derive "I authored this", "I am requested", or "I have unresolved
+threads" by joining the whole GitHub cache.
 
 This is the important boundary:
 

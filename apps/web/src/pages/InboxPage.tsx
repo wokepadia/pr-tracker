@@ -68,6 +68,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ActivityEventLine } from "@/components/ActivityEventLine"
 import { AppLogo } from "@/components/AppLogo"
+import { BoardItemNotes } from "@/components/BoardItemNotes"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -768,6 +769,14 @@ export function InboxPage() {
     moveSelectionAfterHiding(itemId)
   }
 
+  function updateSelectedNotes(notes: string) {
+    if (!selectedItem) return
+    updateLocalItemState(selectedItem.id, (current) => ({
+      ...current,
+      notes: notes.trim() ? notes : undefined,
+    }))
+  }
+
   function focusHome() {
     setGroupMode("action")
     setActiveActionTabId("home")
@@ -1053,12 +1062,14 @@ export function InboxPage() {
                 isPinned={selectedItemIsPinned}
                 isSnoozed={selectedItemIsSnoozed}
                 isMuted={selectedItemIsMuted}
+                notes={selectedItemLocalState.notes ?? ""}
                 isMarkingSeen={markSeenMutation.isPending}
                 caughtUpError={failedCaughtUpItemId === selectedItem.id}
                 onSnooze={snoozeSelected}
                 onRestore={restoreSelected}
                 onTogglePin={togglePinSelected}
                 onMute={muteSelected}
+                onNotesChange={updateSelectedNotes}
                 onMoveToBucket={moveSelectedToBucket}
                 onCaughtUp={() => void markSelectedCaughtUp()}
               />
@@ -2580,12 +2591,14 @@ function QuickPeekPanel({
   isPinned,
   isSnoozed,
   isMuted,
+  notes,
   isMarkingSeen,
   caughtUpError,
   onSnooze,
   onRestore,
   onTogglePin,
   onMute,
+  onNotesChange,
   onMoveToBucket,
   onCaughtUp,
 }: {
@@ -2596,12 +2609,14 @@ function QuickPeekPanel({
   isPinned: boolean
   isSnoozed: boolean
   isMuted: boolean
+  notes: string
   isMarkingSeen: boolean
   caughtUpError: boolean
   onSnooze: () => void
   onRestore: () => void
   onTogglePin: () => void
   onMute: () => void
+  onNotesChange: (notes: string) => void
   onMoveToBucket: (bucketId: UserBucketId) => void
   onCaughtUp: () => void
 }) {
@@ -2665,6 +2680,10 @@ function QuickPeekPanel({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        <BoardItemNotes value={notes} onChange={onNotesChange} />
+
+        <Separator className="my-4 bg-border" />
+
         {item.description ? (
           <>
             <section>

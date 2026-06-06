@@ -139,7 +139,8 @@ function loadBoardState(local: LocalDatabase): BoardState {
       bucketId: row.column_id ?? undefined,
       snoozed: row.is_snoozed ? true : undefined,
       muted: row.is_muted ? true : undefined,
-      pinned: row.is_pinned ? true : undefined
+      pinned: row.is_pinned ? true : undefined,
+      notes: row.notes ?? undefined
     };
   }
 
@@ -169,6 +170,7 @@ function toSaveLocalBoardStateInput(
       snoozed?: boolean;
       muted?: boolean;
       pinned?: boolean;
+      notes?: string;
     }
   >();
 
@@ -200,7 +202,8 @@ function toSaveLocalBoardStateInput(
       sortOrder: current?.sortOrder ?? itemByPullRequestId.size,
       snoozed: itemState.snoozed,
       muted: itemState.muted,
-      pinned: itemState.pinned
+      pinned: itemState.pinned,
+      notes: itemState.notes
     });
   }
 

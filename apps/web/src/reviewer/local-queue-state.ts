@@ -3,6 +3,7 @@ export interface LocalPullRequestQueueState {
   pinned?: boolean
   muted?: boolean
   bucketId?: UserBucketId
+  notes?: string
 }
 
 export type LocalQueueStateByPullRequestId = Partial<
@@ -228,6 +229,7 @@ function parsePullRequestQueueState(
     pinned: readBooleanProperty(value, "pinned"),
     muted: readBooleanProperty(value, "muted"),
     bucketId: readBucketIdProperty(value, "bucketId"),
+    notes: readNotesProperty(value, "notes"),
   }
 
   const normalizedState = normalizeLocalQueueState(state)
@@ -238,7 +240,9 @@ function parsePullRequestQueueState(
 export function hasLocalQueueState(
   state: LocalPullRequestQueueState
 ): boolean {
-  return Boolean(state.snoozed || state.pinned || state.muted || state.bucketId)
+  return Boolean(
+    state.snoozed || state.pinned || state.muted || state.bucketId || state.notes
+  )
 }
 
 export function canSnoozeLocalQueueItem(
@@ -262,19 +266,24 @@ export function canMuteLocalQueueItem(
 function normalizeLocalQueueState(
   state: LocalPullRequestQueueState
 ): LocalPullRequestQueueState {
+  const notes = state.notes?.trim() ? state.notes : undefined
+
   if (state.snoozed) {
-    return { snoozed: true, bucketId: state.bucketId }
+    return { snoozed: true, bucketId: state.bucketId, notes }
   }
 
   if (state.muted) {
-    return { muted: true, bucketId: state.bucketId }
+    return { muted: true, bucketId: state.bucketId, notes }
   }
 
   if (state.pinned) {
-    return { pinned: true, bucketId: state.bucketId }
+    return { pinned: true, bucketId: state.bucketId, notes }
   }
 
-  return state.bucketId ? { bucketId: state.bucketId } : {}
+  return {
+    ...(state.bucketId ? { bucketId: state.bucketId } : {}),
+    ...(notes ? { notes } : {}),
+  }
 }
 
 function readBooleanProperty(
@@ -293,6 +302,17 @@ function readBucketIdProperty(
 ): UserBucketId | undefined {
   const propertyValue = (value as Record<string, unknown>)[property]
   return readUserBucketId(propertyValue)
+}
+
+function readNotesProperty(
+  value: object,
+  property: keyof LocalPullRequestQueueState
+): string | undefined {
+  const propertyValue = (value as Record<string, unknown>)[property]
+  if (typeof propertyValue !== "string") return undefined
+
+  const notes = propertyValue.replace(/\r\n?/g, "\n")
+  return notes.trim() ? notes : undefined
 }
 
 function defaultUserBucketsFromLegacyLabels(

@@ -77,6 +77,7 @@ interface LocalBoardItemStateRow {
   column_id: string | null
   sort_order: number
   last_seen_at: string | null
+  notes: string | null
   is_snoozed: number
   is_muted: number
   is_pinned: number
@@ -189,6 +190,7 @@ export async function saveDesktopBoardState(
       snoozed?: boolean
       muted?: boolean
       pinned?: boolean
+      notes?: string
     }
   >()
 
@@ -221,6 +223,7 @@ export async function saveDesktopBoardState(
       snoozed: itemState.snoozed,
       muted: itemState.muted,
       pinned: itemState.pinned,
+      notes: itemState.notes,
     })
   }
 
@@ -272,13 +275,14 @@ export async function saveDesktopBoardState(
         `
           insert into board_items (
             id, board_id, pull_request_id, column_id, sort_order,
-            is_snoozed, is_muted, is_pinned, created_at, updated_at, archived_at
+            notes, is_snoozed, is_muted, is_pinned, created_at, updated_at, archived_at
           )
-          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, null)
+          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, null)
           on conflict(board_id, pull_request_id)
           do update set
             column_id = excluded.column_id,
             sort_order = excluded.sort_order,
+            notes = excluded.notes,
             is_snoozed = excluded.is_snoozed,
             is_muted = excluded.is_muted,
             is_pinned = excluded.is_pinned,
@@ -291,6 +295,7 @@ export async function saveDesktopBoardState(
           item.pullRequestId,
           item.columnId,
           item.sortOrder,
+          cleanOptionalText(item.notes),
           boolToSqlite(Boolean(item.snoozed)),
           boolToSqlite(Boolean(item.muted)),
           boolToSqlite(Boolean(item.pinned)),
@@ -376,6 +381,7 @@ async function initializeDatabase(): Promise<SqlDatabase> {
   for (const statement of splitSqlStatements(localDesktopSchemaSql)) {
     await db.execute(statement)
   }
+  await ensureBoardItemNotesColumn(db)
   return db
 }
 
@@ -1019,6 +1025,7 @@ async function loadBoardState(db: SqlDatabase): Promise<BoardState> {
       snoozed: row.is_snoozed ? true : undefined,
       muted: row.is_muted ? true : undefined,
       pinned: row.is_pinned ? true : undefined,
+      notes: row.notes ?? undefined,
     }
   }
 
@@ -1286,6 +1293,7 @@ async function listBoardItemStateRows(
         column_id,
         sort_order,
         last_seen_at,
+        notes,
         is_snoozed,
         is_muted,
         is_pinned
@@ -1697,6 +1705,20 @@ function cleanPullRequestDescription(value: string | null | undefined): string |
 function cleanOptionalString(value: string | undefined): string | undefined {
   const trimmed = value?.trim()
   return trimmed ? trimmed : undefined
+}
+
+function cleanOptionalText(value: string | undefined): string | null {
+  if (!value?.trim()) return null
+  return value.replace(/\r\n?/g, "\n")
+}
+
+async function ensureBoardItemNotesColumn(db: SqlDatabase): Promise<void> {
+  const rows = await db.select<Array<{ name: string }>>(
+    `pragma table_info(board_items)`
+  )
+  if (rows.some((row) => row.name === "notes")) return
+
+  await db.execute(`alter table board_items add column notes text`)
 }
 
 function localGithubSettingsFingerprint(credentials: LocalGithubCredentials): string {

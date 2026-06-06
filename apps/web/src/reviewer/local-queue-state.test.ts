@@ -69,18 +69,38 @@ describe("local queue state", () => {
     })
   })
 
+  it("loads persisted notes without requiring another local state", () => {
+    const storage = {
+      getItem: () =>
+        JSON.stringify({
+          pr_1: { notes: "Check the migration path.\r\nAsk about rollout." },
+          pr_2: { notes: "   " },
+          pr_3: { notes: 42 },
+        }),
+    }
+
+    expect(loadLocalQueueState(storage)).toEqual({
+      pr_1: { notes: "Check the migration path.\nAsk about rollout." },
+    })
+  })
+
   it("normalizes conflicting persisted local states", () => {
     const storage = {
       getItem: () =>
         JSON.stringify({
-          pr_1: { snoozed: true, pinned: true, muted: true },
+          pr_1: {
+            snoozed: true,
+            pinned: true,
+            muted: true,
+            notes: "Follow up tomorrow.",
+          },
           pr_2: { pinned: true, muted: true },
           pr_3: { pinned: true },
         }),
     }
 
     expect(loadLocalQueueState(storage)).toEqual({
-      pr_1: { snoozed: true },
+      pr_1: { snoozed: true, notes: "Follow up tomorrow." },
       pr_2: { muted: true },
       pr_3: { pinned: true },
     })

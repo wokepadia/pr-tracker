@@ -29,6 +29,7 @@ export interface BoardState {
       pinned?: boolean;
       muted?: boolean;
       bucketId?: string;
+      notes?: string;
     }
   >>;
   userBucketItemOrder: Record<string, string[]>;

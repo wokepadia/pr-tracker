@@ -118,7 +118,8 @@ describe("local SQLite storage", () => {
             pullRequestId: "pr_1",
             columnId: "custom",
             sortOrder: 0,
-            pinned: true
+            pinned: true,
+            notes: "Ask Maya about the migration window."
           },
           {
             pullRequestId: "pr_2",
@@ -144,6 +145,7 @@ describe("local SQLite storage", () => {
           pull_request_id: "pr_1",
           column_id: "custom",
           sort_order: 0,
+          notes: "Ask Maya about the migration window.",
           is_pinned: 1
         },
         {

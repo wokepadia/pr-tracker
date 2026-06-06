@@ -26,6 +26,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ActivityEventLine } from "@/components/ActivityEventLine"
+import { BoardItemNotes } from "@/components/BoardItemNotes"
 import { MarkdownContent } from "@/components/MarkdownContent"
 import {
   DropdownMenu,
@@ -234,6 +235,13 @@ export function PullRequestPage() {
     }))
   }
 
+  function updatePullRequestNotes(itemId: string, notes: string) {
+    updateLocalItemState(itemId, (current) => ({
+      ...current,
+      notes: notes.trim() ? notes : undefined,
+    }))
+  }
+
   async function markCaughtUpById(itemId: string) {
     setCaughtUpError(false)
     markSeenMutation.reset()
@@ -287,6 +295,10 @@ export function PullRequestPage() {
     mutePullRequestById(loadedItem.id)
   }
 
+  function updateNotes(notes: string) {
+    updatePullRequestNotes(loadedItem.id, notes)
+  }
+
   function movePullRequest(bucketId: UserBucketId) {
     movePullRequestToBucket(loadedItem.id, bucketId)
   }
@@ -308,6 +320,11 @@ export function PullRequestPage() {
       />
       <div className="grid grid-cols-1 gap-0 border-t border-border xl:grid-cols-[62fr_38fr]">
         <main className="min-w-0 px-7 py-6">
+          <BoardItemNotes
+            value={loadedItemLocalState.notes ?? ""}
+            onChange={updateNotes}
+            className="mb-6"
+          />
           <DescriptionPanel description={loadedItem.description} />
           <div className="mb-4 text-xs text-muted-foreground">
             Activity · newest first
