@@ -5,6 +5,8 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "keyring:allow-get-password",
+    "keyring:allow-set-password",
     "sql:default",
     "sql:allow-execute"
   ]
