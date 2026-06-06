@@ -36,6 +36,7 @@ GITHUB_TOKEN=github_pat_...
 GITHUB_REPOSITORIES=owner/repo,owner/another-repo
 PR_TRACKER_VIEWER_LOGIN=your-github-login
 PR_TRACKER_LOCAL_DB_PATH=/path/to/pr-tracker.sqlite
+PR_TRACKER_GITHUB_SETTINGS_PATH=/path/to/github-settings.json
 ```
 
 `GITHUB_REPOSITORIES` is required when using an environment token. It keeps the

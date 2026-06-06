@@ -187,6 +187,10 @@ async function writeLocalGithubSettings(
 }
 
 function defaultConfigPath(): string {
+  if (process.env.PR_TRACKER_GITHUB_SETTINGS_PATH) {
+    return process.env.PR_TRACKER_GITHUB_SETTINGS_PATH;
+  }
+
   return path.join(
     homedir(),
     "Library",
