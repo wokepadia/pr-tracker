@@ -10,6 +10,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppFrame } from "./app/AppFrame";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { InboxPage } from "./pages/InboxPage";
+import { OnboardingPage } from "./pages/OnboardingPage";
 import { PullRequestPage } from "./pages/PullRequestPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import "./index.css";
@@ -41,6 +42,12 @@ const pullRequestRoute = createRoute({
   component: PullRequestPage
 });
 
+const onboardingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/onboarding",
+  component: OnboardingPage
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
@@ -50,6 +57,7 @@ const settingsRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   inboxRoute,
   pullRequestRoute,
+  onboardingRoute,
   settingsRoute
 ]);
 

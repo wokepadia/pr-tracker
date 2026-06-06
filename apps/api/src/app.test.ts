@@ -290,6 +290,55 @@ describe("api app", () => {
     expect(statusBody).toEqual(saveBody);
   });
 
+  it("stores local onboarding state without returning token-like input", async () => {
+    const onboardingPath = join(
+      await mkdtemp(join(tmpdir(), "pr-tracker-onboarding-")),
+      "onboarding-settings.json"
+    );
+    const app = createApp({
+      repository: createSampleRepository(),
+      onboardingOptions: { configPath: onboardingPath },
+      webhookSink: createMemoryWebhookSink()
+    });
+
+    const defaultResponse = await app.request("/api/local-settings/onboarding");
+    const defaultBody = await defaultResponse.json();
+
+    expect(defaultResponse.status).toBe(200);
+    expect(defaultBody).toEqual({ version: 1 });
+
+    const saveResponse = await app.request("/api/local-settings/onboarding", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        completedAt: "2026-06-06T10:00:00.000Z",
+        introSkippedAt: "2026-06-06T09:55:00.000Z",
+        version: 1,
+        token: "github_pat_should_not_come_back"
+      })
+    });
+    const saveBody = (await saveResponse.json()) as {
+      completedAt?: string;
+      introSkippedAt?: string;
+      version: number;
+      token?: string;
+    };
+
+    expect(saveResponse.status).toBe(200);
+    expect(saveBody).toEqual({
+      completedAt: "2026-06-06T10:00:00.000Z",
+      introSkippedAt: "2026-06-06T09:55:00.000Z",
+      version: 1
+    });
+    expect(saveBody.token).toBeUndefined();
+
+    const statusResponse = await app.request("/api/local-settings/onboarding");
+    const statusBody = await statusResponse.json();
+
+    expect(statusResponse.status).toBe(200);
+    expect(statusBody).toEqual(saveBody);
+  });
+
   it("syncs saved local GitHub settings into SQLite before serving the inbox", async () => {
     const databasePath = join(
       await mkdtemp(join(tmpdir(), "pr-tracker-local-sync-db-")),

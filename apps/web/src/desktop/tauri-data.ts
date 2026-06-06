@@ -25,6 +25,7 @@ import {
 import type {
   BoardState,
   GithubSettingsStatus,
+  OnboardingState,
   PullRequestDetailResponse,
   SaveGithubSettingsInput,
 } from "@/api"
@@ -34,6 +35,7 @@ const databaseUrl = "sqlite:pr-tracker.sqlite"
 const defaultLocalProfileId = "local"
 const defaultLocalBoardId = "default-board"
 const githubSettingsKey = "github-settings"
+const onboardingSettingsKey = "onboarding"
 const keychainService = "pr-tracker.github-token"
 const keychainAccount = "github-token"
 
@@ -343,6 +345,24 @@ export async function saveDesktopGithubSettings(
   lastSuccessfulSyncFingerprint = undefined
 
   return getDesktopGithubSettingsStatus()
+}
+
+export async function getDesktopOnboardingState(): Promise<OnboardingState> {
+  const db = await getDatabase()
+  return readOnboardingState(db)
+}
+
+export async function saveDesktopOnboardingState(
+  input: Partial<OnboardingState>
+): Promise<OnboardingState> {
+  const db = await getDatabase()
+  const state: OnboardingState = {
+    version: normalizeOnboardingVersion(input.version),
+    completedAt: cleanOptionalString(input.completedAt),
+    introSkippedAt: cleanOptionalString(input.introSkippedAt),
+  }
+  await writeAppSetting(db, onboardingSettingsKey, state)
+  return state
 }
 
 async function getDatabase(): Promise<SqlDatabase> {
@@ -1303,15 +1323,10 @@ async function loadLastSeen(
 async function readLocalGithubSettings(
   db: SqlDatabase
 ): Promise<LocalGithubSettings> {
-  const row = (
-    await db.select<Array<{ value_json: string }>>(
-      `select value_json from app_settings where key = $1`,
-      [githubSettingsKey]
-    )
-  )[0]
-  if (!row) return { repositories: [] }
+  const raw = await readAppSetting(db, githubSettingsKey)
+  if (!raw) return { repositories: [] }
 
-  const parsed = JSON.parse(row.value_json) as {
+  const parsed = JSON.parse(raw) as {
     repositories?: unknown
     viewerLogin?: unknown
     apiBaseUrl?: unknown
@@ -1328,9 +1343,50 @@ async function readLocalGithubSettings(
   }
 }
 
+async function readOnboardingState(db: SqlDatabase): Promise<OnboardingState> {
+  const raw = await readAppSetting(db, onboardingSettingsKey)
+  if (!raw) return { version: 1 }
+
+  const parsed = JSON.parse(raw) as {
+    completedAt?: unknown
+    introSkippedAt?: unknown
+    version?: unknown
+  }
+
+  return {
+    version: normalizeOnboardingVersion(parsed.version),
+    completedAt:
+      typeof parsed.completedAt === "string" ? parsed.completedAt : undefined,
+    introSkippedAt:
+      typeof parsed.introSkippedAt === "string"
+        ? parsed.introSkippedAt
+        : undefined,
+  }
+}
+
+async function readAppSetting(
+  db: SqlDatabase,
+  key: string
+): Promise<string | undefined> {
+  return (
+    await db.select<Array<{ value_json: string }>>(
+      `select value_json from app_settings where key = $1`,
+      [key]
+    )
+  )[0]?.value_json
+}
+
 async function writeLocalGithubSettings(
   db: SqlDatabase,
   settings: LocalGithubSettings
+): Promise<void> {
+  await writeAppSetting(db, githubSettingsKey, settings)
+}
+
+async function writeAppSetting(
+  db: SqlDatabase,
+  key: string,
+  value: unknown
 ): Promise<void> {
   await db.execute(
     `
@@ -1339,7 +1395,7 @@ async function writeLocalGithubSettings(
       on conflict(key)
       do update set value_json = excluded.value_json, updated_at = excluded.updated_at
     `,
-    [githubSettingsKey, JSON.stringify(settings), new Date().toISOString()]
+    [key, JSON.stringify(value), new Date().toISOString()]
   )
 }
 
@@ -1356,6 +1412,12 @@ async function loadLocalGithubCredentials(
 
 async function readToken(): Promise<string | undefined> {
   return (await getPassword(keychainService, keychainAccount)) ?? undefined
+}
+
+function normalizeOnboardingVersion(value: unknown): number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0
+    ? value
+    : 1
 }
 
 async function isLocalDatabaseEmpty(db: SqlDatabase): Promise<boolean> {

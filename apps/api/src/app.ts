@@ -8,6 +8,11 @@ import {
   type LocalGithubSettingsOptions
 } from "./local-github-settings";
 import {
+  getLocalOnboardingState,
+  saveLocalOnboardingState,
+  type LocalOnboardingSettingsOptions
+} from "./local-onboarding-settings";
+import {
   type BoardState,
   type ReviewerInboxRepository
 } from "./repository";
@@ -17,6 +22,7 @@ import { createConfiguredRepository } from "./configured-repository";
 export function createApp(options?: {
   repository?: ReviewerInboxRepository;
   settingsOptions?: LocalGithubSettingsOptions;
+  onboardingOptions?: LocalOnboardingSettingsOptions;
   webhookSink?: WebhookSink;
 }): Hono {
   const app = new Hono();
@@ -91,6 +97,58 @@ export function createApp(options?: {
             error instanceof Error
               ? error.message
               : "Failed to save GitHub settings."
+        },
+        400
+      );
+    }
+  });
+
+  app.get("/api/local-settings/onboarding", async (c) => {
+    try {
+      return c.json(await getLocalOnboardingState(options?.onboardingOptions));
+    } catch (error) {
+      return c.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to load onboarding state."
+        },
+        500
+      );
+    }
+  });
+
+  app.post("/api/local-settings/onboarding", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as {
+      completedAt?: unknown;
+      introSkippedAt?: unknown;
+      version?: unknown;
+      token?: unknown;
+    };
+
+    try {
+      const state = await saveLocalOnboardingState(
+        {
+          completedAt:
+            typeof body.completedAt === "string" ? body.completedAt : undefined,
+          introSkippedAt:
+            typeof body.introSkippedAt === "string"
+              ? body.introSkippedAt
+              : undefined,
+          version: typeof body.version === "number" ? body.version : undefined
+        },
+        options?.onboardingOptions
+      );
+
+      return c.json(state);
+    } catch (error) {
+      return c.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to save onboarding state."
         },
         400
       );

@@ -19,6 +19,12 @@ export interface GithubSettingsStatus {
   storage: "macos-keychain" | "os-keychain"
 }
 
+export interface OnboardingState {
+  completedAt?: string
+  introSkippedAt?: string
+  version: number
+}
+
 export interface SaveGithubSettingsInput {
   token?: string
   repositories: string
@@ -180,6 +186,40 @@ export async function saveGithubSettings(
   }
 
   return response.json() as Promise<GithubSettingsStatus>
+}
+
+export async function getOnboardingState(): Promise<OnboardingState> {
+  if (isTauri()) {
+    return (await getDesktopApi()).getDesktopOnboardingState()
+  }
+
+  const response = await fetch(apiUrl("/api/local-settings/onboarding"))
+
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Failed to load onboarding state."))
+  }
+
+  return response.json() as Promise<OnboardingState>
+}
+
+export async function saveOnboardingState(
+  input: Partial<OnboardingState>
+): Promise<OnboardingState> {
+  if (isTauri()) {
+    return (await getDesktopApi()).saveDesktopOnboardingState(input)
+  }
+
+  const response = await fetch(apiUrl("/api/local-settings/onboarding"), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  })
+
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Failed to save onboarding state."))
+  }
+
+  return response.json() as Promise<OnboardingState>
 }
 
 async function responseError(
