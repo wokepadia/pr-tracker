@@ -98,10 +98,24 @@ export function moveItemInBucketItemOrder({
   const targetOrder = mergeStoredAndVisibleItemIds(
     current[targetBucketId] ?? [],
     targetItemIds
-  ).filter((id) => id !== itemId)
-  const targetIndex = overItemId ? targetOrder.indexOf(overItemId) : -1
-  targetOrder.splice(targetIndex >= 0 ? targetIndex : targetOrder.length, 0, itemId)
-  next[targetBucketId] = targetOrder
+  )
+  const sourceIndex = targetOrder.indexOf(itemId)
+  const overIndex = overItemId ? targetOrder.indexOf(overItemId) : -1
+  const targetOrderWithoutItem = targetOrder.filter((id) => id !== itemId)
+  const insertAfterOverItem =
+    sourceBucketId === targetBucketId &&
+    sourceIndex >= 0 &&
+    overIndex >= 0 &&
+    sourceIndex < overIndex
+  const targetIndex = overItemId
+    ? targetOrderWithoutItem.indexOf(overItemId)
+    : -1
+  const insertionIndex =
+    targetIndex >= 0
+      ? targetIndex + (insertAfterOverItem ? 1 : 0)
+      : targetOrderWithoutItem.length
+  targetOrderWithoutItem.splice(insertionIndex, 0, itemId)
+  next[targetBucketId] = targetOrderWithoutItem
 
   return next
 }

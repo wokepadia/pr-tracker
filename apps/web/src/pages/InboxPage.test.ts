@@ -187,7 +187,7 @@ describe("inbox kanban ordering", () => {
     expect(nextOrder.reviewing).toEqual(["pr_2", "pr_3"])
   })
 
-  it("reorders cards within a bucket", () => {
+  it("moves a card upward within a bucket", () => {
     const nextOrder = moveItemInBucketItemOrder({
       current: createEmptyUserBucketItemOrder(),
       itemId: "pr_2",
@@ -195,6 +195,19 @@ describe("inbox kanban ordering", () => {
       targetBucketId: "inbox",
       bucketItems,
       overItemId: "pr_1",
+    })
+
+    expect(nextOrder.inbox).toEqual(["pr_2", "pr_1"])
+  })
+
+  it("moves a card downward within a bucket", () => {
+    const nextOrder = moveItemInBucketItemOrder({
+      current: createEmptyUserBucketItemOrder(),
+      itemId: "pr_1",
+      sourceBucketId: "inbox",
+      targetBucketId: "inbox",
+      bucketItems,
+      overItemId: "pr_2",
     })
 
     expect(nextOrder.inbox).toEqual(["pr_2", "pr_1"])
