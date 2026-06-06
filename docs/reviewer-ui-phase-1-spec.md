@@ -75,7 +75,7 @@ Both screens must use the same top product frame and the same dense, dark, opera
 Match the wireframe's global structure:
 
 - Fixed top bar across the viewport.
-- Top-left product label: `Review Queue`.
+- Top-left product label: `Review Ninja`.
 - Top-center or near-center screen/navigation controls only if needed during development; production app can omit wireframe tab controls.
 - Top-right status copy: `tracker, not a review surface · review happens in GitHub` or equivalent.
 - Main stage below the top bar.

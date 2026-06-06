@@ -4,5 +4,5 @@ pub fn run() {
         .plugin(tauri_plugin_keyring::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .run(tauri::generate_context!())
-        .expect("error while running pr-tracker desktop application");
+        .expect("error while running Review Ninja desktop application");
 }

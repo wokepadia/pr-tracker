@@ -1,4 +1,4 @@
-# PR Tracker
+# Review Ninja
 
 Single-user reviewer inbox for GitHub pull requests.
 

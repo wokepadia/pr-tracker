@@ -38,7 +38,7 @@ const slides = [
   {
     title: "A reviewer inbox for GitHub pull requests",
     body:
-      "Review Queue helps you decide which pull requests need your attention without opening every GitHub tab.",
+      "Review Ninja helps you decide which pull requests need your attention without opening every GitHub tab.",
     facts: [
       "Groups PRs by reviewer action state.",
       "Shows why each PR is in your queue.",

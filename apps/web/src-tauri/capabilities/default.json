@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default desktop permissions for the PR Tracker main window.",
+  "description": "Default desktop permissions for the Review Ninja main window.",
   "windows": ["main"],
   "permissions": [
     "core:default",

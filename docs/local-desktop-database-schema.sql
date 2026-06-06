@@ -1,4 +1,4 @@
--- PR Tracker local-only desktop V1 database schema proposal.
+-- Review Ninja local-only desktop V1 database schema proposal.
 -- SQLite-flavored DDL intended for import into common online DB visualizers.
 -- GitHub access tokens are not stored in SQLite. Store them in the OS keychain
 -- or use the GitHub CLI credential store; this database keeps only references

@@ -3,7 +3,7 @@
 ## Purpose
 
 Add a first-run onboarding flow for the local reviewer inbox. The flow should
-explain what Review Queue does, explain the local token storage boundary, show
+explain what Review Ninja does, explain the local token storage boundary, show
 the core reviewer workflow at a high level, and then collect the minimum GitHub
 settings needed to sync real pull requests.
 
@@ -107,12 +107,12 @@ Revisit behavior:
 Keep the slides short and dense. Each slide should have one headline, one short
 paragraph, and two or three compact facts. Avoid marketing language.
 
-### Slide 1: What Review Queue Is
+### Slide 1: What Review Ninja Is
 
 Headline: `A reviewer inbox for GitHub pull requests`
 
 Body:
-`Review Queue helps you decide which pull requests need your attention without opening every GitHub tab.`
+`Review Ninja helps you decide which pull requests need your attention without opening every GitHub tab.`
 
 Facts:
 
@@ -214,7 +214,7 @@ Say:
 
 Do not say:
 
-- `Encrypted by Review Queue` unless the app owns that encryption.
+- `Encrypted by Review Ninja` unless the app owns that encryption.
 - `We cannot access your token` because the local app process reads it to call
   GitHub.
 - `Zero trust`, `bank-grade`, or other vague security claims.
@@ -248,7 +248,7 @@ cards inside cards.
 
 ```text
 +------------------------------------------------------------------------------+
-| R Review Queue                                      Skip intro                |
+| Review Ninja                                        Skip intro                |
 +------------------------------------------------------------------------------+
 |                                                                              |
 |  +------------------------------------+  +----------------------------------+ |
@@ -257,7 +257,7 @@ cards inside cards.
 |  | A reviewer inbox for GitHub        |  | Needs your review               | |
 |  | pull requests                      |  | +----------------------------+   | |
 |  |                                    |  | | owner/repo #124             |   | |
-|  | Review Queue helps you decide      |  | | You are requested           |   | |
+|  | Review Ninja helps you decide      |  | | You are requested           |   | |
 |  | which pull requests need your      |  | +----------------------------+   | |
 |  | attention without opening every    |  |                                  | |
 |  | GitHub tab.                        |  | Quick peek                       | |
@@ -286,7 +286,7 @@ Notes:
 
 ```text
 +------------------------------------------------------------------------------+
-| R Review Queue                                      Skip intro                |
+| Review Ninja                                        Skip intro                |
 +------------------------------------------------------------------------------+
 |                                                                              |
 |  +------------------------------------+  +----------------------------------+ |
@@ -316,7 +316,7 @@ Notes:
 
 ```text
 +------------------------------------------------------------------------------+
-| R Review Queue                                                                |
+| Review Ninja                                                                  |
 +------------------------------------------------------------------------------+
 |                                                                              |
 |  +------------------------------------------------------------------------+  |
@@ -355,7 +355,7 @@ Notes:
 
 ```text
 +------------------------------------------------------------------------------+
-| R Review Queue                                                                |
+| Review Ninja                                                                  |
 +------------------------------------------------------------------------------+
 |                                                                              |
 |  +------------------------------------------------------------------------+  |
