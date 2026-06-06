@@ -32,14 +32,17 @@ erDiagram
 
   github_accounts ||--o{ github_repositories : owns
   github_accounts ||--o{ pull_requests : authors
+  github_accounts ||--o{ github_teams : owns
 
   github_repositories ||--o{ tracked_repositories : tracked_as
   github_repositories ||--o{ pull_requests : contains
+  github_repositories ||--o{ github_labels : defines
 
   pull_requests ||--o{ pull_request_labels : has
   pull_requests ||--o{ pull_request_assignees : has
-  pull_requests ||--o{ pull_request_reviewers : requests
+  pull_requests ||--o{ pull_request_review_requests : requests
   pull_requests ||--o{ review_events : has
+  pull_requests ||--o{ pull_request_check_runs : has
   pull_requests ||--o{ review_threads : has
   pull_requests ||--o{ review_comments : has
   pull_requests ||--o{ issue_comments : has
@@ -47,6 +50,8 @@ erDiagram
   pull_requests ||--o{ board_items : appears_on
 
   review_threads ||--o{ review_thread_participants : includes
+  github_labels ||--o{ pull_request_labels : applied_as
+  github_teams ||--o{ pull_request_review_requests : requested_as
 
   boards ||--o{ board_columns : has
   boards ||--o{ board_items : contains
@@ -79,21 +84,44 @@ macOS Keychain, Windows Credential Manager, or Linux Secret Service through a
 cross-platform keychain library. If the user chooses the GitHub CLI path, the
 GitHub CLI owns credential storage.
 
+`github_credential_refs.github_login` can differ from `local_profile.github_login`
+because a local profile may later use multiple GitHub accounts or credentials
+for different hosts/repositories. If V1 only supports one GitHub identity, the
+app can keep the two values identical.
+
 ### Local GitHub Cache
 
-`github_accounts`, `github_repositories`, `pull_requests`, review tables,
-comment tables, and `activity_events` model GitHub facts. These rows are cached
-locally and are not owned by a board. A PR should be stored once in the local
-cache even if it appears in multiple boards later.
+`github_accounts`, `github_teams`, `github_repositories`, `github_labels`,
+`pull_requests`, review tables, check-run tables, comment tables, and
+`activity_events` model GitHub facts. These rows are cached locally and are not
+owned by a board. A PR should be stored once in the local cache even if it
+appears in multiple boards later.
 
 The schema keeps `raw_payload_json` fields so ingestion can be deterministic and
 we can re-project details without immediately re-fetching every GitHub object.
+Those payloads are intentionally a V1 cache/debug aid and should be pruned,
+compressed, or omitted selectively if database size becomes a problem.
+
+The PR `state` column follows GitHub's REST API shape: `open` or `closed`.
+Merged state is derived from `merged_at`, not stored as a third state. Review
+readiness and merge readiness are cached separately through `review_decision`,
+`mergeable_state`, `status_check_summary_json`, and `pull_request_check_runs`.
+
+`pull_request_review_requests` supports both user and team review requests.
+GitHub exposes team review requests separately from user requests, so V1 should
+not collapse them into account rows.
+
+`github_labels` is repository-scoped, and `pull_request_labels` is only the
+join table. This avoids duplicating label color/description on every PR and
+makes label filtering a direct indexed lookup later.
 
 ### Repository Tracking And Sync
 
 `tracked_repositories` is local profile configuration for which repositories the
 desktop app syncs. It points at a credential reference when private or
-authenticated access is needed.
+authenticated access is needed. It has `archived_at` for the same reason board
+objects do: users may remove a repository from active sync without immediately
+destroying cached troubleshooting context.
 
 `sync_cursors` stores ETags, pagination cursors, since timestamps, or other
 per-repository sync state. This is where we avoid wasteful polling and support
@@ -114,7 +142,10 @@ resizable Kanban layout.
 
 `board_items` determines which cached PRs appear on the board. It links a board
 to a PR and stores local workflow state such as column placement, sort order,
-pinned/muted state, and last-seen timestamps.
+pinned/muted state, and last-seen timestamps. It also carries a few viewer
+relationship fields so hot-path board queries do not need to repeatedly derive
+"I authored this", "I am requested", or "I have unresolved threads" by joining
+the whole GitHub cache.
 
 This is the important boundary:
 
@@ -140,6 +171,25 @@ encryption:
 This is simpler and more defensible than server-side PAT storage for a personal
 desktop app. It also makes the security story easy to explain: the app owns the
 board database, but the operating system owns the secret.
+
+## SQLite Mechanics
+
+SQLite does not automatically refresh `updated_at` on update just because a
+column has `default current_timestamp`. V1 should either set `updated_at` in app
+code on every write or add explicit triggers with the first real migration. The
+schema proposal uses defaults only for insert-time values.
+
+Column ordering uses non-unique `sort_order` indexes. Reorder code can assign
+temporary duplicate values during drag operations and normalize later without
+fighting uniqueness constraints. Board item ordering follows the same rule.
+
+The `width_px` check is deliberately broad enough for likely desktop layouts,
+but the UI should still own final min/max validation. If the design changes, the
+database range should be treated as a corruption guard, not the product spec.
+
+`board_items.added_by` is limited to `user` for V1. Subscription-driven and
+rule-driven auto-add flows should add their own enum values when those workflows
+actually exist.
 
 ## Desktop Problems And V1 Mitigations
 
@@ -179,6 +229,20 @@ The schema keeps the future hybrid model clear:
 - A server can later store encrypted backup blobs, not plaintext board rows.
 - Shared/team boards can become a separate server-backed feature instead of
   changing the local-only V1 storage contract.
+
+## Source Notes
+
+GitHub API references used for schema fidelity:
+
+- REST pull request `state` uses `open` and `closed`; merged status is derived
+  from merge fields/endpoints:
+  https://docs.github.com/en/rest/pulls/pulls
+- REST requested reviewers include both user reviewers and team reviewers:
+  https://docs.github.com/en/rest/pulls/review-requests
+- REST check runs expose status and conclusion fields:
+  https://docs.github.com/en/rest/checks/runs
+- GraphQL pull requests expose review and status-check rollups:
+  https://docs.github.com/en/graphql/reference/objects#pullrequest
 
 ## Migration Shape From The Current App
 

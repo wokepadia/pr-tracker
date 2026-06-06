@@ -64,6 +64,32 @@ create table github_repositories (
   check (is_private in (0, 1))
 );
 
+create table github_teams (
+  id text primary key,
+  github_node_id text unique,
+  organization_account_id text references github_accounts(id) on delete set null,
+  slug text not null,
+  name text not null,
+  html_url text,
+  raw_payload_json text not null default '{}',
+  created_at text not null default current_timestamp,
+  updated_at text not null default current_timestamp,
+  unique (organization_account_id, slug)
+);
+
+create table github_labels (
+  id text primary key,
+  repository_id text not null references github_repositories(id) on delete cascade,
+  github_node_id text unique,
+  name text not null,
+  color text,
+  description text,
+  raw_payload_json text not null default '{}',
+  created_at text not null default current_timestamp,
+  updated_at text not null default current_timestamp,
+  unique (repository_id, name)
+);
+
 create table tracked_repositories (
   id text primary key,
   profile_id text not null references local_profile(id) on delete cascade,
@@ -76,6 +102,7 @@ create table tracked_repositories (
   last_sync_error text,
   created_at text not null default current_timestamp,
   updated_at text not null default current_timestamp,
+  archived_at text,
   unique (profile_id, repository_id),
   check (sync_enabled in (0, 1))
 );
@@ -91,6 +118,9 @@ create table pull_requests (
   author_account_id text references github_accounts(id) on delete set null,
   state text not null,
   is_draft integer not null default 0,
+  mergeable_state text,
+  review_decision text,
+  status_check_summary_json text not null default '{}',
   base_ref text,
   head_ref text,
   latest_commit_sha text,
@@ -102,8 +132,12 @@ create table pull_requests (
   created_at text not null default current_timestamp,
   updated_at text not null default current_timestamp,
   unique (repository_id, number),
-  check (state in ('open', 'closed', 'merged')),
-  check (is_draft in (0, 1))
+  check (state in ('open', 'closed')),
+  check (is_draft in (0, 1)),
+  check (
+    review_decision is null
+    or review_decision in ('approved', 'changes_requested', 'review_required', 'unknown')
+  )
 );
 
 create index pull_requests_repository_updated_idx
@@ -112,30 +146,43 @@ create index pull_requests_repository_updated_idx
 create table pull_request_labels (
   id text primary key,
   pull_request_id text not null references pull_requests(id) on delete cascade,
-  name text not null,
-  color text,
-  description text,
+  label_id text not null references github_labels(id) on delete cascade,
   created_at text not null default current_timestamp,
   updated_at text not null default current_timestamp,
-  unique (pull_request_id, name)
+  unique (pull_request_id, label_id)
 );
 
 create table pull_request_assignees (
   id text primary key,
   pull_request_id text not null references pull_requests(id) on delete cascade,
-  account_id text not null references github_accounts(id) on delete cascade,
+  account_id text not null references github_accounts(id) on delete restrict,
   created_at text not null default current_timestamp,
   unique (pull_request_id, account_id)
 );
 
-create table pull_request_reviewers (
+create table pull_request_review_requests (
   id text primary key,
   pull_request_id text not null references pull_requests(id) on delete cascade,
-  account_id text not null references github_accounts(id) on delete cascade,
+  reviewer_kind text not null,
+  account_id text references github_accounts(id) on delete restrict,
+  team_id text references github_teams(id) on delete restrict,
   requested_at text,
   created_at text not null default current_timestamp,
-  unique (pull_request_id, account_id)
+  check (reviewer_kind in ('user', 'team')),
+  check (
+    (reviewer_kind = 'user' and account_id is not null and team_id is null)
+    or
+    (reviewer_kind = 'team' and team_id is not null and account_id is null)
+  )
 );
+
+create unique index pull_request_review_requests_user_idx
+  on pull_request_review_requests (pull_request_id, account_id)
+  where reviewer_kind = 'user';
+
+create unique index pull_request_review_requests_team_idx
+  on pull_request_review_requests (pull_request_id, team_id)
+  where reviewer_kind = 'team';
 
 create table review_events (
   id text primary key,
@@ -152,6 +199,41 @@ create table review_events (
 
 create index review_events_pull_request_submitted_idx
   on review_events (pull_request_id, submitted_at desc);
+
+create table pull_request_check_runs (
+  id text primary key,
+  pull_request_id text not null references pull_requests(id) on delete cascade,
+  github_database_id integer,
+  name text not null,
+  app_slug text not null default '',
+  head_sha text not null,
+  status text not null,
+  conclusion text,
+  started_at text,
+  completed_at text,
+  details_url text,
+  raw_payload_json text not null default '{}',
+  created_at text not null default current_timestamp,
+  updated_at text not null default current_timestamp,
+  unique (pull_request_id, name, head_sha, app_slug),
+  check (status in ('queued', 'in_progress', 'completed', 'waiting', 'requested', 'pending')),
+  check (
+    conclusion is null
+    or conclusion in (
+      'action_required',
+      'cancelled',
+      'failure',
+      'neutral',
+      'success',
+      'skipped',
+      'stale',
+      'timed_out'
+    )
+  )
+);
+
+create index pull_request_check_runs_pr_status_idx
+  on pull_request_check_runs (pull_request_id, status, conclusion);
 
 create table review_threads (
   id text primary key,
@@ -223,6 +305,9 @@ create table activity_events (
 create index activity_events_pull_request_occurred_idx
   on activity_events (pull_request_id, occurred_at desc);
 
+create index activity_events_type_occurred_idx
+  on activity_events (event_type, occurred_at desc);
+
 create unique index activity_events_delivery_type_idx
   on activity_events (github_delivery_id, event_type)
   where github_delivery_id is not null;
@@ -257,14 +342,14 @@ create table board_columns (
   created_at text not null default current_timestamp,
   updated_at text not null default current_timestamp,
   archived_at text,
-  check (width_px between 160 and 640)
+  check (width_px between 120 and 1200)
 );
 
 create unique index board_columns_active_name_idx
   on board_columns (board_id, name)
   where archived_at is null;
 
-create unique index board_columns_active_sort_idx
+create index board_columns_active_sort_idx
   on board_columns (board_id, sort_order)
   where archived_at is null;
 
@@ -276,6 +361,11 @@ create table board_items (
   sort_order integer not null default 0,
   last_seen_at text,
   last_seen_activity_at text,
+  viewer_is_author integer not null default 0,
+  viewer_review_requested integer not null default 0,
+  viewer_review_state text,
+  viewer_has_unresolved_threads integer not null default 0,
+  needs_attention_reason text,
   is_muted integer not null default 0,
   is_pinned integer not null default 0,
   added_by text not null default 'user',
@@ -283,9 +373,16 @@ create table board_items (
   updated_at text not null default current_timestamp,
   archived_at text,
   unique (board_id, pull_request_id),
+  check (viewer_is_author in (0, 1)),
+  check (viewer_review_requested in (0, 1)),
+  check (viewer_has_unresolved_threads in (0, 1)),
+  check (
+    viewer_review_state is null
+    or viewer_review_state in ('approved', 'changes_requested', 'commented', 'pending')
+  ),
   check (is_muted in (0, 1)),
   check (is_pinned in (0, 1)),
-  check (added_by in ('user', 'subscription', 'sync_rule'))
+  check (added_by = 'user')
 );
 
 create index board_items_column_sort_idx
