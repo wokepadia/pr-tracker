@@ -1,6 +1,7 @@
 import {
   defaultLocalBoardId,
   listLocalActivityEventRows,
+  listLocalBoardColumnRows,
   listLocalBoardItemStateRows,
   listLocalPullRequestRows,
   listLocalReviewEventRows,
@@ -9,6 +10,7 @@ import {
   listLocalReviewThreadRows,
   markLocalPullRequestSeen,
   openLocalDatabase,
+  saveLocalBoardState,
   seedLocalSampleData,
   type LocalDatabase,
   type LocalPullRequestRow
@@ -25,6 +27,7 @@ import type {
   PullRequestDetail,
   ReviewerInboxRepository
 } from "./repository";
+import type { BoardState } from "./repository";
 
 export interface LocalSqliteRepositoryOptions {
   path?: string;
@@ -90,9 +93,114 @@ export function createLocalSqliteRepository(
       return updated ? input : undefined;
     },
 
+    async getBoardState() {
+      return loadBoardState(local);
+    },
+
+    async saveBoardState(state) {
+      saveLocalBoardState(local.db, toSaveLocalBoardStateInput(local, state));
+      return loadBoardState(local);
+    },
+
     async close() {
       local.close();
     }
+  };
+}
+
+function loadBoardState(local: LocalDatabase): BoardState {
+  const columns = listLocalBoardColumnRows(local.db);
+  const itemRows = listLocalBoardItemStateRows(local.db);
+  const localQueueState: BoardState["localQueueState"] = {};
+  const userBucketItemOrder = Object.fromEntries(
+    columns.map((column) => [column.id, [] as string[]])
+  );
+  const bucketColumnWidths = Object.fromEntries(
+    columns.map((column) => [column.id, column.width_px])
+  );
+
+  for (const row of itemRows) {
+    if (row.column_id) {
+      userBucketItemOrder[row.column_id] ??= [];
+      userBucketItemOrder[row.column_id]?.push(row.pull_request_id);
+    }
+
+    localQueueState[row.pull_request_id] = {
+      bucketId: row.column_id ?? undefined,
+      snoozed: row.is_snoozed ? true : undefined,
+      muted: row.is_muted ? true : undefined,
+      pinned: row.is_pinned ? true : undefined
+    };
+  }
+
+  return {
+    buckets: columns.map((column) => ({ id: column.id, label: column.name })),
+    localQueueState,
+    userBucketItemOrder,
+    bucketColumnWidths
+  };
+}
+
+function toSaveLocalBoardStateInput(
+  local: LocalDatabase,
+  state: BoardState
+): Parameters<typeof saveLocalBoardState>[1] {
+  const bucketIds = new Set(state.buckets.map((bucket) => bucket.id));
+  const fallbackBucketId = state.buckets[0]?.id ?? "inbox";
+  const knownPullRequestIds = new Set(
+    listLocalPullRequestRows(local.db).map((row) => row.id)
+  );
+  const itemByPullRequestId = new Map<
+    string,
+    {
+      pullRequestId: string;
+      columnId: string;
+      sortOrder: number;
+      snoozed?: boolean;
+      muted?: boolean;
+      pinned?: boolean;
+    }
+  >();
+
+  for (const [bucketId, itemIds] of Object.entries(state.userBucketItemOrder)) {
+    if (!bucketIds.has(bucketId)) continue;
+
+    itemIds.forEach((pullRequestId, index) => {
+      if (!knownPullRequestIds.has(pullRequestId)) return;
+      itemByPullRequestId.set(pullRequestId, {
+        pullRequestId,
+        columnId: bucketId,
+        sortOrder: index
+      });
+    });
+  }
+
+  for (const [pullRequestId, itemState] of Object.entries(state.localQueueState)) {
+    if (!knownPullRequestIds.has(pullRequestId)) continue;
+    const current = itemByPullRequestId.get(pullRequestId);
+    const columnId =
+      itemState.bucketId && bucketIds.has(itemState.bucketId)
+        ? itemState.bucketId
+        : current?.columnId ?? fallbackBucketId;
+
+    itemByPullRequestId.set(pullRequestId, {
+      pullRequestId,
+      columnId,
+      sortOrder: current?.sortOrder ?? itemByPullRequestId.size,
+      snoozed: itemState.snoozed,
+      muted: itemState.muted,
+      pinned: itemState.pinned
+    });
+  }
+
+  return {
+    columns: state.buckets.map((bucket, index) => ({
+      id: bucket.id,
+      name: bucket.label,
+      sortOrder: index,
+      widthPx: state.bucketColumnWidths[bucket.id] ?? 232
+    })),
+    items: [...itemByPullRequestId.values()]
   };
 }
 

@@ -366,6 +366,7 @@ create table board_items (
   viewer_review_state text,
   viewer_has_unresolved_threads integer not null default 0,
   needs_attention_reason text,
+  is_snoozed integer not null default 0,
   is_muted integer not null default 0,
   is_pinned integer not null default 0,
   added_by text not null default 'user',
@@ -380,6 +381,7 @@ create table board_items (
     viewer_review_state is null
     or viewer_review_state in ('approved', 'changes_requested', 'commented', 'pending')
   ),
+  check (is_snoozed in (0, 1)),
   check (is_muted in (0, 1)),
   check (is_pinned in (0, 1)),
   check (added_by = 'user')

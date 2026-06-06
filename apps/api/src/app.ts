@@ -8,6 +8,7 @@ import {
   type LocalGithubSettingsOptions
 } from "./local-github-settings";
 import {
+  type BoardState,
   type ReviewerInboxRepository
 } from "./repository";
 import { createWebhookSink, type WebhookSink } from "./webhook-sink";
@@ -29,7 +30,7 @@ export function createApp(options?: {
     cors({
       origin: config.WEB_ORIGIN,
       allowHeaders: ["content-type", "x-github-delivery", "x-github-event", "x-hub-signature-256"],
-      allowMethods: ["GET", "POST", "PATCH", "OPTIONS"]
+      allowMethods: ["GET", "POST", "PUT", "PATCH", "OPTIONS"]
     })
   );
 
@@ -161,6 +162,51 @@ export function createApp(options?: {
     return c.json(result);
   });
 
+  app.get("/api/board-state", async (c) => {
+    if (!repository.getBoardState) {
+      return c.json({ error: "Board state is not available." }, 501);
+    }
+
+    try {
+      return c.json(await repository.getBoardState());
+    } catch (error) {
+      return c.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to load board state."
+        },
+        502
+      );
+    }
+  });
+
+  app.put("/api/board-state", async (c) => {
+    if (!repository.saveBoardState) {
+      return c.json({ error: "Board state is not available." }, 501);
+    }
+
+    const body = await c.req.json().catch(() => undefined);
+    if (!isBoardState(body)) {
+      return c.json({ error: "Invalid board state." }, 400);
+    }
+
+    try {
+      return c.json(await repository.saveBoardState(body));
+    } catch (error) {
+      return c.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to save board state."
+        },
+        502
+      );
+    }
+  });
+
   app.post("/webhooks/github", async (c) => {
     const payloadText = await c.req.text();
     const payload = JSON.parse(payloadText || "{}") as unknown;
@@ -194,4 +240,22 @@ export function createApp(options?: {
   });
 
   return app;
+}
+
+function isBoardState(value: unknown): value is BoardState {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as Partial<BoardState>;
+  return (
+    Array.isArray(candidate.buckets) &&
+    isRecord(candidate.localQueueState) &&
+    isRecord(candidate.userBucketItemOrder) &&
+    isRecord(candidate.bucketColumnWidths)
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

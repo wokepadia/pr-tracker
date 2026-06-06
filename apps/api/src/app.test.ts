@@ -176,6 +176,54 @@ describe("api app", () => {
         workflowState: "caught_up",
         unseenActivityCount: 0
       });
+
+      const boardResponse = await app.request("/api/board-state");
+      const board = (await boardResponse.json()) as {
+        buckets: Array<{ id: string; label: string }>;
+        localQueueState: Record<string, { bucketId?: string; pinned?: boolean }>;
+        userBucketItemOrder: Record<string, string[]>;
+        bucketColumnWidths: Record<string, number>;
+      };
+      expect(boardResponse.status, JSON.stringify(board)).toBe(200);
+
+      const saveBoardResponse = await app.request("/api/board-state", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...board,
+          buckets: [
+            { id: "inbox", label: "Inbox" },
+            { id: "custom", label: "Custom" }
+          ],
+          localQueueState: {
+            ...board.localQueueState,
+            pr_1: { bucketId: "custom", pinned: true }
+          },
+          userBucketItemOrder: {
+            inbox: ["pr_2", "pr_3"],
+            custom: ["pr_1"]
+          },
+          bucketColumnWidths: {
+            inbox: 280,
+            custom: 320
+          }
+        })
+      });
+      expect(saveBoardResponse.status).toBe(200);
+
+      const savedBoardResponse = await app.request("/api/board-state");
+      const savedBoard = (await savedBoardResponse.json()) as typeof board;
+
+      expect(savedBoard.buckets).toEqual([
+        { id: "inbox", label: "Inbox" },
+        { id: "custom", label: "Custom" }
+      ]);
+      expect(savedBoard.localQueueState.pr_1).toMatchObject({
+        bucketId: "custom",
+        pinned: true
+      });
+      expect(savedBoard.userBucketItemOrder.custom).toEqual(["pr_1"]);
+      expect(savedBoard.bucketColumnWidths.custom).toBe(320);
     } finally {
       await repository.close?.();
     }

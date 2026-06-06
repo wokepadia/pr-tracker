@@ -20,6 +20,21 @@ export interface ReviewerInboxOptions {
   githubSearchQuery?: string;
 }
 
+export interface BoardState {
+  buckets: Array<{ id: string; label: string }>;
+  localQueueState: Record<
+    string,
+    {
+      snoozed?: boolean;
+      pinned?: boolean;
+      muted?: boolean;
+      bucketId?: string;
+    }
+  >;
+  userBucketItemOrder: Record<string, string[]>;
+  bucketColumnWidths: Record<string, number>;
+}
+
 export interface ReviewerInboxRepository {
   getReviewerInbox(now: string, options?: ReviewerInboxOptions): Promise<ReviewerInbox>;
   getPullRequest(id: string): Promise<PullRequestDetail | undefined>;
@@ -27,6 +42,8 @@ export interface ReviewerInboxRepository {
     pullRequestId: string;
     lastSeenAt: string;
   }): Promise<{ pullRequestId: string; lastSeenAt: string } | undefined>;
+  getBoardState?(): Promise<BoardState>;
+  saveBoardState?(state: BoardState): Promise<BoardState>;
   close?(): Promise<void>;
 }
 
