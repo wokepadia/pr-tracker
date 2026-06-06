@@ -36,7 +36,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Separator } from "@/components/ui/separator"
-import { getPullRequest, markPullRequestSeen } from "@/api"
+import {
+  getBoardState,
+  getPullRequest,
+  markPullRequestSeen,
+  saveBoardState,
+} from "@/api"
 import { formatCount, pluralize } from "@/lib/copy"
 import { cn, externalLinkProps } from "@/lib/utils"
 import {
@@ -51,9 +56,8 @@ import {
   canPinLocalQueueItem,
   canSnoozeLocalQueueItem,
   hasLocalQueueState,
-  loadLocalQueueState,
-  loadUserBuckets,
-  saveLocalQueueState,
+  defaultUserBuckets,
+  createEmptyUserBucketItemOrder,
   userBucketLabelFromId,
   type LocalPullRequestQueueState,
   type LocalQueueStateByPullRequestId,
@@ -100,17 +104,26 @@ export function PullRequestPage() {
   const queryClient = useQueryClient()
   const [caughtUpError, setCaughtUpError] = useState(false)
   const [localQueueState, setLocalQueueState] =
-    useState<LocalQueueStateByPullRequestId>(() => {
-      if (typeof window === "undefined") return {}
-      return loadLocalQueueState(window.localStorage)
-    })
-  const [userBuckets] = useState<UserBucketDefinition[]>(() => {
-    if (typeof window === "undefined") return []
-    return loadUserBuckets(window.localStorage)
-  })
+    useState<LocalQueueStateByPullRequestId>({})
+  const [userBuckets, setUserBuckets] =
+    useState<UserBucketDefinition[]>(defaultUserBuckets)
+  const [userBucketItemOrder, setUserBucketItemOrder] = useState(() =>
+    createEmptyUserBucketItemOrder()
+  )
+  const [bucketColumnWidths, setBucketColumnWidths] = useState<
+    Record<string, number>
+  >({})
+  const [hasHydratedBoardState, setHasHydratedBoardState] = useState(false)
   const detailQuery = useQuery({
     queryKey: ["pull-request", pullRequestId],
     queryFn: () => getPullRequest(pullRequestId),
+  })
+  const boardStateQuery = useQuery({
+    queryKey: ["board-state"],
+    queryFn: getBoardState,
+  })
+  const saveBoardStateMutation = useMutation({
+    mutationFn: saveBoardState,
   })
   const markSeenMutation = useMutation({
     mutationFn: markPullRequestSeen,
@@ -131,8 +144,31 @@ export function PullRequestPage() {
     : undefined
 
   useEffect(() => {
-    saveLocalQueueState(window.localStorage, localQueueState)
-  }, [localQueueState])
+    if (!boardStateQuery.data) return
+
+    setUserBuckets(boardStateQuery.data.buckets)
+    setLocalQueueState(boardStateQuery.data.localQueueState)
+    setUserBucketItemOrder(boardStateQuery.data.userBucketItemOrder)
+    setBucketColumnWidths(boardStateQuery.data.bucketColumnWidths)
+    setHasHydratedBoardState(true)
+  }, [boardStateQuery.data])
+
+  useEffect(() => {
+    if (!hasHydratedBoardState) return
+
+    saveBoardStateMutation.mutate({
+      buckets: userBuckets,
+      localQueueState,
+      userBucketItemOrder,
+      bucketColumnWidths,
+    })
+  }, [
+    bucketColumnWidths,
+    hasHydratedBoardState,
+    localQueueState,
+    userBucketItemOrder,
+    userBuckets,
+  ])
 
   function updateLocalItemState(
     itemId: string,

@@ -80,8 +80,10 @@ import { MarkdownContent } from "@/components/MarkdownContent"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
+  getBoardState,
   getReviewerInbox,
   markPullRequestSeen,
+  saveBoardState,
 } from "@/api"
 import { formatCount } from "@/lib/copy"
 import { cn, externalLinkProps } from "@/lib/utils"
@@ -99,12 +101,7 @@ import {
   createUserBucket,
   createEmptyUserBucketItemOrder,
   hasLocalQueueState,
-  loadLocalQueueState,
-  loadUserBuckets,
-  loadUserBucketItemOrder,
-  saveLocalQueueState,
-  saveUserBuckets,
-  saveUserBucketItemOrder,
+  defaultUserBuckets,
   userBucketLabelFromId,
   type LocalPullRequestQueueState,
   type LocalQueueStateByPullRequestId,
@@ -135,7 +132,6 @@ const REVIEW_WORKSPACE_MIN_WIDTH =
 const REVIEW_SIDEBAR_WIDTH = 212
 const INBOX_LOADING_STEP_INTERVAL_MS = 1050
 const githubReviewQueryStorageKey = "pr-tracker:github-review-query:v1"
-const bucketColumnWidthsStorageKey = "pr-tracker:user-bucket-column-widths:v1"
 const DEFAULT_BUCKET_COLUMN_WIDTH = 232
 const MIN_BUCKET_COLUMN_WIDTH = 200
 const MAX_BUCKET_COLUMN_WIDTH = 420
@@ -153,31 +149,6 @@ function loadStoredGithubReviewQuery(): string {
 
 function saveStoredGithubReviewQuery(query: string): void {
   window.localStorage.setItem(githubReviewQueryStorageKey, query)
-}
-
-function loadStoredBucketColumnWidths(): Record<UserBucketId, number> {
-  if (typeof window === "undefined") return {}
-  const rawValue = window.localStorage.getItem(bucketColumnWidthsStorageKey)
-  if (!rawValue) return {}
-
-  try {
-    const value = JSON.parse(rawValue)
-    if (!value || typeof value !== "object" || Array.isArray(value)) return {}
-
-    return Object.fromEntries(
-      Object.entries(value).flatMap(([bucketId, width]) => {
-        return typeof width === "number" && Number.isFinite(width)
-          ? [[bucketId, clampBucketColumnWidth(width)]]
-          : []
-      })
-    )
-  } catch {
-    return {}
-  }
-}
-
-function saveStoredBucketColumnWidths(widths: Record<UserBucketId, number>): void {
-  window.localStorage.setItem(bucketColumnWidthsStorageKey, JSON.stringify(widths))
 }
 
 function clampBucketColumnWidth(width: number): number {
@@ -310,6 +281,13 @@ export function InboxPage() {
     queryFn: () =>
       getReviewerInbox({ githubSearchQuery: appliedGithubSearchQuery }),
   })
+  const boardStateQuery = useQuery({
+    queryKey: ["board-state"],
+    queryFn: getBoardState,
+  })
+  const saveBoardStateMutation = useMutation({
+    mutationFn: saveBoardState,
+  })
   const markSeenMutation = useMutation({
     mutationFn: markPullRequestSeen,
     onSuccess: async (_result, pullRequestId) => {
@@ -320,27 +298,22 @@ export function InboxPage() {
     },
   })
   const [localQueueState, setLocalQueueState] =
-    useState<LocalQueueStateByPullRequestId>(() => {
-      if (typeof window === "undefined") return {}
-      return loadLocalQueueState(window.localStorage)
-    })
+    useState<LocalQueueStateByPullRequestId>({})
   const [userBuckets, setUserBuckets] = useState<UserBucketDefinition[]>(() => {
-    if (typeof window === "undefined") return []
-    return loadUserBuckets(window.localStorage)
+    return defaultUserBuckets
   })
   const [userBucketItemOrder, setUserBucketItemOrder] =
     useState<UserBucketItemOrder>(() => {
-      if (typeof window === "undefined") return createEmptyUserBucketItemOrder()
-      const buckets = loadUserBuckets(window.localStorage)
-      return loadUserBucketItemOrder(window.localStorage, buckets)
+      return createEmptyUserBucketItemOrder()
     })
+  const [hasHydratedBoardState, setHasHydratedBoardState] = useState(false)
   const [failedCaughtUpItemId, setFailedCaughtUpItemId] = useState<string>()
   const [groupMode, setGroupMode] = useState<QueueGroupMode>("action")
   const [searchQuery, setSearchQuery] = useState("")
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null)
   const [bucketColumnWidths, setBucketColumnWidths] = useState<
     Record<UserBucketId, number>
-  >(() => loadStoredBucketColumnWidths())
+  >({})
   const inboxView = useMemo(
     () => (inboxQuery.data ? buildInboxView(inboxQuery.data) : undefined),
     [inboxQuery.data]
@@ -516,20 +489,31 @@ export function InboxPage() {
     : undefined
 
   useEffect(() => {
-    saveLocalQueueState(window.localStorage, localQueueState)
-  }, [localQueueState])
+    if (!boardStateQuery.data) return
+
+    setUserBuckets(boardStateQuery.data.buckets)
+    setLocalQueueState(boardStateQuery.data.localQueueState)
+    setUserBucketItemOrder(boardStateQuery.data.userBucketItemOrder)
+    setBucketColumnWidths(boardStateQuery.data.bucketColumnWidths)
+    setHasHydratedBoardState(true)
+  }, [boardStateQuery.data])
 
   useEffect(() => {
-    saveUserBuckets(window.localStorage, userBuckets)
-  }, [userBuckets])
+    if (!hasHydratedBoardState) return
 
-  useEffect(() => {
-    saveUserBucketItemOrder(window.localStorage, userBucketItemOrder)
-  }, [userBucketItemOrder])
-
-  useEffect(() => {
-    saveStoredBucketColumnWidths(bucketColumnWidths)
-  }, [bucketColumnWidths])
+    saveBoardStateMutation.mutate({
+      buckets: userBuckets,
+      localQueueState,
+      userBucketItemOrder,
+      bucketColumnWidths,
+    })
+  }, [
+    bucketColumnWidths,
+    hasHydratedBoardState,
+    localQueueState,
+    userBucketItemOrder,
+    userBuckets,
+  ])
 
   useEffect(() => {
     saveStoredSelectedQueueItemId(window.sessionStorage, selectedId)

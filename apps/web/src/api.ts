@@ -25,6 +25,21 @@ export interface SaveGithubSettingsInput {
   apiBaseUrl?: string
 }
 
+export interface BoardState {
+  buckets: Array<{ id: string; label: string }>
+  localQueueState: Partial<Record<
+    string,
+    {
+      snoozed?: boolean
+      pinned?: boolean
+      muted?: boolean
+      bucketId?: string
+    }
+  >>
+  userBucketItemOrder: Record<string, string[]>
+  bucketColumnWidths: Record<string, number>
+}
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ""
 
 function apiUrl(path: string): string {
@@ -80,6 +95,30 @@ export async function markPullRequestSeen(id: string): Promise<{
     pullRequestId: string
     lastSeenAt: string
   }>
+}
+
+export async function getBoardState(): Promise<BoardState> {
+  const response = await fetch(apiUrl("/api/board-state"))
+
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Failed to load board state."))
+  }
+
+  return response.json() as Promise<BoardState>
+}
+
+export async function saveBoardState(state: BoardState): Promise<BoardState> {
+  const response = await fetch(apiUrl("/api/board-state"), {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(state),
+  })
+
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Failed to save board state."))
+  }
+
+  return response.json() as Promise<BoardState>
 }
 
 export async function getGithubSettingsStatus(): Promise<GithubSettingsStatus> {

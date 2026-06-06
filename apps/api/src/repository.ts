@@ -22,7 +22,7 @@ export interface ReviewerInboxOptions {
 
 export interface BoardState {
   buckets: Array<{ id: string; label: string }>;
-  localQueueState: Record<
+  localQueueState: Partial<Record<
     string,
     {
       snoozed?: boolean;
@@ -30,7 +30,7 @@ export interface BoardState {
       muted?: boolean;
       bucketId?: string;
     }
-  >;
+  >>;
   userBucketItemOrder: Record<string, string[]>;
   bucketColumnWidths: Record<string, number>;
 }

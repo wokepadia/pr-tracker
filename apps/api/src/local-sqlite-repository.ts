@@ -176,6 +176,7 @@ function toSaveLocalBoardStateInput(
   }
 
   for (const [pullRequestId, itemState] of Object.entries(state.localQueueState)) {
+    if (!itemState) continue;
     if (!knownPullRequestIds.has(pullRequestId)) continue;
     const current = itemByPullRequestId.get(pullRequestId);
     const columnId =
