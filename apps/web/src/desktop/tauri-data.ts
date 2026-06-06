@@ -385,24 +385,104 @@ async function syncBeforeRead(
     apiBaseUrl: credentials.apiBaseUrl,
     closedLookbackDays: getGithubClosedLookbackDays({}),
   })
-  const viewerLogin = credentials.viewerLogin ?? (await source.getViewerLogin())
-  const snapshots = await listPullRequestSnapshots(source, {
-    searchQuery: options.githubSearchQuery,
-  })
-  const snapshotsToIngest = options.githubSearchQuery
-    ? snapshots
-    : [
-        ...snapshots,
-        ...(await listKnownOpenPullRequestSnapshots(db, source, snapshots)),
-      ]
+  const syncRunId = await startLocalSyncRun(db, "desktop-settings")
+  const result = {
+    scannedPullRequests: 0,
+    ingestedPullRequests: 0,
+    ingestedReviews: 0,
+    ignoredPullRequests: 0,
+  }
 
-  await transaction(db, async () => {
-    for (const snapshot of snapshotsToIngest) {
-      await upsertLocalPullRequestSnapshot(db, snapshot, { viewerLogin })
-    }
-  })
+  try {
+    const viewerLogin = credentials.viewerLogin ?? (await source.getViewerLogin())
+    const snapshots = await listPullRequestSnapshots(source, {
+      searchQuery: options.githubSearchQuery,
+    })
+    const snapshotsToIngest = options.githubSearchQuery
+      ? snapshots
+      : [
+          ...snapshots,
+          ...(await listKnownOpenPullRequestSnapshots(db, source, snapshots)),
+        ]
+    result.scannedPullRequests = snapshotsToIngest.length
 
-  lastSuccessfulSyncFingerprint = fingerprint
+    await transaction(db, async () => {
+      for (const snapshot of snapshotsToIngest) {
+        const ingested = await upsertLocalPullRequestSnapshot(db, snapshot, {
+          viewerLogin,
+        })
+        if (ingested) {
+          result.ingestedPullRequests += 1
+          result.ingestedReviews += snapshot.reviews?.length ?? 0
+        } else {
+          result.ignoredPullRequests += 1
+        }
+      }
+    })
+    await finishLocalSyncRun(db, syncRunId, "succeeded", result)
+    lastSuccessfulSyncFingerprint = fingerprint
+  } catch (error) {
+    await finishLocalSyncRun(db, syncRunId, "failed", result, error)
+    throw error
+  }
+}
+
+async function startLocalSyncRun(
+  db: SqlDatabase,
+  sourceName: string
+): Promise<string> {
+  const syncRunId = deterministicUuid(
+    `sync-run:${sourceName}:${new Date().toISOString()}:${Math.random()}`
+  )
+  await db.execute(
+    `
+      insert into sync_runs (
+        id, source, status, scanned_pull_requests, ingested_pull_requests,
+        ingested_reviews, ignored_pull_requests, error, started_at, finished_at
+      )
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `,
+    [syncRunId, sourceName, "running", 0, 0, 0, 0, null, new Date().toISOString(), null]
+  )
+  return syncRunId
+}
+
+async function finishLocalSyncRun(
+  db: SqlDatabase,
+  syncRunId: string,
+  status: "succeeded" | "failed",
+  result: {
+    scannedPullRequests: number
+    ingestedPullRequests: number
+    ingestedReviews: number
+    ignoredPullRequests: number
+  },
+  error?: unknown
+): Promise<void> {
+  await db.execute(
+    `
+      update sync_runs
+      set
+        status = $1,
+        scanned_pull_requests = $2,
+        ingested_pull_requests = $3,
+        ingested_reviews = $4,
+        ignored_pull_requests = $5,
+        error = $6,
+        finished_at = $7
+      where id = $8
+    `,
+    [
+      status,
+      result.scannedPullRequests,
+      result.ingestedPullRequests,
+      result.ingestedReviews,
+      result.ignoredPullRequests,
+      error instanceof Error ? error.message : error ? String(error) : null,
+      new Date().toISOString(),
+      syncRunId,
+    ]
+  )
 }
 
 async function seedLocalSampleData(db: SqlDatabase): Promise<void> {
@@ -439,7 +519,7 @@ async function upsertLocalPullRequestSnapshot(
   db: SqlDatabase,
   snapshot: GitHubPullRequestSnapshot,
   options: { viewerLogin?: string } = {}
-): Promise<void> {
+): Promise<boolean> {
   const pullRequest = snapshotToPullRequestItem(snapshot)
   const githubNodeId = githubNodeIdFromSnapshot(snapshot)
   const incomingUpdatedAt = pullRequest.updatedAt
@@ -454,7 +534,7 @@ async function upsertLocalPullRequestSnapshot(
     current?.github_updated_at &&
     Date.parse(incomingUpdatedAt) < Date.parse(current.github_updated_at)
   ) {
-    return
+    return false
   }
 
   const now = new Date().toISOString()
@@ -469,6 +549,7 @@ async function upsertLocalPullRequestSnapshot(
     rawPayload: snapshot,
   })
   await ensureDefaultBoardItem(db, pullRequest.id, now)
+  return true
 }
 
 async function upsertPullRequestItem(
