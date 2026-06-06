@@ -90,6 +90,23 @@ export function createUserBucket(
   }
 }
 
+export function moveUserBucket(
+  buckets: UserBucketDefinition[],
+  bucketId: UserBucketId,
+  direction: "up" | "down"
+): UserBucketDefinition[] {
+  const bucketIndex = buckets.findIndex((bucket) => bucket.id === bucketId)
+  if (bucketIndex < 0) return buckets
+
+  const targetIndex = direction === "up" ? bucketIndex - 1 : bucketIndex + 1
+  if (targetIndex < 0 || targetIndex >= buckets.length) return buckets
+
+  const nextBuckets = [...buckets]
+  const [bucket] = nextBuckets.splice(bucketIndex, 1)
+  nextBuckets.splice(targetIndex, 0, bucket!)
+  return nextBuckets
+}
+
 export function loadLocalQueueState(
   storage: Pick<Storage, "getItem">
 ): LocalQueueStateByPullRequestId {

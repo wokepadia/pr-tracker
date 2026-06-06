@@ -43,6 +43,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   ChevronsLeftRight,
   Clock3,
   Edit3,
@@ -104,6 +105,7 @@ import {
   createEmptyUserBucketItemOrder,
   hasLocalQueueState,
   defaultUserBuckets,
+  moveUserBucket,
   userBucketLabelFromId,
   type LocalPullRequestQueueState,
   type LocalQueueStateByPullRequestId,
@@ -1529,6 +1531,10 @@ function BucketManagerDialog({
     })
   }
 
+  function moveDraftBucket(bucketId: UserBucketId, direction: "up" | "down") {
+    setDraftBuckets((current) => moveUserBucket(current, bucketId, direction))
+  }
+
   function saveDraftBuckets(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (hasBlankLabel) return
@@ -1564,7 +1570,7 @@ function BucketManagerDialog({
               Manage buckets
             </h2>
             <p className="mt-1 text-sm leading-5 text-muted-foreground">
-              Rename, add, or delete the buckets shown in the left sidebar.
+              Rename, reorder, add, or delete the buckets shown in the left sidebar.
             </p>
           </div>
           <button
@@ -1586,7 +1592,7 @@ function BucketManagerDialog({
               return (
                 <div
                   key={bucket.id}
-                  className="grid grid-cols-[10px_1fr_auto_32px] items-center gap-3 rounded-md border border-border bg-background px-3 py-2"
+                  className="grid grid-cols-[10px_56px_1fr_auto_32px] items-center gap-3 rounded-md border border-border bg-background px-3 py-2"
                 >
                   <span
                     className={cn(
@@ -1594,6 +1600,26 @@ function BucketManagerDialog({
                       laneToneClasses[tone]
                     )}
                   />
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      aria-label={`Move ${bucket.label || "unnamed"} bucket up`}
+                      disabled={index === 0}
+                      onClick={() => moveDraftBucket(bucket.id, "up")}
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-35 focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <ChevronUp className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Move ${bucket.label || "unnamed"} bucket down`}
+                      disabled={index === draftBuckets.length - 1}
+                      onClick={() => moveDraftBucket(bucket.id, "down")}
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-35 focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <ChevronDown className="h-4 w-4" />
+                    </button>
+                  </div>
                   <Input
                     value={bucket.label}
                     aria-label={`${bucket.label || "Unnamed"} bucket name`}

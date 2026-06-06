@@ -13,6 +13,7 @@ import {
   loadUserBucketItemOrder,
   loadUserBuckets,
   loadUserBucketLabels,
+  moveUserBucket,
   saveLocalQueueState,
   saveUserBucketItemOrder,
   saveUserBuckets,
@@ -283,6 +284,22 @@ describe("local queue state", () => {
       id: "new-label",
       label: "New label",
     })
+  })
+
+  it("moves user buckets within the saved order", () => {
+    const buckets = [
+      { id: "inbox", label: "Inbox" },
+      { id: "reviewing", label: "Reviewing" },
+      { id: "waiting", label: "Waiting" },
+    ]
+
+    expect(moveUserBucket(buckets, "waiting", "up")).toEqual([
+      { id: "inbox", label: "Inbox" },
+      { id: "waiting", label: "Waiting" },
+      { id: "reviewing", label: "Reviewing" },
+    ])
+    expect(moveUserBucket(buckets, "inbox", "up")).toBe(buckets)
+    expect(moveUserBucket(buckets, "missing", "down")).toBe(buckets)
   })
 
   it("loads and saves user bucket item order", () => {
