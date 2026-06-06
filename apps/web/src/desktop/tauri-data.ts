@@ -92,13 +92,16 @@ interface LocalBoardColumnRow {
 
 let databasePromise: Promise<SqlDatabase> | undefined
 let lastSuccessfulSyncFingerprint: string | undefined
+let lastSuccessfulSyncScope: { pullRequestIds?: string[] } | undefined
 
 export async function getDesktopReviewerInbox(input?: {
   githubSearchQuery?: string
 }) {
   const db = await getDatabase()
-  await syncBeforeRead(db, input)
-  const pullRequests = await loadPullRequests(db)
+  const readScope = await syncBeforeRead(db, input)
+  const pullRequests = await loadPullRequests(db, {
+    ids: input?.githubSearchQuery ? readScope?.pullRequestIds ?? [] : undefined,
+  })
   const settings = await readLocalGithubSettings(db)
   const viewerLogin = settings.viewerLogin ?? "viewer"
   const actors = buildActors(pullRequests, [viewerLogin])
@@ -388,7 +391,7 @@ async function initializeDatabase(): Promise<SqlDatabase> {
 async function syncBeforeRead(
   db: SqlDatabase,
   options: { githubSearchQuery?: string } = {}
-): Promise<void> {
+): Promise<{ pullRequestIds?: string[] } | undefined> {
   const credentials = await loadLocalGithubCredentials(db)
   if (!credentials) {
     if (await isLocalDatabaseEmpty(db)) {
@@ -402,7 +405,7 @@ async function syncBeforeRead(
     githubSearchQuery: options.githubSearchQuery ?? "",
   })
   if (lastSuccessfulSyncFingerprint === fingerprint) {
-    return
+    return lastSuccessfulSyncScope
   }
 
   const source = createGithubTokenPullRequestSource({
@@ -431,13 +434,15 @@ async function syncBeforeRead(
           ...(await listKnownOpenPullRequestSnapshots(db, source, snapshots)),
         ]
     result.scannedPullRequests = snapshotsToIngest.length
+    const pullRequestIds: string[] = []
 
     await transaction(db, async () => {
       for (const snapshot of snapshotsToIngest) {
-        const ingested = await upsertLocalPullRequestSnapshot(db, snapshot, {
+        const upsertResult = await upsertLocalPullRequestSnapshot(db, snapshot, {
           viewerLogin,
         })
-        if (ingested) {
+        pullRequestIds.push(upsertResult.pullRequestId)
+        if (upsertResult.isFreshEnough) {
           result.ingestedPullRequests += 1
           result.ingestedReviews += snapshot.reviews?.length ?? 0
         } else {
@@ -446,11 +451,16 @@ async function syncBeforeRead(
       }
     })
     await finishLocalSyncRun(db, syncRunId, "succeeded", result)
+    lastSuccessfulSyncScope = options.githubSearchQuery
+      ? { pullRequestIds }
+      : undefined
     lastSuccessfulSyncFingerprint = fingerprint
   } catch (error) {
     await finishLocalSyncRun(db, syncRunId, "failed", result, error)
     throw error
   }
+
+  return lastSuccessfulSyncScope
 }
 
 async function startLocalSyncRun(
@@ -545,7 +555,7 @@ async function upsertLocalPullRequestSnapshot(
   db: SqlDatabase,
   snapshot: GitHubPullRequestSnapshot,
   options: { viewerLogin?: string } = {}
-): Promise<boolean> {
+): Promise<{ pullRequestId: string; isFreshEnough: boolean }> {
   const pullRequest = snapshotToPullRequestItem(snapshot)
   const githubNodeId = githubNodeIdFromSnapshot(snapshot)
   const incomingUpdatedAt = pullRequest.updatedAt
@@ -560,7 +570,7 @@ async function upsertLocalPullRequestSnapshot(
     current?.github_updated_at &&
     Date.parse(incomingUpdatedAt) < Date.parse(current.github_updated_at)
   ) {
-    return false
+    return { pullRequestId: pullRequest.id, isFreshEnough: false }
   }
 
   const now = new Date().toISOString()
@@ -575,7 +585,7 @@ async function upsertLocalPullRequestSnapshot(
     rawPayload: snapshot,
   })
   await ensureDefaultBoardItem(db, pullRequest.id, now)
-  return true
+  return { pullRequestId: pullRequest.id, isFreshEnough: true }
 }
 
 async function upsertPullRequestItem(
@@ -1039,9 +1049,10 @@ async function loadBoardState(db: SqlDatabase): Promise<BoardState> {
 
 async function loadPullRequests(
   db: SqlDatabase,
-  id?: string
+  options: { id?: string; ids?: string[] } | string = {}
 ): Promise<PullRequestItem[]> {
-  const rows = await listPullRequestRows(db, id)
+  const input = typeof options === "string" ? { id: options } : options
+  const rows = await listPullRequestRows(db, input)
   const pullRequests: PullRequestItem[] = []
   for (const row of rows) {
     pullRequests.push(await toPullRequestItem(db, row))
@@ -1051,8 +1062,20 @@ async function loadPullRequests(
 
 async function listPullRequestRows(
   db: SqlDatabase,
-  id?: string
+  input: { id?: string; ids?: string[] } = {}
 ): Promise<LocalPullRequestRow[]> {
+  const scopedIds = input.id ? undefined : input.ids
+  if (scopedIds?.length === 0) {
+    return []
+  }
+
+  const scopeSql = input.id
+    ? "pr.id = $1"
+    : scopedIds
+      ? `pr.id in (${scopedIds.map((_, index) => `$${index + 1}`).join(", ")})`
+      : "pr.state = 'open'"
+  const parameters = input.id ? [input.id] : scopedIds ?? []
+
   return db.select<LocalPullRequestRow[]>(
     `
       select
@@ -1072,12 +1095,11 @@ async function listPullRequestRows(
       from pull_requests pr
       join github_repositories repo on repo.id = pr.repository_id
       left join github_accounts author on author.id = pr.author_account_id
-      where ($1 is null or pr.id = $1)
-        and ($1 is not null or pr.state = 'open')
+      where ${scopeSql}
       order by pr.github_updated_at desc
       limit 250
     `,
-    [id ?? null]
+    parameters
   )
 }
 

@@ -84,7 +84,7 @@ describe("GitHub token pull request source", () => {
     const calls: Array<{ route: string; parameters?: Record<string, unknown> }> = [];
     const source = createGithubTokenPullRequestSource({
       token: "token",
-      repositories: ["acme/web"],
+      repositories: ["acme/web", "acme/api"],
       request: async <T = unknown>(
         route: string,
         parameters?: Record<string, unknown>
@@ -151,7 +151,7 @@ describe("GitHub token pull request source", () => {
     const searchCall = calls.find((call) => call.route === "GET /search/issues");
 
     expect(searchCall?.parameters).toMatchObject({
-      q: "is:open assignee:@me is:pr repo:acme/web",
+      q: "is:open assignee:@me is:pr (repo:acme/web OR repo:acme/api)",
       sort: "updated",
       order: "desc"
     });

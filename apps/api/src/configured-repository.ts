@@ -146,6 +146,7 @@ function createLocalSqliteSyncBeforeRead(
   defaultViewerLogin: string
 ): LocalSqliteRepositoryOptions["beforeRead"] {
   let lastSuccessfulFingerprint: string | undefined;
+  let lastSuccessfulScope: { pullRequestIds?: string[] } | undefined;
 
   return async ({ local, githubSearchQuery }) => {
     const credentials = await loadLocalGithubCredentials(settingsOptions).catch(
@@ -167,7 +168,7 @@ function createLocalSqliteSyncBeforeRead(
       githubSearchQuery: githubSearchQuery ?? ""
     });
     if (lastSuccessfulFingerprint === fingerprint) {
-      return;
+      return lastSuccessfulScope;
     }
 
     const source = createGithubTokenPullRequestSource({
@@ -183,15 +184,21 @@ function createLocalSqliteSyncBeforeRead(
       (await source.getViewerLogin());
 
     try {
-      await syncPullRequestsToLocalSqlite(local.db, source, {
+      const result = await syncPullRequestsToLocalSqlite(local.db, source, {
         sourceName: "local-settings",
         viewerLogin,
         searchQuery: githubSearchQuery
       });
+      lastSuccessfulScope = githubSearchQuery
+        ? { pullRequestIds: result.pullRequestIds }
+        : undefined;
       lastSuccessfulFingerprint = fingerprint;
     } catch (error) {
       console.error("Failed to sync GitHub data into local SQLite.", error);
+      return githubSearchQuery ? { pullRequestIds: [] } : undefined;
     }
+
+    return lastSuccessfulScope;
   };
 }
 

@@ -1,6 +1,7 @@
 import { mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { syncPullRequestsToLocalSqlite } from "@pr-tracker/db";
 import { describe, expect, it, vi } from "vitest";
 import { createApp } from "./app";
 import { createConfiguredRepository } from "./configured-repository";
@@ -228,6 +229,80 @@ describe("api app", () => {
       });
       expect(savedBoard.userBucketItemOrder.custom).toEqual(["pr_1"]);
       expect(savedBoard.bucketColumnWidths.custom).toBe(320);
+    } finally {
+      await repository.close?.();
+    }
+  });
+
+  it("scopes searched local SQLite inbox reads to GitHub search matches", async () => {
+    const databasePath = join(
+      await mkdtemp(join(tmpdir(), "pr-tracker-local-search-db-")),
+      "pr-tracker.sqlite"
+    );
+    const repository = createLocalSqliteRepository({
+      path: databasePath,
+      seedSampleData: false,
+      viewerLogin: "viewer",
+      async beforeRead({ local, githubSearchQuery }) {
+        const result = await syncPullRequestsToLocalSqlite(
+          local.db,
+          {
+            async listPullRequests(options) {
+              const snapshots = [
+                {
+                  repository: { full_name: "acme/web" },
+                  pull_request: {
+                    id: 42,
+                    node_id: "PR_kw_search_42",
+                    number: 42,
+                    title: "Assigned PR",
+                    html_url: "https://github.com/acme/web/pull/42",
+                    state: "open",
+                    created_at: "2026-06-01T08:00:00.000Z",
+                    updated_at: "2026-06-01T10:00:00.000Z",
+                    user: { login: "author" },
+                    head: { sha: "assigned-sha" },
+                    requested_reviewers: [{ login: "viewer" }]
+                  }
+                },
+                {
+                  repository: { full_name: "acme/web" },
+                  pull_request: {
+                    id: 43,
+                    node_id: "PR_kw_search_43",
+                    number: 43,
+                    title: "Cached non-match",
+                    html_url: "https://github.com/acme/web/pull/43",
+                    state: "open",
+                    created_at: "2026-06-01T08:00:00.000Z",
+                    updated_at: "2026-06-01T09:00:00.000Z",
+                    user: { login: "author" },
+                    head: { sha: "other-sha" },
+                    requested_reviewers: [{ login: "viewer" }]
+                  }
+                }
+              ];
+
+              return options?.searchQuery ? [snapshots[0]!] : snapshots;
+            }
+          },
+          { viewerLogin: "viewer", searchQuery: githubSearchQuery }
+        );
+
+        return githubSearchQuery ? { pullRequestIds: result.pullRequestIds } : undefined;
+      }
+    });
+
+    try {
+      await repository.getReviewerInbox("2026-06-01T12:00:00.000Z");
+      const searchedInbox = await repository.getReviewerInbox(
+        "2026-06-01T12:00:00.000Z",
+        { githubSearchQuery: "is:open is:pr assignee:shubham-padia" }
+      );
+
+      expect(searchedInbox.items.map((item) => item.pullRequest.id)).toEqual([
+        "github:acme~web:42"
+      ]);
     } finally {
       await repository.close?.();
     }

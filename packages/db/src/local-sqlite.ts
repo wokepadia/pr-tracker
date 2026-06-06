@@ -244,8 +244,20 @@ export function upsertLocalPullRequestSnapshot(
 
 export function listLocalPullRequestRows(
   db: DatabaseSync,
-  input: { id?: string } = {}
+  input: { id?: string; ids?: string[] } = {}
 ): LocalPullRequestRow[] {
+  const scopedIds = input.id ? undefined : input.ids;
+  if (scopedIds?.length === 0) {
+    return [];
+  }
+
+  const scopeSql = input.id
+    ? "pr.id = ?"
+    : scopedIds
+      ? `pr.id in (${scopedIds.map(() => "?").join(", ")})`
+      : "pr.state = 'open'";
+  const parameters = input.id ? [input.id] : scopedIds ?? [];
+
   return db
     .prepare(
       `
@@ -266,13 +278,12 @@ export function listLocalPullRequestRows(
         from pull_requests pr
         join github_repositories repo on repo.id = pr.repository_id
         left join github_accounts author on author.id = pr.author_account_id
-        where ($id is null or pr.id = $id)
-          and ($id is not null or pr.state = 'open')
+        where ${scopeSql}
         order by pr.github_updated_at desc
         limit 250
       `
     )
-    .all({ $id: input.id ?? null }) as unknown as LocalPullRequestRow[];
+    .all(...parameters) as unknown as LocalPullRequestRow[];
 }
 
 export function listLocalReviewRequestRows(

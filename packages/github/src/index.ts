@@ -414,7 +414,12 @@ function normalizePullRequestSearchQuery(
   }
 
   if (!/\b(?:repo|org|user):/i.test(query)) {
-    parts.push(...repositories.map((repository) => `repo:${repository}`));
+    const repositoryQualifiers = repositories.map((repository) => `repo:${repository}`);
+    if (repositoryQualifiers.length === 1) {
+      parts.push(repositoryQualifiers[0] ?? "");
+    } else if (repositoryQualifiers.length > 1) {
+      parts.push(`(${repositoryQualifiers.join(" OR ")})`);
+    }
   }
 
   return parts.join(" ");

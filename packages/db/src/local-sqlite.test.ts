@@ -217,7 +217,8 @@ describe("local SQLite storage", () => {
         scannedPullRequests: 1,
         ingestedPullRequests: 1,
         ingestedReviews: 1,
-        ignoredPullRequests: 0
+        ignoredPullRequests: 0,
+        pullRequestIds: ["github:acme~web:42"]
       });
       expect(listLocalPullRequestRows(local.db)).toMatchObject([
         {

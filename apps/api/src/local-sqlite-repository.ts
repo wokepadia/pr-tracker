@@ -36,7 +36,7 @@ export interface LocalSqliteRepositoryOptions {
   beforeRead?: (input: {
     local: LocalDatabase;
     githubSearchQuery?: string;
-  }) => Promise<void>;
+  }) => Promise<{ pullRequestIds?: string[] } | void>;
 }
 
 export function createLocalSqliteRepository(
@@ -52,11 +52,13 @@ export function createLocalSqliteRepository(
 
   return {
     async getReviewerInbox(now, readOptions) {
-      await options.beforeRead?.({
+      const readScope = await options.beforeRead?.({
         local,
         githubSearchQuery: readOptions?.githubSearchQuery
       });
-      const pullRequests = loadPullRequests(local);
+      const pullRequests = loadPullRequests(local, {
+        ids: readOptions?.githubSearchQuery ? readScope?.pullRequestIds ?? [] : undefined
+      });
       const actors = buildActors(pullRequests, [viewerLogin]);
       const viewer = ensureActor(actors, viewerLogin);
       const lastSeenAtByPullRequestId = loadLastSeen(local);
@@ -227,9 +229,10 @@ function isLocalDatabaseEmpty(local: LocalDatabase): boolean {
 
 function loadPullRequests(
   local: LocalDatabase,
-  id?: string
+  options: { id?: string; ids?: string[] } | string = {}
 ): PullRequestItem[] {
-  return listLocalPullRequestRows(local.db, { id }).map((row) =>
+  const input = typeof options === "string" ? { id: options } : options;
+  return listLocalPullRequestRows(local.db, input).map((row) =>
     toPullRequestItem(local, row)
   );
 }

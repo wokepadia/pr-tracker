@@ -16,6 +16,7 @@ export interface LocalGitHubPullRequestSyncResult {
   ingestedPullRequests: number;
   ingestedReviews: number;
   ignoredPullRequests: number;
+  pullRequestIds: string[];
 }
 
 export async function syncPullRequestsToLocalSqlite(
@@ -37,7 +38,8 @@ export async function syncPullRequestsToLocalSqlite(
     scannedPullRequests: 0,
     ingestedPullRequests: 0,
     ingestedReviews: 0,
-    ignoredPullRequests: 0
+    ignoredPullRequests: 0,
+    pullRequestIds: []
   };
 
   try {
@@ -55,6 +57,7 @@ export async function syncPullRequestsToLocalSqlite(
         profileId: options.profileId,
         viewerLogin: options.viewerLogin
       });
+      result.pullRequestIds.push(upsertResult.pullRequestId);
 
       if (upsertResult.isFreshEnough) {
         result.ingestedPullRequests += 1;
