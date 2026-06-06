@@ -3,9 +3,13 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import { createApp } from "./app";
+import { createConfiguredRepository } from "./configured-repository";
 import { createGithubLiveRepository } from "./github-live-repository";
 import { createLocalSqliteRepository } from "./local-sqlite-repository";
-import { createMemoryGithubSettingsStore } from "./local-github-settings";
+import {
+  createMemoryGithubSettingsStore,
+  saveLocalGithubSettings
+} from "./local-github-settings";
 import { createSampleRepository } from "./repository";
 import { createMemoryWebhookSink } from "./webhook-sink";
 
@@ -284,6 +288,107 @@ describe("api app", () => {
 
     expect(statusResponse.status).toBe(200);
     expect(statusBody).toEqual(saveBody);
+  });
+
+  it("syncs saved local GitHub settings into SQLite before serving the inbox", async () => {
+    const databasePath = join(
+      await mkdtemp(join(tmpdir(), "pr-tracker-local-sync-db-")),
+      "pr-tracker.sqlite"
+    );
+    const configPath = join(
+      await mkdtemp(join(tmpdir(), "pr-tracker-local-sync-settings-")),
+      "github-settings.json"
+    );
+    const store = createMemoryGithubSettingsStore();
+    const settingsOptions = { configPath, store };
+    await saveLocalGithubSettings(
+      {
+        token: "github_pat_read_only",
+        repositories: "acme/web",
+        viewerLogin: "viewer",
+        apiBaseUrl: "https://api.github.test"
+      },
+      settingsOptions
+    );
+    const fetchMock = vi.fn(async (url: URL | string) => {
+      const requestUrl = new URL(String(url));
+      const pathname = requestUrl.pathname;
+
+      if (pathname === "/repos/acme/web/pulls") {
+        const state = requestUrl.searchParams.get("state");
+        return jsonResponse(
+          state === "open"
+            ? [
+                {
+                  id: 42,
+                  node_id: "PR_kw_local_sync_42",
+                  number: 42,
+                  title: "Sync local GitHub settings",
+                  body: "Persist this from GitHub into SQLite.",
+                  html_url: "https://github.com/acme/web/pull/42",
+                  state: "open",
+                  draft: false,
+                  created_at: "2026-06-01T08:00:00.000Z",
+                  updated_at: "2026-06-01T09:00:00.000Z",
+                  user: { login: "author" },
+                  head: { sha: "head-sha" },
+                  requested_reviewers: [{ login: "viewer" }]
+                }
+              ]
+            : []
+        );
+      }
+
+      if (pathname === "/repos/acme/web/pulls/42/reviews") {
+        return jsonResponse([]);
+      }
+
+      return new Response("not found", { status: 404, statusText: "Not Found" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const repository = createConfiguredRepository(
+      {
+        PR_TRACKER_LOCAL_DB_PATH: databasePath
+      },
+      settingsOptions
+    );
+    const app = createApp({
+      repository,
+      webhookSink: createMemoryWebhookSink()
+    });
+
+    try {
+      const response = await app.request("/api/reviewer-inbox");
+      const body = (await response.json()) as {
+        viewer: { login: string };
+        items: Array<{
+          workflowState: string;
+          pullRequest: {
+            id: string;
+            repository: string;
+            title: string;
+            description?: string;
+          };
+        }>;
+      };
+
+      expect(response.status).toBe(200);
+      expect(body.viewer.login).toBe("viewer");
+      expect(body.items).toHaveLength(1);
+      expect(body.items[0]).toMatchObject({
+        workflowState: "needs_review",
+        pullRequest: {
+          id: "github:acme~web:42",
+          repository: "acme/web",
+          title: "Sync local GitHub settings",
+          description: "Persist this from GitHub into SQLite."
+        }
+      });
+      expect(fetchMock).toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      await repository.close?.();
+    }
   });
 
   it("passes reviewer inbox GitHub search query overrides through the repository boundary", async () => {
@@ -572,3 +677,9 @@ describe("api app", () => {
     consoleError.mockRestore();
   });
 });
+
+function jsonResponse(value: unknown): Response {
+  return new Response(JSON.stringify(value), {
+    headers: { "content-type": "application/json" }
+  });
+}

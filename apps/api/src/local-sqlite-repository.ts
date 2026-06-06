@@ -33,6 +33,10 @@ export interface LocalSqliteRepositoryOptions {
   path?: string;
   viewerLogin?: string;
   seedSampleData?: boolean;
+  beforeRead?: (input: {
+    local: LocalDatabase;
+    githubSearchQuery?: string;
+  }) => Promise<void>;
 }
 
 export function createLocalSqliteRepository(
@@ -47,7 +51,11 @@ export function createLocalSqliteRepository(
   }
 
   return {
-    async getReviewerInbox(now) {
+    async getReviewerInbox(now, readOptions) {
+      await options.beforeRead?.({
+        local,
+        githubSearchQuery: readOptions?.githubSearchQuery
+      });
       const pullRequests = loadPullRequests(local);
       const actors = buildActors(pullRequests, [viewerLogin]);
       const viewer = ensureActor(actors, viewerLogin);
@@ -63,6 +71,7 @@ export function createLocalSqliteRepository(
     },
 
     async getPullRequest(id): Promise<PullRequestDetail | undefined> {
+      await options.beforeRead?.({ local });
       const pullRequests = loadPullRequests(local, id);
       const pullRequest = pullRequests[0];
       if (!pullRequest) {
@@ -94,6 +103,7 @@ export function createLocalSqliteRepository(
     },
 
     async getBoardState() {
+      await options.beforeRead?.({ local });
       return loadBoardState(local);
     },
 

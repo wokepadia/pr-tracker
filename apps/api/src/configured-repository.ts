@@ -1,3 +1,13 @@
+import {
+  createGithubTokenPullRequestSource,
+  getGithubClosedLookbackDays,
+  getGithubTokenEnv,
+  parseGithubRepositories
+} from "@pr-tracker/github";
+import {
+  seedLocalSampleData,
+  syncPullRequestsToLocalSqlite
+} from "@pr-tracker/db";
 import { createDatabaseRepository } from "./database-repository";
 import {
   createGithubLiveRepositoryFromCredentials,
@@ -14,14 +24,17 @@ import {
   type ReviewerInboxRepository
 } from "./repository";
 import { createLocalSqliteRepository } from "./local-sqlite-repository";
+import type { LocalSqliteRepositoryOptions } from "./local-sqlite-repository";
 
 export function createConfiguredRepository(
   env: Record<string, string | undefined> = process.env,
   settingsOptions: LocalGithubSettingsOptions = {}
 ): ReviewerInboxRepository {
-  const githubRepository = createGithubLiveRepositoryFromEnv(env);
-  if (githubRepository) {
-    return githubRepository;
+  if (env.PR_TRACKER_USE_LIVE_GITHUB === "true") {
+    const githubRepository = createGithubLiveRepositoryFromEnv(env);
+    if (githubRepository) {
+      return githubRepository;
+    }
   }
 
   if (shouldUseDatabaseRepository(env)) {
@@ -29,9 +42,12 @@ export function createConfiguredRepository(
   }
 
   if (shouldUseLocalSqliteRepository(env)) {
+    const viewerLogin = env.PR_TRACKER_VIEWER_LOGIN ?? "viewer";
     return createLocalSqliteRepository({
       path: env.PR_TRACKER_LOCAL_DB_PATH,
-      viewerLogin: env.PR_TRACKER_VIEWER_LOGIN ?? "viewer"
+      viewerLogin,
+      seedSampleData: false,
+      beforeRead: createLocalSqliteSyncBeforeRead(env, settingsOptions, viewerLogin)
     });
   }
 
@@ -62,7 +78,7 @@ function createLocalSettingsRepository(
         console.error("Failed to load local GitHub settings.", error);
         return undefined;
       }
-    );
+    ) ?? loadEnvGithubCredentials(env);
 
     if (!credentials) {
       return sampleRepository;
@@ -101,6 +117,91 @@ function createLocalSettingsRepository(
       return (await getRepository()).markSeen(input);
     }
   };
+}
+
+function loadEnvGithubCredentials(
+  env: Record<string, string | undefined>
+): {
+  token: string;
+  repositories: string[];
+  viewerLogin?: string;
+  apiBaseUrl?: string;
+} | undefined {
+  const tokenEnv = getGithubTokenEnv(env);
+  if (!tokenEnv) {
+    return undefined;
+  }
+
+  return {
+    token: tokenEnv.GITHUB_TOKEN,
+    repositories: parseGithubRepositories(tokenEnv.GITHUB_REPOSITORIES),
+    viewerLogin: env.PR_TRACKER_VIEWER_LOGIN,
+    apiBaseUrl: tokenEnv.GITHUB_API_BASE_URL
+  };
+}
+
+function createLocalSqliteSyncBeforeRead(
+  env: Record<string, string | undefined>,
+  settingsOptions: LocalGithubSettingsOptions,
+  defaultViewerLogin: string
+): LocalSqliteRepositoryOptions["beforeRead"] {
+  let lastSuccessfulFingerprint: string | undefined;
+
+  return async ({ local, githubSearchQuery }) => {
+    const credentials = await loadLocalGithubCredentials(settingsOptions).catch(
+      (error: unknown) => {
+        console.error("Failed to load local GitHub settings.", error);
+        return undefined;
+      }
+    ) ?? loadEnvGithubCredentials(env);
+
+    if (!credentials) {
+      if (isLocalSqliteDatabaseEmpty(local.db)) {
+        seedLocalSampleData(local.db, { viewerLogin: defaultViewerLogin });
+      }
+      return;
+    }
+
+    const fingerprint = JSON.stringify({
+      credentials: localGithubSettingsFingerprint(credentials),
+      githubSearchQuery: githubSearchQuery ?? ""
+    });
+    if (lastSuccessfulFingerprint === fingerprint) {
+      return;
+    }
+
+    const source = createGithubTokenPullRequestSource({
+      token: credentials.token,
+      repositories: credentials.repositories,
+      apiBaseUrl: credentials.apiBaseUrl,
+      closedLookbackDays: getGithubClosedLookbackDays(env),
+      maxPullRequests: parsePositiveInteger(env.GITHUB_MAX_PULL_REQUESTS)
+    });
+    const viewerLogin =
+      credentials.viewerLogin ??
+      env.PR_TRACKER_VIEWER_LOGIN ??
+      (await source.getViewerLogin());
+
+    try {
+      await syncPullRequestsToLocalSqlite(local.db, source, {
+        sourceName: "local-settings",
+        viewerLogin,
+        searchQuery: githubSearchQuery
+      });
+      lastSuccessfulFingerprint = fingerprint;
+    } catch (error) {
+      console.error("Failed to sync GitHub data into local SQLite.", error);
+    }
+  };
+}
+
+function isLocalSqliteDatabaseEmpty(db: {
+  prepare(sql: string): { get(): unknown };
+}): boolean {
+  const row = db.prepare(`select count(*) as count from pull_requests`).get() as {
+    count: number;
+  };
+  return row.count === 0;
 }
 
 function parsePositiveInteger(value: string | undefined): number | undefined {

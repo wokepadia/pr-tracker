@@ -10,6 +10,10 @@ import {
   type ReviewDecisionEvent,
   type ReviewThread
 } from "@pr-tracker/core";
+import type {
+  GitHubPullRequestSnapshot,
+  GitHubReviewSnapshot
+} from "@pr-tracker/github";
 import { deterministicUuid } from "./ids";
 import { localDesktopSchemaSql } from "./local-schema";
 
@@ -125,6 +129,11 @@ export interface SaveLocalBoardStateInput {
   items: SaveLocalBoardItemInput[];
 }
 
+export interface UpsertLocalPullRequestSnapshotResult {
+  pullRequestId: string;
+  isFreshEnough: boolean;
+}
+
 export function defaultLocalDatabasePath(): string {
   return (
     process.env.PR_TRACKER_LOCAL_DB_PATH ??
@@ -187,6 +196,47 @@ export function seedLocalSampleData(
       setLocalBoardItemSeenAt(db, pullRequestId, lastSeenAt ?? null, now);
     }
   });
+}
+
+export function upsertLocalPullRequestSnapshot(
+  db: DatabaseSync,
+  snapshot: GitHubPullRequestSnapshot,
+  options: {
+    profileId?: string;
+    viewerLogin?: string;
+  } = {}
+): UpsertLocalPullRequestSnapshotResult {
+  const pullRequest = snapshotToPullRequestItem(snapshot);
+  const githubNodeId = githubNodeIdFromSnapshot(snapshot);
+  const incomingUpdatedAt = pullRequest.updatedAt;
+  const isFreshEnough = isFreshEnoughLocalPullRequestPayload(
+    db,
+    githubNodeId,
+    incomingUpdatedAt
+  );
+  const now = new Date().toISOString();
+  const profileId = options.profileId ?? defaultLocalProfileId;
+  const viewerLogin = options.viewerLogin ?? "viewer";
+
+  transaction(db, () => {
+    upsertLocalProfile(db, {
+      id: profileId,
+      githubLogin: viewerLogin,
+      displayName: viewerLogin,
+      now
+    });
+    ensureDefaultBoard(db, profileId, now);
+
+    if (isFreshEnough) {
+      upsertLocalPullRequest(db, pullRequest, now, {
+        githubNodeId,
+        rawPayload: snapshot
+      });
+      ensureDefaultBoardItem(db, pullRequest, now);
+    }
+  });
+
+  return { pullRequestId: pullRequest.id, isFreshEnough };
 }
 
 export function listLocalPullRequestRows(
@@ -590,7 +640,11 @@ function ensureDefaultBoard(
 function upsertLocalPullRequest(
   db: DatabaseSync,
   pullRequest: PullRequestItem,
-  now: string
+  now: string,
+  options: {
+    githubNodeId?: string;
+    rawPayload?: unknown;
+  } = {}
 ): void {
   const [owner, repoName = pullRequest.repository] = pullRequest.repository.split("/");
   const ownerAccountId = upsertGithubAccount(db, {
@@ -701,7 +755,7 @@ function upsertLocalPullRequest(
     `
   ).run(
     pullRequest.id,
-    pullRequest.id,
+    options.githubNodeId ?? pullRequest.id,
     repositoryId,
     pullRequest.number,
     pullRequest.title,
@@ -713,7 +767,7 @@ function upsertLocalPullRequest(
     pullRequest.latestCommitSha,
     pullRequest.createdAt,
     pullRequest.updatedAt,
-    JSON.stringify(pullRequest),
+    JSON.stringify(options.rawPayload ?? pullRequest),
     now,
     now
   );
@@ -722,6 +776,235 @@ function upsertLocalPullRequest(
   replaceLocalReviews(db, pullRequest.reviews, pullRequest.id, now);
   replaceLocalThreads(db, pullRequest.threads, pullRequest.id, now);
   replaceLocalActivity(db, pullRequest.activity, pullRequest.id, now);
+}
+
+function snapshotToPullRequestItem(snapshot: GitHubPullRequestSnapshot): PullRequestItem {
+  const pullRequest = snapshot.pull_request;
+  const repository = snapshot.repository.full_name;
+  const number = pullRequest.number ?? 0;
+  const updatedAt = pullRequest.updated_at ?? new Date().toISOString();
+  const reviews = compactReviewsForInbox(snapshot.reviews ?? []);
+  const url = pullRequest.html_url ?? `https://github.com/${repository}/pull/${number}`;
+
+  return {
+    id: livePullRequestId(repository, number),
+    repository,
+    number,
+    title: pullRequest.title ?? "Untitled pull request",
+    description: cleanPullRequestDescription(pullRequest.body),
+    url,
+    authorId: pullRequest.user?.login ?? "unknown",
+    state: pullRequest.merged ? "merged" : normalizeSnapshotPullRequestState(pullRequest.state),
+    isDraft: pullRequest.draft ?? false,
+    createdAt: pullRequest.created_at ?? updatedAt,
+    updatedAt,
+    latestCommitSha: pullRequest.head?.sha ?? "",
+    requestedReviewerIds: (pullRequest.requested_reviewers ?? [])
+      .map((reviewer) => reviewer.login)
+      .filter((login): login is string => Boolean(login)),
+    reviews: reviews.flatMap(mapSnapshotReview),
+    threads: [],
+    activity: buildSnapshotActivity({ ...snapshot, reviews })
+  };
+}
+
+function cleanPullRequestDescription(value: string | null | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function compactReviewsForInbox(
+  reviews: GitHubReviewSnapshot[]
+): GitHubReviewSnapshot[] {
+  const latestByReviewer = new Map<string, GitHubReviewSnapshot>();
+  const newestReviews = reviews
+    .slice()
+    .sort(
+      (a, b) =>
+        Date.parse(b.submitted_at ?? "") - Date.parse(a.submitted_at ?? "")
+    );
+
+  for (const review of newestReviews) {
+    const reviewerLogin = review.user?.login;
+    if (!reviewerLogin || latestByReviewer.has(reviewerLogin)) {
+      continue;
+    }
+
+    latestByReviewer.set(reviewerLogin, review);
+  }
+
+  return uniqueReviewsById([...newestReviews.slice(0, 20), ...latestByReviewer.values()])
+    .sort(
+      (a, b) =>
+        Date.parse(a.submitted_at ?? "") - Date.parse(b.submitted_at ?? "")
+    );
+}
+
+function uniqueReviewsById(
+  reviews: GitHubReviewSnapshot[]
+): GitHubReviewSnapshot[] {
+  const seenIds = new Set<string>();
+  const uniqueReviews: GitHubReviewSnapshot[] = [];
+
+  for (const review of reviews) {
+    const id = review.node_id ?? String(review.id);
+    if (seenIds.has(id)) {
+      continue;
+    }
+
+    seenIds.add(id);
+    uniqueReviews.push(review);
+  }
+
+  return uniqueReviews;
+}
+
+function mapSnapshotReview(review: GitHubReviewSnapshot): ReviewDecisionEvent[] {
+  const reviewerId = review.user?.login;
+  if (!reviewerId) {
+    return [];
+  }
+
+  return [
+    {
+      id: review.node_id ?? String(review.id),
+      reviewerId,
+      decision: mapSnapshotReviewDecision(review.state),
+      submittedAt: review.submitted_at ?? new Date().toISOString(),
+      commitSha: review.commit_id,
+      body: review.body ?? undefined
+    }
+  ];
+}
+
+function mapSnapshotReviewDecision(
+  state: string | undefined
+): ReviewDecisionEvent["decision"] {
+  if (state?.toLowerCase() === "approved") {
+    return "approved";
+  }
+
+  if (state?.toLowerCase() === "changes_requested") {
+    return "changes_requested";
+  }
+
+  return "commented";
+}
+
+function buildSnapshotActivity(
+  snapshot: GitHubPullRequestSnapshot
+): PullRequestActivity[] {
+  const pullRequest = snapshot.pull_request;
+  const repository = snapshot.repository.full_name;
+  const number = pullRequest.number ?? 0;
+  const updatedAt = pullRequest.updated_at ?? new Date().toISOString();
+  const authorLogin = pullRequest.user?.login ?? "unknown";
+  const pullRequestUrl =
+    pullRequest.html_url ?? `https://github.com/${repository}/pull/${number}`;
+  const activity: PullRequestActivity[] = [
+    {
+      id: `${livePullRequestId(repository, number)}:updated`,
+      type: "pull_request",
+      actorId: authorLogin,
+      occurredAt: updatedAt,
+      title: `${authorLogin} updated this pull request`,
+      url: pullRequestUrl,
+      diffUrl: `${pullRequestUrl}/files`
+    }
+  ];
+
+  for (const reviewer of pullRequest.requested_reviewers ?? []) {
+    if (!reviewer.login) {
+      continue;
+    }
+
+    activity.push({
+      id: `${livePullRequestId(repository, number)}:review-request:${reviewer.login}`,
+      type: "review_request",
+      actorId: authorLogin,
+      occurredAt: updatedAt,
+      title: `${authorLogin} requested review from ${reviewer.login}`
+    });
+  }
+
+  for (const review of snapshot.reviews ?? []) {
+    if (!review.user?.login) {
+      continue;
+    }
+
+    activity.push({
+      id: `${livePullRequestId(repository, number)}:review:${review.node_id ?? review.id}`,
+      type: "review",
+      actorId: review.user.login,
+      occurredAt: review.submitted_at ?? updatedAt,
+      title: `${review.user.login} ${snapshotReviewTitle(review.state)}`,
+      body: review.body ?? undefined
+    });
+  }
+
+  return activity.sort(
+    (a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt)
+  );
+}
+
+function snapshotReviewTitle(state: string | undefined): string {
+  const normalizedState = state?.toLowerCase();
+  if (normalizedState === "approved") {
+    return "approved this pull request";
+  }
+
+  if (normalizedState === "changes_requested") {
+    return "requested changes";
+  }
+
+  return "reviewed this pull request";
+}
+
+function livePullRequestId(repository: string, number: number): string {
+  return `github:${repository.replace("/", "~")}:${number}`;
+}
+
+function normalizeSnapshotPullRequestState(
+  state: string | undefined
+): PullRequestItem["state"] {
+  if (state === "closed") {
+    return "closed";
+  }
+
+  if (state === "merged") {
+    return "merged";
+  }
+
+  return "open";
+}
+
+function githubNodeIdFromSnapshot(snapshot: GitHubPullRequestSnapshot): string {
+  const pullRequest = snapshot.pull_request;
+  if (pullRequest.node_id) {
+    return pullRequest.node_id;
+  }
+
+  if (typeof pullRequest.id === "number" && pullRequest.id > 0) {
+    return String(pullRequest.id);
+  }
+
+  return `pull-request:${snapshot.repository.full_name}:${pullRequest.number ?? 0}`;
+}
+
+function isFreshEnoughLocalPullRequestPayload(
+  db: DatabaseSync,
+  githubNodeId: string,
+  incomingUpdatedAt: string
+): boolean {
+  const current = db
+    .prepare(`select github_updated_at from pull_requests where github_node_id = ?`)
+    .get(githubNodeId) as { github_updated_at: string | null } | undefined;
+
+  if (!current?.github_updated_at) {
+    return true;
+  }
+
+  return Date.parse(incomingUpdatedAt) >= Date.parse(current.github_updated_at);
 }
 
 function ensureDefaultBoardItem(
