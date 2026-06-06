@@ -753,7 +753,10 @@ export function InboxPage() {
   function muteSelected() {
     if (!selectedItem || !canMuteLocalQueueItem(selectedItemLocalState)) return
     const itemId = selectedItem.id
-    updateLocalItemState(itemId, () => ({ muted: true }))
+    updateLocalItemState(itemId, (current) => ({
+      ...current,
+      muted: true,
+    }))
     moveSelectionAfterHiding(itemId)
   }
 

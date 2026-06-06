@@ -86,6 +86,21 @@ describe("local queue state", () => {
     })
   })
 
+  it("preserves bucket assignments for stashed local states", () => {
+    const storage = {
+      getItem: () =>
+        JSON.stringify({
+          pr_1: { bucketId: "reviewing", snoozed: true },
+          pr_2: { bucketId: "waiting", muted: true },
+        }),
+    }
+
+    expect(loadLocalQueueState(storage)).toEqual({
+      pr_1: { bucketId: "reviewing", snoozed: true },
+      pr_2: { bucketId: "waiting", muted: true },
+    })
+  })
+
   it("drops unknown or inactive persisted state values", () => {
     const storage = {
       getItem: () =>

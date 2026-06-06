@@ -228,7 +228,10 @@ export function PullRequestPage() {
   function mutePullRequestById(itemId: string) {
     const itemState = localQueueState[itemId] ?? {}
     if (!canMuteLocalQueueItem(itemState)) return
-    updateLocalItemState(itemId, () => ({ muted: true }))
+    updateLocalItemState(itemId, (current) => ({
+      ...current,
+      muted: true,
+    }))
   }
 
   async function markCaughtUpById(itemId: string) {
