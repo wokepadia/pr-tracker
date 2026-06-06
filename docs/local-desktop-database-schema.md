@@ -27,12 +27,12 @@ erDiagram
   local_profile ||--o{ github_credential_refs : uses
   local_profile ||--o{ boards : owns
 
-  github_credential_refs ||--o{ tracked_repositories : syncs
-  github_credential_refs ||--o{ sync_runs : used_by
+  github_credential_refs o|--o{ tracked_repositories : syncs
+  github_credential_refs o|--o{ sync_runs : used_by
 
-  github_accounts ||--o{ github_repositories : owns
-  github_accounts ||--o{ pull_requests : authors
-  github_accounts ||--o{ github_teams : owns
+  github_accounts o|--o{ github_repositories : owns
+  github_accounts o|--o{ pull_requests : authors
+  github_accounts o|--o{ github_teams : owns
 
   github_repositories ||--o{ tracked_repositories : tracked_as
   github_repositories ||--o{ pull_requests : contains
@@ -55,7 +55,7 @@ erDiagram
 
   boards ||--o{ board_columns : has
   boards ||--o{ board_items : contains
-  board_columns ||--o{ board_items : groups
+  board_columns o|--o{ board_items : groups
 
   tracked_repositories ||--o{ sync_cursors : has
   tracked_repositories ||--o{ sync_runs : records
@@ -106,6 +106,10 @@ The PR `state` column follows GitHub's REST API shape: `open` or `closed`.
 Merged state is derived from `merged_at`, not stored as a third state. Review
 readiness and merge readiness are cached separately through `review_decision`,
 `mergeable_state`, `status_check_summary_json`, and `pull_request_check_runs`.
+
+`review_events.decision` includes `pending` for API fidelity with GitHub's
+GraphQL `PullRequestReviewState`. A REST-only sync path should expect mostly
+submitted review states and may never write pending reviews.
 
 `pull_request_review_requests` supports both user and team review requests.
 GitHub exposes team review requests separately from user requests, so V1 should
@@ -178,6 +182,12 @@ SQLite does not automatically refresh `updated_at` on update just because a
 column has `default current_timestamp`. V1 should either set `updated_at` in app
 code on every write or add explicit triggers with the first real migration. The
 schema proposal uses defaults only for insert-time values.
+
+Cache join rows such as assignees, review requests, and thread participants keep
+restricting foreign keys to account/team cache rows because the join rows stop
+being useful without their target identity. Main entity author/owner links use
+`on delete set null` so cached PRs and repositories can survive identity cache
+pruning.
 
 Column ordering uses non-unique `sort_order` indexes. Reorder code can assign
 temporary duplicate values during drag operations and normalize later without
