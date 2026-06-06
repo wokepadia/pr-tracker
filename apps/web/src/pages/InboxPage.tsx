@@ -601,72 +601,79 @@ export function InboxPage() {
     })
   }
 
-  function updateBucketLabel(bucketId: UserBucketId, label: string) {
-    const trimmedLabel = label.trim()
-    setUserBuckets((current) =>
-      current.map((bucket) =>
-        bucket.id === bucketId
-          ? {
-              ...bucket,
-              label: trimmedLabel || bucket.label,
-            }
-          : bucket
-      )
-    )
-  }
-
-  function addBucket() {
-    setUserBuckets((current) => {
-      const nextBucket = createUserBucket("New label", current)
-      setActiveActionTabId(nextBucket.id)
-      setGroupMode("action")
-      setUserBucketItemOrder((currentOrder) => ({
-        ...currentOrder,
-        [nextBucket.id]: [],
-      }))
-      return [...current, nextBucket]
+  function saveUserBucketDefinitions(nextBuckets: UserBucketDefinition[]) {
+    const sanitizedBuckets = nextBuckets.flatMap((bucket) => {
+      const trimmedLabel = bucket.label.trim()
+      return trimmedLabel ? [{ ...bucket, label: trimmedLabel }] : []
     })
-  }
+    if (sanitizedBuckets.length === 0) return
 
-  function deleteBucket(bucketId: UserBucketId) {
-    const fallbackBucket = userBuckets.find((bucket) => bucket.id !== bucketId)
-    if (!fallbackBucket) return
+    const nextBucketIds = new Set(sanitizedBuckets.map((bucket) => bucket.id))
+    const removedBucketIds = userBuckets
+      .map((bucket) => bucket.id)
+      .filter((bucketId) => !nextBucketIds.has(bucketId))
+    const fallbackBucket = sanitizedBuckets[0]!
 
-    setUserBuckets((current) => current.filter((bucket) => bucket.id !== bucketId))
+    setUserBuckets(sanitizedBuckets)
     setLocalQueueState((current) => {
-      const next = { ...current }
+      if (removedBucketIds.length === 0) return current
 
-      for (const [itemId, itemState] of Object.entries(next)) {
-        if (itemState?.bucketId === bucketId) {
-          next[itemId] = {
-            ...itemState,
-            bucketId: fallbackBucket.id,
+      return Object.fromEntries(
+        Object.entries(current).map(([itemId, itemState]) => {
+          if (itemState?.bucketId && removedBucketIds.includes(itemState.bucketId)) {
+            return [
+              itemId,
+              {
+                ...itemState,
+                bucketId: fallbackBucket.id,
+              },
+            ] as const
           }
-        }
-      }
 
-      return next
+          return [itemId, itemState] as const
+        })
+      )
     })
     setUserBucketItemOrder((current) => {
       const next = { ...current }
-      const mergedFallbackOrder = [
-        ...(next[fallbackBucket.id] ?? []),
-        ...(next[bucketId] ?? []).filter(
-          (itemId) => !(next[fallbackBucket.id] ?? []).includes(itemId)
-        ),
-      ]
+      const fallbackOrder = next[fallbackBucket.id] ?? []
+      const fallbackOrderIds = new Set(fallbackOrder)
 
-      next[fallbackBucket.id] = mergedFallbackOrder
-      delete next[bucketId]
-      return next
+      for (const bucket of sanitizedBuckets) {
+        next[bucket.id] = next[bucket.id] ?? []
+      }
+
+      for (const bucketId of removedBucketIds) {
+        const movedItemIds = (next[bucketId] ?? []).filter(
+          (itemId) => !fallbackOrderIds.has(itemId)
+        )
+        for (const itemId of movedItemIds) {
+          fallbackOrderIds.add(itemId)
+        }
+        next[fallbackBucket.id] = [
+          ...(next[fallbackBucket.id] ?? []),
+          ...movedItemIds,
+        ]
+        delete next[bucketId]
+      }
+
+      return Object.fromEntries(
+        sanitizedBuckets.map((bucket) => [bucket.id, next[bucket.id] ?? []])
+      )
     })
     setBucketColumnWidths((current) => {
-      const next = { ...current }
-      delete next[bucketId]
-      return next
+      return Object.fromEntries(
+        sanitizedBuckets.flatMap((bucket) => {
+          const width = current[bucket.id]
+          return width ? [[bucket.id, width] as const] : []
+        })
+      )
     })
 
-    if (activeActionTabId === bucketId) {
+    if (
+      typeof activeActionTabId === "string" &&
+      removedBucketIds.includes(activeActionTabId)
+    ) {
       setActiveActionTabId(fallbackBucket.id)
     }
   }
@@ -879,9 +886,8 @@ export function InboxPage() {
         onSelectPinned={focusPinned}
         onSelectSnoozed={focusSnoozed}
         onSelectMuted={focusMuted}
-        onAddBucket={addBucket}
-        onDeleteBucket={deleteBucket}
-        onBucketLabelChange={updateBucketLabel}
+        userBuckets={userBuckets}
+        onSaveBuckets={saveUserBucketDefinitions}
       />
 
       <section className="min-w-0 bg-background">
@@ -1230,9 +1236,8 @@ function InboxSidebar({
   onSelectPinned,
   onSelectSnoozed,
   onSelectMuted,
-  onAddBucket,
-  onDeleteBucket,
-  onBucketLabelChange,
+  userBuckets,
+  onSaveBuckets,
 }: {
   laneItems: Record<LaneId, ReviewQueueItemView[]>
   bucketLanes: LaneDefinition[]
@@ -1250,10 +1255,10 @@ function InboxSidebar({
   onSelectPinned: () => void
   onSelectSnoozed: () => void
   onSelectMuted: () => void
-  onAddBucket: () => void
-  onDeleteBucket: (bucketId: UserBucketId) => void
-  onBucketLabelChange: (bucketId: UserBucketId, label: string) => void
+  userBuckets: UserBucketDefinition[]
+  onSaveBuckets: (buckets: UserBucketDefinition[]) => void
 }) {
+  const [bucketDialogOpen, setBucketDialogOpen] = useState(false)
   const activeTotal = bucketLanes.reduce(
     (total, lane) => total + (laneItems[lane.id]?.length ?? 0),
     0
@@ -1287,11 +1292,22 @@ function InboxSidebar({
           onClick={newActivityCount > 0 ? onSelectNewActivity : undefined}
         />
       </SidebarSection>
-      <SidebarSection label="Buckets">
+      <SidebarSection
+        label="Buckets"
+        action={
+          <button
+            type="button"
+            aria-label="Manage buckets"
+            onClick={() => setBucketDialogOpen(true)}
+            className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Edit3 className="h-3.5 w-3.5" />
+          </button>
+        }
+      >
         {bucketLanes.map((lane) => (
-          <SidebarBucketItem
+          <SidebarItem
             key={lane.id}
-            bucketId={lane.id}
             active={activeActionTabId === lane.id}
             attention={(laneItems[lane.id]?.length ?? 0) > 0}
             tone={lane.tone}
@@ -1302,19 +1318,8 @@ function InboxSidebar({
                 ? () => onSelectLane(lane.id)
                 : undefined
             }
-            canDelete={bucketLanes.length > 1}
-            onDelete={onDeleteBucket}
-            onLabelChange={onBucketLabelChange}
           />
         ))}
-        <button
-          type="button"
-          onClick={onAddBucket}
-          className="mt-1 grid w-full grid-cols-[7px_1fr] items-center gap-2 rounded-md px-2 py-2 text-left text-xs text-muted-foreground transition hover:bg-muted/40 hover:text-foreground sm:text-sm"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          <span>Add label</span>
-        </button>
       </SidebarSection>
       <SidebarSection label="Stashed">
         <SidebarItem
@@ -1345,6 +1350,18 @@ function InboxSidebar({
         Review decisions still happen in GitHub. This surface only tracks where
         your attention belongs.
       </div>
+      {bucketDialogOpen ? (
+        <BucketManagerDialog
+          buckets={userBuckets}
+          bucketLanes={bucketLanes}
+          laneItems={laneItems}
+          onClose={() => setBucketDialogOpen(false)}
+          onSave={(buckets) => {
+            onSaveBuckets(buckets)
+            setBucketDialogOpen(false)
+          }}
+        />
+      ) : null}
     </aside>
   )
 }
@@ -1376,14 +1393,17 @@ function InboxStatusPanel({
 function SidebarSection({
   label,
   children,
+  action,
 }: {
   label: string
   children: ReactNode
+  action?: ReactNode
 }) {
   return (
     <div className="mb-2 sm:mb-5">
-      <div className="px-2 pb-2 pt-2 text-xs text-muted-foreground/70 sm:pt-3">
-        {label}
+      <div className="flex items-center justify-between gap-2 px-2 pb-2 pt-2 text-xs text-muted-foreground/70 sm:pt-3">
+        <span>{label}</span>
+        {action}
       </div>
       <div className="grid grid-cols-2 gap-1 sm:block sm:space-y-1">{children}</div>
     </div>
@@ -1450,104 +1470,175 @@ function SidebarItem({
   )
 }
 
-function SidebarBucketItem({
-  bucketId,
-  label,
-  count,
-  active,
-  attention,
-  tone,
-  onClick,
-  canDelete,
-  onDelete,
-  onLabelChange,
+function BucketManagerDialog({
+  buckets,
+  bucketLanes,
+  laneItems,
+  onClose,
+  onSave,
 }: {
-  bucketId: UserBucketId
-  label: string
-  count: number
-  active?: boolean
-  attention?: boolean
-  tone: LaneDefinition["tone"]
-  onClick?: () => void
-  canDelete: boolean
-  onDelete: (bucketId: UserBucketId) => void
-  onLabelChange: (bucketId: UserBucketId, label: string) => void
+  buckets: UserBucketDefinition[]
+  bucketLanes: LaneDefinition[]
+  laneItems: Record<LaneId, ReviewQueueItemView[]>
+  onClose: () => void
+  onSave: (buckets: UserBucketDefinition[]) => void
 }) {
-  const [editing, setEditing] = useState(false)
-  const [draftLabel, setDraftLabel] = useState(label)
+  const [draftBuckets, setDraftBuckets] = useState<UserBucketDefinition[]>(() =>
+    buckets.map((bucket) => ({ ...bucket }))
+  )
+  const laneById = new Map(bucketLanes.map((lane) => [lane.id, lane]))
+  const hasBlankLabel = draftBuckets.some(
+    (bucket) => bucket.label.trim().length === 0
+  )
 
   useEffect(() => {
-    if (!editing) setDraftLabel(label)
-  }, [editing, label])
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose()
+    }
 
-  function saveDraftLabel() {
-    setEditing(false)
-    onLabelChange(bucketId, draftLabel)
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [onClose])
+
+  function updateDraftBucketLabel(bucketId: UserBucketId, label: string) {
+    setDraftBuckets((current) =>
+      current.map((bucket) =>
+        bucket.id === bucketId ? { ...bucket, label } : bucket
+      )
+    )
   }
 
-  function cancelDraftLabel() {
-    setDraftLabel(label)
-    setEditing(false)
+  function addDraftBucket() {
+    setDraftBuckets((current) => [
+      ...current,
+      createUserBucket("New label", current),
+    ])
   }
 
-  if (editing) {
-    return (
-      <div className="grid grid-cols-[7px_1fr_auto_auto_auto] items-center gap-2 rounded-md bg-white px-2 py-1.5 shadow-sm ring-1 ring-border sm:py-2">
-        <span className={cn("h-[7px] w-[7px] rounded-full", laneToneClasses[tone])} />
-        <Input
-          value={draftLabel}
-          onChange={(event) => setDraftLabel(event.target.value)}
-          autoFocus
-          className="h-6 rounded-md px-2 text-xs"
-        />
-        <span className="text-xs text-muted-foreground/70">{count}</span>
-        <button
-          type="button"
-          aria-label={`Save ${label} bucket name`}
-          onClick={saveDraftLabel}
-          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
-        >
-          <Check className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          aria-label={`Cancel renaming ${label} bucket`}
-          onClick={cancelDraftLabel}
-          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
+  function deleteDraftBucket(bucketId: UserBucketId) {
+    setDraftBuckets((current) => {
+      if (current.length <= 1) return current
+      return current.filter((bucket) => bucket.id !== bucketId)
+    })
+  }
+
+  function saveDraftBuckets(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (hasBlankLabel) return
+
+    onSave(
+      draftBuckets.map((bucket) => ({
+        ...bucket,
+        label: bucket.label.trim(),
+      }))
     )
   }
 
   return (
-    <div className="group grid grid-cols-[1fr_24px_24px] items-center gap-1">
-      <SidebarItem
-        active={active}
-        attention={attention}
-        tone={tone}
-        label={label}
-        count={count}
-        onClick={onClick}
-      />
-      <button
-        type="button"
-        aria-label={`Rename ${label} bucket`}
-        onClick={() => setEditing(true)}
-        className="flex h-7 w-6 items-center justify-center rounded-md text-muted-foreground/60 opacity-0 transition hover:bg-muted hover:text-foreground group-hover:opacity-100 focus:opacity-100"
+    <div
+      role="presentation"
+      className="fixed inset-0 z-50 grid place-items-center bg-background/70 px-4 backdrop-blur-sm"
+      onMouseDown={onClose}
+    >
+      <form
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bucket-manager-title"
+        className="w-full max-w-[520px] rounded-lg border border-border bg-card shadow-xl"
+        onMouseDown={(event) => event.stopPropagation()}
+        onSubmit={saveDraftBuckets}
       >
-        <Edit3 className="h-3.5 w-3.5" />
-      </button>
-      <button
-        type="button"
-        aria-label={`Delete ${label} label`}
-        disabled={!canDelete}
-        onClick={() => onDelete(bucketId)}
-        className="flex h-7 w-6 items-center justify-center rounded-md text-muted-foreground/60 opacity-0 transition hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-0 group-hover:opacity-100 focus:opacity-100"
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </button>
+        <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+          <div>
+            <h2
+              id="bucket-manager-title"
+              className="text-base font-semibold text-foreground"
+            >
+              Manage buckets
+            </h2>
+            <p className="mt-1 text-sm leading-5 text-muted-foreground">
+              Rename, add, or delete the buckets shown in the left sidebar.
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label="Close bucket manager"
+            onClick={onClose}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="max-h-[56vh] overflow-y-auto px-5 py-4">
+          <div className="space-y-2">
+            {draftBuckets.map((bucket, index) => {
+              const lane = laneById.get(bucket.id)
+              const tone = lane?.tone ?? "quiet"
+              const count = laneItems[bucket.id]?.length ?? 0
+              return (
+                <div
+                  key={bucket.id}
+                  className="grid grid-cols-[10px_1fr_auto_32px] items-center gap-3 rounded-md border border-border bg-background px-3 py-2"
+                >
+                  <span
+                    className={cn(
+                      "h-2.5 w-2.5 rounded-full",
+                      laneToneClasses[tone]
+                    )}
+                  />
+                  <Input
+                    value={bucket.label}
+                    aria-label={`${bucket.label || "Unnamed"} bucket name`}
+                    autoFocus={index === 0}
+                    onChange={(event) =>
+                      updateDraftBucketLabel(bucket.id, event.target.value)
+                    }
+                    className="h-8 rounded-md text-sm"
+                  />
+                  <span className="min-w-8 rounded-full border border-border px-2 py-1 text-center text-xs text-muted-foreground">
+                    {count}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Delete ${bucket.label || "unnamed"} bucket`}
+                    disabled={draftBuckets.length <= 1}
+                    onClick={() => deleteDraftBucket(bucket.id)}
+                    className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+          {hasBlankLabel ? (
+            <p className="mt-3 text-xs text-foreground">
+              Bucket names cannot be blank.
+            </p>
+          ) : null}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-border px-5 py-4">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={addDraftBucket}
+          >
+            <Plus className="h-4 w-4" />
+            Add bucket
+          </Button>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" size="sm" disabled={hasBlankLabel}>
+              Save
+            </Button>
+          </div>
+        </div>
+      </form>
     </div>
   )
 }
