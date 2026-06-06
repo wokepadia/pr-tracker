@@ -3,6 +3,7 @@ import type {
   ClassifiedPullRequest,
   ReviewerInbox,
 } from "@pr-tracker/reviewer-workflow"
+import { isTauri } from "@tauri-apps/api/core"
 
 export interface PullRequestDetailResponse {
   viewer: Actor
@@ -15,7 +16,7 @@ export interface GithubSettingsStatus {
   viewerLogin?: string
   apiBaseUrl?: string
   tokenConfigured: boolean
-  storage: "macos-keychain"
+  storage: "macos-keychain" | "os-keychain"
 }
 
 export interface SaveGithubSettingsInput {
@@ -41,6 +42,12 @@ export interface BoardState {
 }
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ""
+let desktopApiPromise: Promise<typeof import("./desktop/tauri-data")> | undefined
+
+function getDesktopApi(): Promise<typeof import("./desktop/tauri-data")> {
+  desktopApiPromise ??= import("./desktop/tauri-data")
+  return desktopApiPromise
+}
 
 function apiUrl(path: string): string {
   return `${apiBaseUrl}${path}`
@@ -49,6 +56,10 @@ function apiUrl(path: string): string {
 export async function getReviewerInbox(input?: {
   githubSearchQuery?: string
 }): Promise<ReviewerInbox> {
+  if (isTauri()) {
+    return (await getDesktopApi()).getDesktopReviewerInbox(input)
+  }
+
   const params = new URLSearchParams()
   if (input?.githubSearchQuery?.trim()) {
     params.set("githubSearchQuery", input.githubSearchQuery.trim())
@@ -68,6 +79,10 @@ export async function getReviewerInbox(input?: {
 export async function getPullRequest(
   id: string
 ): Promise<PullRequestDetailResponse> {
+  if (isTauri()) {
+    return (await getDesktopApi()).getDesktopPullRequest(id)
+  }
+
   const response = await fetch(apiUrl(`/api/pull-requests/${id}`))
 
   if (!response.ok) {
@@ -81,6 +96,10 @@ export async function markPullRequestSeen(id: string): Promise<{
   pullRequestId: string
   lastSeenAt: string
 }> {
+  if (isTauri()) {
+    return (await getDesktopApi()).markDesktopPullRequestSeen(id)
+  }
+
   const response = await fetch(apiUrl(`/api/pull-requests/${id}/seen`), {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -98,6 +117,10 @@ export async function markPullRequestSeen(id: string): Promise<{
 }
 
 export async function getBoardState(): Promise<BoardState> {
+  if (isTauri()) {
+    return (await getDesktopApi()).getDesktopBoardState()
+  }
+
   const response = await fetch(apiUrl("/api/board-state"))
 
   if (!response.ok) {
@@ -108,6 +131,10 @@ export async function getBoardState(): Promise<BoardState> {
 }
 
 export async function saveBoardState(state: BoardState): Promise<BoardState> {
+  if (isTauri()) {
+    return (await getDesktopApi()).saveDesktopBoardState(state)
+  }
+
   const response = await fetch(apiUrl("/api/board-state"), {
     method: "PUT",
     headers: { "content-type": "application/json" },
@@ -122,6 +149,10 @@ export async function saveBoardState(state: BoardState): Promise<BoardState> {
 }
 
 export async function getGithubSettingsStatus(): Promise<GithubSettingsStatus> {
+  if (isTauri()) {
+    return (await getDesktopApi()).getDesktopGithubSettingsStatus()
+  }
+
   const response = await fetch(apiUrl("/api/local-settings/github"))
 
   if (!response.ok) {
@@ -134,6 +165,10 @@ export async function getGithubSettingsStatus(): Promise<GithubSettingsStatus> {
 export async function saveGithubSettings(
   input: SaveGithubSettingsInput
 ): Promise<GithubSettingsStatus> {
+  if (isTauri()) {
+    return (await getDesktopApi()).saveDesktopGithubSettings(input)
+  }
+
   const response = await fetch(apiUrl("/api/local-settings/github"), {
     method: "POST",
     headers: { "content-type": "application/json" },

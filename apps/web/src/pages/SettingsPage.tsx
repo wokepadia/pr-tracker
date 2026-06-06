@@ -68,6 +68,10 @@ export function SettingsPage() {
   }
 
   const tokenConfigured = settingsQuery.data?.tokenConfigured ?? false
+  const storageDescription =
+    settingsQuery.data?.storage === "os-keychain"
+      ? "Saved tokens are stored in the operating system keychain, not in the browser."
+      : "Saved tokens are stored by the API in macOS Keychain, not in the browser."
 
   return (
     <div className="min-h-[calc(100vh-48px)] bg-background px-6 py-6">
@@ -94,7 +98,7 @@ export function SettingsPage() {
                 Token storage
               </div>
               <div className="mt-1 text-sm text-muted-foreground">
-                Saved tokens are stored by the API in macOS Keychain, not in the browser.
+                {storageDescription}
               </div>
             </div>
             <Badge variant={tokenConfigured ? "default" : "secondary"}>

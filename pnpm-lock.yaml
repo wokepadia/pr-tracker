@@ -75,6 +75,9 @@ importers:
       '@pr-tracker/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pr-tracker/github':
+        specifier: workspace:*
+        version: link:../../packages/github
       '@pr-tracker/reviewer-workflow':
         specifier: workspace:*
         version: link:../../packages/reviewer-workflow
