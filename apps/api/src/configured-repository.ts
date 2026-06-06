@@ -13,6 +13,7 @@ import {
   shouldUseDatabaseRepository,
   type ReviewerInboxRepository
 } from "./repository";
+import { createLocalSqliteRepository } from "./local-sqlite-repository";
 
 export function createConfiguredRepository(
   env: Record<string, string | undefined> = process.env,
@@ -27,7 +28,20 @@ export function createConfiguredRepository(
     return createDatabaseRepository(env.PR_TRACKER_VIEWER_LOGIN ?? "viewer");
   }
 
+  if (shouldUseLocalSqliteRepository(env)) {
+    return createLocalSqliteRepository({
+      path: env.PR_TRACKER_LOCAL_DB_PATH,
+      viewerLogin: env.PR_TRACKER_VIEWER_LOGIN ?? "viewer"
+    });
+  }
+
   return createLocalSettingsRepository(env, settingsOptions);
+}
+
+function shouldUseLocalSqliteRepository(
+  env: Record<string, string | undefined>
+): boolean {
+  return env.PR_TRACKER_USE_LIVE_GITHUB !== "true";
 }
 
 function createLocalSettingsRepository(

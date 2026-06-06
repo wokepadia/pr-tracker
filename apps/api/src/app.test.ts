@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import { createApp } from "./app";
 import { createGithubLiveRepository } from "./github-live-repository";
+import { createLocalSqliteRepository } from "./local-sqlite-repository";
 import { createMemoryGithubSettingsStore } from "./local-github-settings";
 import { createSampleRepository } from "./repository";
 import { createMemoryWebhookSink } from "./webhook-sink";
@@ -121,6 +122,63 @@ describe("api app", () => {
       workflowState: "caught_up",
       unseenActivityCount: 0
     });
+  });
+
+  it("serves reviewer inbox data from local SQLite storage", async () => {
+    const databasePath = join(
+      await mkdtemp(join(tmpdir(), "pr-tracker-local-db-")),
+      "pr-tracker.sqlite"
+    );
+    const repository = createLocalSqliteRepository({ path: databasePath });
+    const app = createApp({
+      repository,
+      webhookSink: createMemoryWebhookSink()
+    });
+
+    try {
+      const inboxResponse = await app.request("/api/reviewer-inbox");
+      const inbox = (await inboxResponse.json()) as {
+        items: Array<{
+          pullRequest: { id: string };
+          workflowState: string;
+          unseenActivityCount: number;
+        }>;
+      };
+
+      expect(inboxResponse.status).toBe(200);
+      expect(inbox.items.map((item) => item.pullRequest.id)).toEqual([
+        "pr_1",
+        "pr_2",
+        "pr_3"
+      ]);
+
+      const seenResponse = await app.request("/api/pull-requests/pr_2/seen", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ lastSeenAt: "2026-06-01T12:00:00.000Z" })
+      });
+      expect(seenResponse.status).toBe(200);
+
+      const updatedInboxResponse = await app.request("/api/reviewer-inbox");
+      const updatedInbox = (await updatedInboxResponse.json()) as {
+        items: Array<{
+          pullRequest: { id: string };
+          workflowState: string;
+          unseenActivityCount: number;
+        }>;
+      };
+      const updatedItem = updatedInbox.items.find(
+        (item) => item.pullRequest.id === "pr_2"
+      );
+
+      expect(updatedItem).toMatchObject({
+        pullRequest: { id: "pr_2" },
+        workflowState: "caught_up",
+        unseenActivityCount: 0
+      });
+    } finally {
+      await repository.close?.();
+    }
   });
 
   it("does not create caught-up state for unknown pull requests", async () => {
