@@ -4,8 +4,6 @@ import type {
   UserBucketItemOrder,
 } from "@/reviewer/local-queue-state"
 
-const SELECTED_QUEUE_ITEM_KEY = "pr-tracker:selected-review-queue-item:v1"
-
 export type QueueGroupMode =
   | "action"
   | "repository"
@@ -29,22 +27,8 @@ export function resolveVisibleQueueItem(
   visibleItems: ReviewQueueItemView[],
   selectedId: string
 ): ReviewQueueItemView | undefined {
-  return visibleItems.find((item) => item.id === selectedId) ?? visibleItems[0]
-}
-
-export function loadStoredSelectedQueueItemId(
-  storage: Pick<Storage, "getItem">
-): string {
-  const value = storage.getItem(SELECTED_QUEUE_ITEM_KEY)
-  return value ?? ""
-}
-
-export function saveStoredSelectedQueueItemId(
-  storage: Pick<Storage, "setItem">,
-  selectedId: string
-): void {
-  if (!selectedId) return
-  storage.setItem(SELECTED_QUEUE_ITEM_KEY, selectedId)
+  if (!selectedId) return undefined
+  return visibleItems.find((item) => item.id === selectedId)
 }
 
 export function bucketDropId(bucketId: UserBucketId): string {
@@ -122,8 +106,16 @@ export function moveItemInBucketItemOrder({
 
 export function getEmptyPeekCopy(
   groupMode: QueueGroupMode,
-  searchQuery: string
+  searchQuery: string,
+  hasVisibleItems = false
 ): { title: string; detail: string } {
+  if (hasVisibleItems) {
+    return {
+      title: "Choose a PR to sneak peek",
+      detail: "Use the sneak peek button on a card to load the right panel.",
+    }
+  }
+
   if (searchQuery.trim().length > 0) {
     return {
       title: "No matching review items",

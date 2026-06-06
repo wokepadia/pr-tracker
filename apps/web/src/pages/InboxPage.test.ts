@@ -3,11 +3,9 @@ import {
   bucketDropId,
   filterQueueItems,
   getEmptyPeekCopy,
-  loadStoredSelectedQueueItemId,
   moveItemInBucketItemOrder,
   resolveKanbanDropTarget,
   resolveVisibleQueueItem,
-  saveStoredSelectedQueueItemId,
 } from "./inbox-helpers"
 import { createEmptyUserBucketItemOrder } from "@/reviewer/local-queue-state"
 import type { ReviewQueueItemView } from "@/reviewer/view-model"
@@ -85,12 +83,20 @@ describe("inbox queue selection", () => {
 
   it("resolves selection only from currently visible rows", () => {
     expect(resolveVisibleQueueItem(items, "pr_2")?.id).toBe("pr_2")
-    expect(resolveVisibleQueueItem(items, "missing")?.id).toBe("pr_1")
+    expect(resolveVisibleQueueItem(items, "missing")).toBeUndefined()
+    expect(resolveVisibleQueueItem(items, "")).toBeUndefined()
     expect(resolveVisibleQueueItem([], "pr_1")).toBeUndefined()
   })
 })
 
 describe("inbox empty state copy", () => {
+  it("prompts for an explicit sneak peek when visible items exist", () => {
+    expect(getEmptyPeekCopy("action", "", true)).toEqual({
+      title: "Choose a PR to sneak peek",
+      detail: "Use the sneak peek button on a card to load the right panel.",
+    })
+  })
+
   it("keeps stashed empty states specific to the selected view", () => {
     expect(getEmptyPeekCopy("pinned", "")).toEqual({
       title: "No pinned PRs",
@@ -111,42 +117,6 @@ describe("inbox empty state copy", () => {
       title: "No matching review items",
       detail: "No items match the current search in this view.",
     })
-  })
-})
-
-describe("inbox selected item storage", () => {
-  it("loads and saves the session selected queue item", () => {
-    const reads = {
-      getItem: () => "pr_2",
-    }
-    const writes: Array<[string, string]> = []
-    const storage = {
-      setItem: (key: string, value: string) => {
-        writes.push([key, value])
-      },
-      removeItem: (_key: string) => undefined,
-    }
-
-    expect(loadStoredSelectedQueueItemId(reads)).toBe("pr_2")
-
-    saveStoredSelectedQueueItemId(storage, "pr_3")
-
-    expect(writes).toEqual([
-      ["pr-tracker:selected-review-queue-item:v1", "pr_3"],
-    ])
-  })
-
-  it("keeps the last stored queue item for temporary empty filtered views", () => {
-    const writes: string[] = []
-    const storage = {
-      setItem: (_key: string, value: string) => {
-        writes.push(value)
-      },
-    }
-
-    saveStoredSelectedQueueItemId(storage, "")
-
-    expect(writes).toEqual([])
   })
 })
 

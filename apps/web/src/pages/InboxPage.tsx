@@ -83,6 +83,12 @@ import { MarkdownContent } from "@/components/MarkdownContent"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import {
   getBoardState,
   getReviewerInbox,
   markPullRequestSeen,
@@ -117,11 +123,9 @@ import {
   bucketDropId,
   filterQueueItems,
   getEmptyPeekCopy,
-  loadStoredSelectedQueueItemId,
   moveItemInBucketItemOrder,
   resolveVisibleQueueItem,
   resolveKanbanDropTarget,
-  saveStoredSelectedQueueItemId,
   type QueueGroupMode,
 } from "./inbox-helpers"
 
@@ -454,15 +458,7 @@ export function InboxPage() {
           : groupMode === "snoozed"
             ? searchedSnoozedItems
             : searchedMutedItems
-  const [selectedId, setSelectedId] = useState<string>(
-    () =>
-      (typeof window !== "undefined"
-        ? loadStoredSelectedQueueItemId(window.sessionStorage)
-        : "") ||
-      visibleQueueItems[0]?.id ||
-      activeItems[0]?.id ||
-      ""
-  )
+  const [selectedId, setSelectedId] = useState<string>("")
   const selectedItem = resolveVisibleQueueItem(visibleQueueItems, selectedId)
   const selectedItemLocalState = selectedItem
     ? localQueueState[selectedItem.id] ?? {}
@@ -520,10 +516,6 @@ export function InboxPage() {
   ])
 
   useEffect(() => {
-    saveStoredSelectedQueueItemId(window.sessionStorage, selectedId)
-  }, [selectedId])
-
-  useEffect(() => {
     if (groupMode !== "repository") return
     if (repositoryGroups.length === 0) return
 
@@ -541,32 +533,28 @@ export function InboxPage() {
 
   useEffect(() => {
     if (!inboxView) return
-    if (!visibleQueueItems.some((item) => item.id === selectedId)) {
-      const storedSelectedId = loadStoredSelectedQueueItemId(window.sessionStorage)
-      const storedVisibleItem = visibleQueueItems.find(
-        (item) => item.id === storedSelectedId
-      )
-      setSelectedId(storedVisibleItem?.id ?? visibleQueueItems[0]?.id ?? "")
+    if (selectedId && !visibleQueueItems.some((item) => item.id === selectedId)) {
+      setSelectedId("")
     }
   }, [inboxView, selectedId, visibleQueueItems])
 
   function moveSelectionAfterHiding(itemId: string) {
-    const currentIndex = visibleQueueItems.findIndex((item) => item.id === itemId)
     const remainingVisible = visibleQueueItems.filter((item) => item.id !== itemId)
-    const nextVisible =
-      remainingVisible[Math.min(currentIndex, remainingVisible.length - 1)]
-    const nextActive = searchedActiveItems.find((item) => item.id !== itemId)
 
-    if (!nextVisible && isStashedGroupMode(groupMode)) {
+    if (remainingVisible.length === 0 && isStashedGroupMode(groupMode)) {
       setGroupMode("action")
       setActiveActionTabId("home")
     }
 
-    if (!nextVisible && groupMode === "action" && activeActionTabId !== "home") {
+    if (
+      remainingVisible.length === 0 &&
+      groupMode === "action" &&
+      activeActionTabId !== "home"
+    ) {
       setActiveActionTabId("home")
     }
 
-    setSelectedId(nextVisible?.id ?? nextActive?.id ?? "")
+    setSelectedId("")
   }
 
   async function markSelectedCaughtUp() {
@@ -782,42 +770,38 @@ export function InboxPage() {
   function focusHome() {
     setGroupMode("action")
     setActiveActionTabId("home")
-    setSelectedId(searchedActiveItems[0]?.id ?? "")
+    setSelectedId("")
   }
 
   function focusNewActivity() {
     if (searchedNewActivityItems.length === 0) return
     setGroupMode("action")
     setActiveActionTabId("new_activity")
-    setSelectedId(searchedNewActivityItems[0]?.id ?? "")
+    setSelectedId("")
   }
 
   function focusLane(laneId: LaneId) {
     setGroupMode("action")
     setActiveActionTabId(laneId)
-
-    const firstLaneItem = laneItems[laneId]?.[0]
-    if (firstLaneItem) {
-      setSelectedId(firstLaneItem.id)
-    }
+    setSelectedId("")
   }
 
   function focusSnoozed() {
     if (searchedSnoozedItems.length === 0) return
     setGroupMode("snoozed")
-    setSelectedId(searchedSnoozedItems[0]?.id ?? "")
+    setSelectedId("")
   }
 
   function focusPinned() {
     if (searchedPinnedItems.length === 0) return
     setGroupMode("pinned")
-    setSelectedId(searchedPinnedItems[0]?.id ?? "")
+    setSelectedId("")
   }
 
   function focusMuted() {
     if (searchedMutedItems.length === 0) return
     setGroupMode("muted")
-    setSelectedId(searchedMutedItems[0]?.id ?? "")
+    setSelectedId("")
   }
 
   function applyGithubSearchQuery(event: FormEvent<HTMLFormElement>) {
@@ -837,7 +821,6 @@ export function InboxPage() {
   function handleKanbanDragStart(event: DragStartEvent) {
     const itemId = String(event.active.id)
     setDraggingItemId(itemId)
-    setSelectedId(itemId)
   }
 
   function handleKanbanDragEnd(event: DragEndEvent) {
@@ -854,7 +837,6 @@ export function InboxPage() {
     moveItemToBucket(itemId, target.bucketId, target.overItemId)
     setGroupMode("action")
     setActiveActionTabId("home")
-    setSelectedId(itemId)
   }
 
   if (inboxQuery.isLoading) {
@@ -875,12 +857,13 @@ export function InboxPage() {
   }
 
   return (
-    <div
-      className="grid min-h-[calc(100vh-48px)] overflow-x-auto"
-      style={{
-        gridTemplateColumns: `${REVIEW_SIDEBAR_WIDTH}px minmax(${REVIEW_WORKSPACE_MIN_WIDTH}px, 1fr)`,
-      }}
-    >
+    <TooltipProvider delayDuration={200}>
+      <div
+        className="grid min-h-[calc(100vh-48px)] overflow-x-auto"
+        style={{
+          gridTemplateColumns: `${REVIEW_SIDEBAR_WIDTH}px minmax(${REVIEW_WORKSPACE_MIN_WIDTH}px, 1fr)`,
+        }}
+      >
       <InboxSidebar
         laneItems={laneItems}
         bucketLanes={bucketLanes}
@@ -936,7 +919,7 @@ export function InboxPage() {
                   activeActionTabId !== "new_activity" ? (
                     <KanbanBoard
                       laneItems={laneItems}
-                      selectedId={selectedItem?.id ?? ""}
+                      selectedId={selectedId}
                       activeBucketId={
                         activeActionTabId === "home" ? undefined : activeActionTabId
                       }
@@ -956,18 +939,18 @@ export function InboxPage() {
                           [bucketId]: clampBucketColumnWidth(width),
                         }))
                       }}
-                      onSelect={setSelectedId}
+                      onOpenPeek={setSelectedId}
                     />
                   ) : (
                     <ActionQueueList
                       items={visibleActionItems}
-                      selectedId={selectedItem?.id ?? ""}
+                      selectedId={selectedId}
                       bucketLanes={bucketLanes}
                       userBuckets={userBuckets}
                       fallbackBucketId={fallbackBucketId}
                       localQueueState={localQueueState}
                       onMoveItemToBucket={moveItemToBucket}
-                      onSelect={setSelectedId}
+                      onOpenPeek={setSelectedId}
                     />
                   )
                 ) : groupMode === "repository" ? (
@@ -977,7 +960,7 @@ export function InboxPage() {
                       group={group}
                       isOpen={openRepositoryIds.has(group.id)}
                       items={group.items}
-                      selectedId={selectedItem?.id ?? ""}
+                      selectedId={selectedId}
                       bucketLanes={bucketLanes}
                       userBuckets={userBuckets}
                       fallbackBucketId={fallbackBucketId}
@@ -988,7 +971,7 @@ export function InboxPage() {
                           toggleOpenGroup(current, group.id)
                         )
                       }}
-                      onSelect={setSelectedId}
+                      onOpenPeek={setSelectedId}
                     />
                   ))
                 ) : groupMode === "pinned" ? (
@@ -996,42 +979,42 @@ export function InboxPage() {
                     group={{ id: "pinned", label: "Pinned", tone: "changed" }}
                     isOpen
                     items={searchedPinnedItems}
-                    selectedId={selectedItem?.id ?? ""}
+                    selectedId={selectedId}
                     bucketLanes={bucketLanes}
                     userBuckets={userBuckets}
                     fallbackBucketId={fallbackBucketId}
                     localQueueState={localQueueState}
                     onMoveItemToBucket={moveItemToBucket}
                     onToggle={() => undefined}
-                    onSelect={setSelectedId}
+                    onOpenPeek={setSelectedId}
                   />
                 ) : groupMode === "snoozed" ? (
                   <QueueLane
                     group={{ id: "snoozed", label: "Snoozed", tone: "quiet" }}
                     isOpen
                     items={searchedSnoozedItems}
-                    selectedId={selectedItem?.id ?? ""}
+                    selectedId={selectedId}
                     bucketLanes={bucketLanes}
                     userBuckets={userBuckets}
                     fallbackBucketId={fallbackBucketId}
                     localQueueState={localQueueState}
                     onMoveItemToBucket={moveItemToBucket}
                     onToggle={() => undefined}
-                    onSelect={setSelectedId}
+                    onOpenPeek={setSelectedId}
                   />
                 ) : (
                   <QueueLane
                     group={{ id: "muted", label: "Muted", tone: "quiet" }}
                     isOpen
                     items={searchedMutedItems}
-                    selectedId={selectedItem?.id ?? ""}
+                    selectedId={selectedId}
                     bucketLanes={bucketLanes}
                     userBuckets={userBuckets}
                     fallbackBucketId={fallbackBucketId}
                     localQueueState={localQueueState}
                     onMoveItemToBucket={moveItemToBucket}
                     onToggle={() => undefined}
-                    onSelect={setSelectedId}
+                    onOpenPeek={setSelectedId}
                   />
                 )}
               </div>
@@ -1076,12 +1059,17 @@ export function InboxPage() {
                 onCaughtUp={() => void markSelectedCaughtUp()}
               />
             ) : (
-              <EmptyPeekPanel groupMode={groupMode} searchQuery={searchQuery} />
+              <EmptyPeekPanel
+                groupMode={groupMode}
+                searchQuery={searchQuery}
+                hasVisibleItems={visibleQueueItems.length > 0}
+              />
             )}
           </ResizablePanel>
         </ResizablePanelGroup>
       </section>
-    </div>
+      </div>
+    </TooltipProvider>
   )
 }
 
@@ -1847,7 +1835,7 @@ function KanbanBoard({
   onDragCancel,
   onMoveItemToBucket,
   onBucketColumnWidthChange,
-  onSelect,
+  onOpenPeek,
 }: {
   laneItems: Record<LaneId, ReviewQueueItemView[]>
   selectedId: string
@@ -1867,7 +1855,7 @@ function KanbanBoard({
     overItemId?: string
   ) => void
   onBucketColumnWidthChange: (bucketId: UserBucketId, width: number) => void
-  onSelect: (id: string) => void
+  onOpenPeek: (id: string) => void
 }) {
   const totalCount = bucketLanes.reduce(
     (total, lane) => total + (laneItems[lane.id]?.length ?? 0),
@@ -1949,7 +1937,7 @@ function KanbanBoard({
                   bucketLanes={bucketLanes}
                   userBuckets={userBuckets}
                   onMoveItemToBucket={onMoveItemToBucket}
-                  onSelect={onSelect}
+                  onOpenPeek={onOpenPeek}
                 />
                 {index < bucketLanes.length - 1 ? (
                   <button
@@ -1979,8 +1967,8 @@ function KanbanBoard({
               bucketLanes={bucketLanes}
               userBuckets={userBuckets}
               dragging
-              onSelect={() => undefined}
               onMoveToBucket={() => undefined}
+              onOpenPeek={() => undefined}
             />
           </div>
         ) : null}
@@ -1997,7 +1985,7 @@ function KanbanColumn({
   bucketLanes,
   userBuckets,
   onMoveItemToBucket,
-  onSelect,
+  onOpenPeek,
 }: {
   lane: LaneDefinition
   active?: boolean
@@ -2010,7 +1998,7 @@ function KanbanColumn({
     bucketId: UserBucketId,
     overItemId?: string
   ) => void
-  onSelect: (id: string) => void
+  onOpenPeek: (id: string) => void
 }) {
   const { isOver, setNodeRef } = useDroppable({
     id: bucketDropId(lane.id),
@@ -2065,7 +2053,7 @@ function KanbanColumn({
                 bucketId={lane.id}
                 bucketLanes={bucketLanes}
                 userBuckets={userBuckets}
-                onSelect={() => onSelect(item.id)}
+                onOpenPeek={() => onOpenPeek(item.id)}
                 onMoveToBucket={(bucketId) =>
                   onMoveItemToBucket(item.id, bucketId)
                 }
@@ -2088,7 +2076,7 @@ function SortableQueueCard({
   bucketId,
   bucketLanes,
   userBuckets,
-  onSelect,
+  onOpenPeek,
   onMoveToBucket,
 }: {
   item: ReviewQueueItemView
@@ -2096,7 +2084,7 @@ function SortableQueueCard({
   bucketId: UserBucketId
   bucketLanes: LaneDefinition[]
   userBuckets: UserBucketDefinition[]
-  onSelect: () => void
+  onOpenPeek: () => void
   onMoveToBucket: (bucketId: UserBucketId) => void
 }) {
   const {
@@ -2140,7 +2128,7 @@ function SortableQueueCard({
             <GripVertical className="h-4 w-4" />
           </button>
         }
-        onSelect={onSelect}
+        onOpenPeek={onOpenPeek}
         onMoveToBucket={onMoveToBucket}
       />
     </div>
@@ -2155,7 +2143,7 @@ function QueueCard({
   userBuckets,
   dragHandle,
   dragging,
-  onSelect,
+  onOpenPeek,
   onMoveToBucket,
 }: {
   item: ReviewQueueItemView
@@ -2165,7 +2153,7 @@ function QueueCard({
   userBuckets: UserBucketDefinition[]
   dragHandle?: ReactNode
   dragging?: boolean
-  onSelect: () => void
+  onOpenPeek: () => void
   onMoveToBucket: (bucketId: UserBucketId) => void
 }) {
   const tone = toneForItem(item)
@@ -2175,7 +2163,6 @@ function QueueCard({
 
   return (
     <article
-      onClick={onSelect}
       data-selected={selected ? "true" : undefined}
       className={cn(
         "group relative rounded-md border border-border bg-card p-3 text-left shadow-sm transition hover:border-foreground/20 hover:shadow-md",
@@ -2210,6 +2197,10 @@ function QueueCard({
             {item.title}
           </h4>
         </div>
+        <SneakPeekButton
+          label={`Sneak peek ${item.title}`}
+          onOpenPeek={onOpenPeek}
+        />
       </div>
       <div className="mt-3 border-t border-border pt-3">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -2271,7 +2262,7 @@ function ActionQueueList({
   fallbackBucketId,
   localQueueState,
   onMoveItemToBucket,
-  onSelect,
+  onOpenPeek,
 }: {
   items: ReviewQueueItemView[]
   selectedId: string
@@ -2280,7 +2271,7 @@ function ActionQueueList({
   fallbackBucketId: UserBucketId
   localQueueState: LocalQueueStateByPullRequestId
   onMoveItemToBucket: (itemId: string, bucketId: UserBucketId) => void
-  onSelect: (id: string) => void
+  onOpenPeek: (id: string) => void
 }) {
   return (
     <section>
@@ -2298,7 +2289,7 @@ function ActionQueueList({
               bucketLanes={bucketLanes}
               userBuckets={userBuckets}
               fallbackBucketId={fallbackBucketId}
-              onSelect={() => onSelect(item.id)}
+              onOpenPeek={() => onOpenPeek(item.id)}
               onMoveToBucket={(bucketId) => onMoveItemToBucket(item.id, bucketId)}
             />
           ))}
@@ -2323,7 +2314,7 @@ function QueueLane({
   localQueueState,
   onMoveItemToBucket,
   onToggle,
-  onSelect,
+  onOpenPeek,
 }: {
   group: QueueGroupDefinition
   isOpen: boolean
@@ -2335,7 +2326,7 @@ function QueueLane({
   localQueueState: LocalQueueStateByPullRequestId
   onMoveItemToBucket: (itemId: string, bucketId: UserBucketId) => void
   onToggle: () => void
-  onSelect: (id: string) => void
+  onOpenPeek: (id: string) => void
 }) {
   return (
     <section className="border-b border-border last:border-b-0">
@@ -2385,7 +2376,7 @@ function QueueLane({
               bucketLanes={bucketLanes}
               userBuckets={userBuckets}
               fallbackBucketId={fallbackBucketId}
-              onSelect={() => onSelect(item.id)}
+              onOpenPeek={() => onOpenPeek(item.id)}
               onMoveToBucket={(bucketId) => onMoveItemToBucket(item.id, bucketId)}
             />
           ))}
@@ -2402,7 +2393,7 @@ function QueueRow({
   bucketLanes,
   userBuckets,
   fallbackBucketId,
-  onSelect,
+  onOpenPeek,
   onMoveToBucket,
 }: {
   item: ReviewQueueItemView
@@ -2411,7 +2402,7 @@ function QueueRow({
   bucketLanes: LaneDefinition[]
   userBuckets: UserBucketDefinition[]
   fallbackBucketId: UserBucketId
-  onSelect: () => void
+  onOpenPeek: () => void
   onMoveToBucket: (bucketId: UserBucketId) => void
 }) {
   const tone = toneForItem(item)
@@ -2421,9 +2412,8 @@ function QueueRow({
 
   return (
     <div
-      onClick={onSelect}
       className={cn(
-        "relative grid w-full cursor-pointer grid-cols-[26px_1fr_auto] items-center gap-3 border-t border-border px-5 py-3 text-left transition-colors hover:bg-muted/40",
+        "relative grid w-full grid-cols-[26px_1fr_auto] items-center gap-3 border-t border-border px-5 py-3 text-left transition-colors hover:bg-muted/40",
         selected && rowSelectedToneClasses[tone]
       )}
     >
@@ -2475,6 +2465,10 @@ function QueueRow({
         </span>
       </span>
       <span className="flex min-w-[74px] flex-col items-end gap-1">
+        <SneakPeekButton
+          label={`Sneak peek ${item.title}`}
+          onOpenPeek={onOpenPeek}
+        />
         <BucketMoveMenu
           bucketId={bucketIdForAvailableBucketId(bucketId, userBuckets, fallbackBucketId)}
           bucketLanes={bucketLanes}
@@ -2495,6 +2489,35 @@ function QueueRow({
         </span>
       </span>
     </div>
+  )
+}
+
+function SneakPeekButton({
+  label,
+  onOpenPeek,
+}: {
+  label: string
+  onOpenPeek: () => void
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          aria-label={label}
+          onClick={(event) => {
+            event.stopPropagation()
+            onOpenPeek()
+          }}
+          className="shrink-0 rounded-md border-border bg-background text-muted-foreground hover:text-foreground"
+        >
+          <PanelRight className="h-4 w-4" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Sneak peek</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -2990,11 +3013,13 @@ function toggleOpenGroup<T extends string>(current: Set<T>, id: T): Set<T> {
 function EmptyPeekPanel({
   groupMode,
   searchQuery,
+  hasVisibleItems,
 }: {
   groupMode: QueueGroupMode
   searchQuery: string
+  hasVisibleItems: boolean
 }) {
-  const copy = getEmptyPeekCopy(groupMode, searchQuery)
+  const copy = getEmptyPeekCopy(groupMode, searchQuery, hasVisibleItems)
 
   return (
     <aside className="flex h-full min-w-0 flex-col items-center justify-center bg-card px-8 text-center">
