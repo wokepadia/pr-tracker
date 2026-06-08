@@ -113,6 +113,10 @@ interface StrongholdSession {
 let databasePromise: Promise<SqlDatabase> | undefined
 let lastSuccessfulSyncFingerprint: string | undefined
 let lastSuccessfulSyncScope: { pullRequestIds?: string[] } | undefined
+const syncPromiseByFingerprint = new Map<
+  string,
+  Promise<{ pullRequestIds?: string[] } | undefined>
+>()
 
 export async function getDesktopReviewerInbox(input?: {
   githubSearchQuery?: string
@@ -456,6 +460,28 @@ async function syncBeforeRead(
     return lastSuccessfulSyncScope
   }
 
+  const existingSyncPromise = syncPromiseByFingerprint.get(fingerprint)
+  if (existingSyncPromise) {
+    return existingSyncPromise
+  }
+
+  const syncPromise = syncLocalGithubData(db, credentials, options, fingerprint)
+  syncPromiseByFingerprint.set(fingerprint, syncPromise)
+  syncPromise.finally(() => {
+    if (syncPromiseByFingerprint.get(fingerprint) === syncPromise) {
+      syncPromiseByFingerprint.delete(fingerprint)
+    }
+  })
+
+  return syncPromise
+}
+
+async function syncLocalGithubData(
+  db: SqlDatabase,
+  credentials: LocalGithubCredentials,
+  options: { githubSearchQuery?: string },
+  fingerprint: string
+): Promise<{ pullRequestIds?: string[] } | undefined> {
   const source = createGithubTokenPullRequestSource({
     token: credentials.token,
     repositories: credentials.repositories,
