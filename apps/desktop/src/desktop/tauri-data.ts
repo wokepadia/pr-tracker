@@ -122,7 +122,9 @@ export async function getDesktopReviewerInbox(input?: {
   githubSearchQuery?: string
 }) {
   const db = await getDatabase()
-  const readScope = await syncBeforeRead(db, input)
+  const readScope = input?.githubSearchQuery
+    ? await syncBeforeRead(db, input)
+    : await syncBeforeReadWithTimeout(db, input, 6_000)
   const pullRequests = await loadPullRequests(db, {
     ids: input?.githubSearchQuery ? readScope?.pullRequestIds ?? [] : undefined,
   })
@@ -195,7 +197,7 @@ export async function markDesktopPullRequestSeen(id: string): Promise<{
 
 export async function getDesktopBoardState(): Promise<BoardState> {
   const db = await getDatabase()
-  await syncBeforeRead(db)
+  await syncBeforeReadWithTimeout(db, undefined, 6_000)
   return loadBoardState(db)
 }
 
@@ -474,6 +476,28 @@ async function syncBeforeRead(
   })
 
   return syncPromise
+}
+
+async function syncBeforeReadWithTimeout(
+  db: SqlDatabase,
+  options: { githubSearchQuery?: string } | undefined,
+  timeoutMs: number
+): Promise<{ pullRequestIds?: string[] } | undefined> {
+  const syncPromise = syncBeforeRead(db, options)
+  let didTimeOut = false
+  const timeoutPromise = delay(timeoutMs).then(() => {
+    didTimeOut = true
+    return undefined
+  })
+  const result = await Promise.race([syncPromise, timeoutPromise])
+
+  if (didTimeOut) {
+    syncPromise.catch((error) => {
+      console.error("Background GitHub sync failed.", error)
+    })
+  }
+
+  return result
 }
 
 async function syncLocalGithubData(
@@ -1609,6 +1633,12 @@ function stringToBytes(value: string): number[] {
 
 function bytesToString(value: Uint8Array): string {
   return new TextDecoder().decode(value)
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
 }
 
 function normalizeOnboardingVersion(value: unknown): number {
