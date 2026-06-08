@@ -42,10 +42,10 @@ When implementation begins, delete the existing frontend implementation and rebu
 
 Expected replacement scope:
 
-- Replace current `apps/web/src` UI screens/components/styles.
+- Replace current desktop UI screens/components/styles.
 - Preserve project-level tooling only if still useful.
 - Use the Rhea scaffold/components as the visual base.
-- Keep backend/API contracts separate from visual structure so mock data can drive the first pass.
+- Keep desktop data contracts separate from visual structure so mock data can drive the first pass.
 
 Do not try to preserve the current table-first UI. It does not match the wireframe direction.
 
@@ -59,7 +59,7 @@ Implement this phase as feature checkpoints. Each checkpoint needs focused QA an
 4. Detail: `Detail E` header, deterministic context band, activity timeline, unseen marker, and side rail.
 5. Polish: visual comparison against the HTML wireframe, empty/loading/error states only where needed, and final build/test pass.
 
-Do not add fallback UI paths for data that phase 1 does not support. If a fact is unavailable from deterministic mock or API-shaped data, omit that element for now rather than inventing a generic fallback.
+Do not add fallback UI paths for data that phase 1 does not support. If a fact is unavailable from deterministic mock or desktop-shaped data, omit that element for now rather than inventing a generic fallback.
 
 ## Phase 1 Screens
 
@@ -360,7 +360,7 @@ Do not show CI status in this rail.
 
 ## Data Needed For Phase 1 UI
 
-The first frontend pass can use mock data shaped like the real API. The shape must support replacement with backend data later.
+The first frontend pass can use mock data shaped like the real desktop data facade. The shape must support replacement with local SQLite data later.
 
 Minimum PR queue item fields:
 

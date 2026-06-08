@@ -1,51 +1,63 @@
-# Localhost GitHub Setup
+# Desktop GitHub Setup
 
 ## Goal
 
-Run the reviewer inbox locally with real GitHub pull requests and no in-app login.
+Run the desktop reviewer inbox locally with real GitHub pull requests and no in-app login.
 
-The app chooses its data source at API startup:
+The desktop app chooses its local data source at read time:
 
-1. Local SQLite mode by default.
-2. Real GitHub data is synced into SQLite when local GitHub settings or
+1. Real GitHub data is synced into SQLite when local GitHub settings or
    `GITHUB_TOKEN`/`GITHUB_REPOSITORIES` are configured.
-3. Sample data is seeded into SQLite when no GitHub credentials are configured.
-4. Legacy live GitHub mode is available only with `PR_TRACKER_USE_LIVE_GITHUB=true`.
+2. Sample data is seeded into SQLite when no GitHub credentials are configured.
 
-For the current localhost product, use a read-only personal access token.
+Use a read-only personal access token for local development.
 
 ## Local SQLite Token Setup
 
-Open `http://127.0.0.1:5176/settings` and enter:
+Launch the Tauri app:
+
+```sh
+pnpm dev
+```
+
+Open Settings in the desktop app and enter:
 
 - a read-only GitHub token
 - one or more repositories, for example `zulip/zulip`
 - your GitHub username
 
-The API stores the token in macOS Keychain and stores the non-secret repository settings in local application config. The token is never returned to the browser after saving.
+The desktop app stores the token in a local Tauri Stronghold vault and stores
+the non-secret repository settings in local SQLite. The token is never returned
+to the UI after saving.
 
-After settings are saved, API reads sync selected GitHub pull requests into the
-local SQLite database and serve the reviewer inbox from that local cache. Board
-labels, card placement, pin/mute/snooze state, last-seen state, and column widths
-also persist in SQLite.
+Older development builds stored desktop tokens in macOS Keychain. Those tokens
+are not migrated automatically because reading them can trigger repeated macOS
+access prompts. Re-enter the GitHub token once in Settings to save it into the
+Stronghold vault.
 
-Equivalent environment variables still work if you prefer starting the API from a configured shell:
+After settings are saved, the desktop app syncs selected GitHub pull requests
+into the local SQLite database and serves the reviewer inbox from that local
+cache. Board labels, card placement, pin/mute/snooze state, last-seen state, and
+column widths also persist in SQLite.
+
+Equivalent environment variables still work for local development and tests:
 
 ```sh
 GITHUB_TOKEN=github_pat_...
 GITHUB_REPOSITORIES=owner/repo,owner/another-repo
 PR_TRACKER_VIEWER_LOGIN=your-github-login
-PR_TRACKER_LOCAL_DB_PATH=/path/to/pr-tracker.sqlite
-PR_TRACKER_GITHUB_SETTINGS_PATH=/path/to/github-settings.json
 ```
 
 `GITHUB_REPOSITORIES` is required when using an environment token. It keeps the
 local app scoped to an explicit allow-list instead of scanning every repository
 the token can access.
 
-The token only needs read access for the current V1 reviewer inbox. A fine-grained personal access token should be scoped to the selected repositories with repository `Pull requests` read access. GitHub always includes metadata read access for selected repositories.
+The token only needs read access for the current V1 reviewer inbox. A
+fine-grained personal access token should be scoped to the selected repositories
+with repository `Pull requests` read access. GitHub always includes metadata
+read access for selected repositories.
 
-`PR_TRACKER_VIEWER_LOGIN` is optional because the API can call GitHub's
+`PR_TRACKER_VIEWER_LOGIN` is optional because the desktop app can call GitHub's
 current-user endpoint. Set it anyway when testing against mocked or enterprise
 API environments.
 
@@ -55,19 +67,13 @@ The GitHub sync path reads pull requests, requested reviewers, and submitted
 reviews into SQLite. The reviewer workflow states are derived locally from the
 cached deterministic data.
 
-The "mark seen" action and board state are stored in SQLite and survive API
-restarts.
+The "mark seen" action and board state are stored in SQLite and survive desktop
+app restarts.
 
 The settings page can create an unencrypted `.sqlite` backup of the local
 database. The backup does not include the GitHub token because tokens are stored
-in the operating system keychain, but it can include repository names, pull
-request titles, comments, review activity, and local queue state. You are
-responsible for storing backup files safely.
+separately from the reviewer SQLite database, but it can include repository
+names, pull request titles, comments, review activity, and local queue state. You
+are responsible for storing backup files safely.
 
 No GitHub writes are made from the app in this phase. Review submission still happens in GitHub.
-
-## Legacy Live Mode
-
-Use `PR_TRACKER_USE_LIVE_GITHUB=true` only when you intentionally want the old
-non-persistent live API path for debugging. The local-only V1 path should not
-need this flag.

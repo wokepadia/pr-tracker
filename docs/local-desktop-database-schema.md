@@ -254,17 +254,11 @@ GitHub API references used for schema fidelity:
 - GraphQL pull requests expose review and status-check rollups:
   https://docs.github.com/en/graphql/reference/objects#pullrequest
 
-## Migration Shape From The Current App
+## Current Desktop Shape
 
-1. Create a desktop storage package backed by SQLite.
-2. Add OS keychain or GitHub CLI credential access.
-3. Move current browser `localStorage` keys for labels, card bucket, item order,
-   last-seen state, pinned/muted state, and column width into `boards`,
-   `board_columns`, and `board_items`.
-4. Move GitHub fetch results from API/sample state into local GitHub cache
-   tables.
-5. Make the UI read from a local repository interface so a future hybrid/server
-   source can be added behind the same boundary.
+The desktop app stores GitHub cache data, local board state, onboarding state,
+and non-secret GitHub settings in SQLite. The UI reads through the desktop data
+facade, and GitHub tokens live separately in Tauri Stronghold.
 
 ## Implementation Notes
 

@@ -73,10 +73,9 @@ Recommended persisted state:
 - `onboarding.introSkippedAt`: user skipped only the slide carousel.
 - `onboarding.version`: current onboarding content version, initially `1`.
 
-For the web/API prototype, store the onboarding state through the same local
-settings surface used by GitHub settings. For the desktop build, store it in the
-local SQLite `app_settings` table or equivalent desktop settings API. Do not use
-browser-only `localStorage` as the durable source for desktop V1.
+Store onboarding state through the same local SQLite `app_settings` surface used
+by desktop GitHub settings. Do not use browser-only `localStorage` as the
+durable source for desktop V1.
 
 ## Information Architecture
 
@@ -172,15 +171,16 @@ Required fields:
 Optional fields:
 
 - `Your GitHub username`
-- `API base URL`
+- `GitHub API base URL`
 
 Field behavior:
 
 - Token input uses `type="password"` and `autoComplete="off"`.
 - Repositories are comma-separated `owner/repo` names.
-- Viewer username can be omitted because the API can fetch the current user, but
-  the form should recommend entering it for predictable local classification.
-- API base URL is hidden behind an "Advanced" disclosure. Default is GitHub.com.
+- Viewer username can be omitted because the desktop app can fetch the current
+  user from GitHub, but the form should recommend entering it for predictable
+  local classification.
+- GitHub API base URL is hidden behind an "Advanced" disclosure. Default is GitHub.com.
 - Form-level error messages should be specific and actionable.
 
 Primary action:
@@ -194,7 +194,7 @@ Secondary actions:
 
 Post-save behavior:
 
-- Save token and settings through existing GitHub settings APIs.
+- Save token and settings through the desktop GitHub settings adapter.
 - Clear the token input immediately after successful save.
 - Mark onboarding complete.
 - Invalidate GitHub settings and reviewer inbox queries.
@@ -206,10 +206,9 @@ Use direct security language without overclaiming.
 
 Say:
 
-- `Stored in macOS Keychain` when running through the local API path.
-- `Stored in the operating system keychain` when using the desktop keyring path.
-- `Repository settings are stored in local app config.`
-- `The token is never returned to the browser after saving.`
+- `Stored in Tauri Stronghold.`
+- `Repository settings are stored in local SQLite.`
+- `The token is never returned to the UI after saving.`
 - `Use a fine-grained token scoped to only the repositories you track.`
 
 Do not say:
@@ -377,7 +376,7 @@ Notes:
 
 ### 1. Add Onboarding State Contract
 
-- Add API/Desktop methods to read and write onboarding state.
+- Add desktop methods to read and write onboarding state.
 - Keep the state independent from GitHub credentials.
 - Add tests for default missing state, saving completion, and preserving existing
   GitHub settings.
@@ -385,7 +384,7 @@ Notes:
 Verification:
 
 - Typecheck passes.
-- API tests cover read/write state.
+- Desktop data tests cover read/write state.
 - No token is included in onboarding state responses.
 
 ### 2. Add First-Run Routing Gate
@@ -419,7 +418,7 @@ Verification:
 
 - Extract the form body from `SettingsPage`.
 - Reuse it in onboarding with first-run headings and actions.
-- Hide API base URL behind an advanced disclosure in onboarding.
+- Hide GitHub API base URL behind an advanced disclosure in onboarding.
 - Keep existing settings page behavior intact.
 
 Verification:
@@ -427,7 +426,7 @@ Verification:
 - Existing `/settings` tests still pass.
 - Saving settings from onboarding stores the token and repositories.
 - Token input clears after save.
-- Invalid repositories show the API validation error.
+- Invalid repositories show the desktop validation error.
 
 ### 5. Add Sample Data Exit
 
@@ -462,7 +461,7 @@ Manual checks:
 
 Automated checks:
 
-- API/Desktop onboarding-state tests.
+- Desktop onboarding-state tests.
 - React component tests for routing decisions.
 - Form save mutation test for onboarding success.
 
