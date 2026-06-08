@@ -848,8 +848,8 @@ export function InboxPage() {
       <InboxStatusPanel
         title="Could not load review inbox"
         detail={
-          inboxQuery.error instanceof Error
-            ? inboxQuery.error.message
+          inboxQuery.error
+            ? formatUnknownError(inboxQuery.error)
             : "The desktop data layer could not load. Restart the app, then reload."
         }
       />
@@ -1780,6 +1780,26 @@ function formatSyncLabel(dataUpdatedAt: number): string {
   if (hours < 24) return `synced ${hours}h ago`
 
   return `synced ${Math.floor(hours / 24)}d ago`
+}
+
+function formatUnknownError(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message
+  }
+  if (typeof error === "string" && error.trim()) {
+    return error
+  }
+
+  try {
+    const serialized = JSON.stringify(error)
+    if (serialized && serialized !== "{}") {
+      return serialized
+    }
+  } catch {
+    // Fall through to the generic message.
+  }
+
+  return "The desktop data layer could not load. Restart the app, then reload."
 }
 
 function bucketToLaneDefinition(

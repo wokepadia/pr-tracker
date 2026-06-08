@@ -36,6 +36,7 @@ import type {
   SqliteBackupResult,
 } from "@/api"
 import { localDesktopSchemaSql } from "../../../../packages/db/src/local-schema"
+import { createQueuedTransaction } from "./sqlite-transaction"
 
 const databaseUrl = "sqlite:pr-tracker.sqlite"
 const defaultLocalProfileId = "local"
@@ -113,6 +114,7 @@ interface StrongholdSession {
 let databasePromise: Promise<SqlDatabase> | undefined
 let lastSuccessfulSyncFingerprint: string | undefined
 let lastSuccessfulSyncScope: { pullRequestIds?: string[] } | undefined
+const transaction = createQueuedTransaction<SqlDatabase>()
 const syncPromiseByFingerprint = new Map<
   string,
   Promise<{ pullRequestIds?: string[] } | undefined>
@@ -469,11 +471,12 @@ async function syncBeforeRead(
 
   const syncPromise = syncLocalGithubData(db, credentials, options, fingerprint)
   syncPromiseByFingerprint.set(fingerprint, syncPromise)
-  syncPromise.finally(() => {
+  const cleanupSyncPromise = () => {
     if (syncPromiseByFingerprint.get(fingerprint) === syncPromise) {
       syncPromiseByFingerprint.delete(fingerprint)
     }
-  })
+  }
+  syncPromise.then(cleanupSyncPromise, cleanupSyncPromise)
 
   return syncPromise
 }
@@ -1973,21 +1976,6 @@ function splitSqlStatements(sql: string): string[] {
     .split(";")
     .map((statement) => statement.trim())
     .filter((statement) => statement.length > 0)
-}
-
-async function transaction<T>(
-  db: SqlDatabase,
-  callback: () => Promise<T>
-): Promise<T> {
-  await db.execute("begin")
-  try {
-    const result = await callback()
-    await db.execute("commit")
-    return result
-  } catch (error) {
-    await db.execute("rollback").catch(() => undefined)
-    throw error
-  }
 }
 
 function deterministicUuid(input: string): string {
