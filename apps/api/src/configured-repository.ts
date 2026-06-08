@@ -73,12 +73,9 @@ function createLocalSettingsRepository(
     | undefined;
 
   async function getRepository(): Promise<ReviewerInboxRepository> {
-    const credentials = await loadLocalGithubCredentials(settingsOptions).catch(
-      (error: unknown) => {
-        console.error("Failed to load local GitHub settings.", error);
-        return undefined;
-      }
-    ) ?? loadEnvGithubCredentials(env);
+    const credentials =
+      (await loadLocalGithubCredentials(settingsOptions)) ??
+      loadEnvGithubCredentials(env);
 
     if (!credentials) {
       return sampleRepository;
@@ -149,12 +146,9 @@ function createLocalSqliteSyncBeforeRead(
   let lastSuccessfulScope: { pullRequestIds?: string[] } | undefined;
 
   return async ({ local, githubSearchQuery }) => {
-    const credentials = await loadLocalGithubCredentials(settingsOptions).catch(
-      (error: unknown) => {
-        console.error("Failed to load local GitHub settings.", error);
-        return undefined;
-      }
-    ) ?? loadEnvGithubCredentials(env);
+    const credentials =
+      (await loadLocalGithubCredentials(settingsOptions)) ??
+      loadEnvGithubCredentials(env);
 
     if (!credentials) {
       if (isLocalSqliteDatabaseEmpty(local.db)) {
@@ -195,7 +189,11 @@ function createLocalSqliteSyncBeforeRead(
       lastSuccessfulFingerprint = fingerprint;
     } catch (error) {
       console.error("Failed to sync GitHub data into local SQLite.", error);
-      return githubSearchQuery ? { pullRequestIds: [] } : undefined;
+      throw new Error(
+        error instanceof Error
+          ? `Failed to sync GitHub data: ${error.message}`
+          : "Failed to sync GitHub data."
+      );
     }
 
     return lastSuccessfulScope;

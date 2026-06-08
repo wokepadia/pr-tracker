@@ -6,14 +6,17 @@ import { parseGithubRepositories } from "@pr-tracker/github";
 
 const keychainService = "pr-tracker.github-token";
 const keychainAccount = "github-token";
+let macosKeychainCachedToken: string | undefined;
 
 export interface LocalGithubSettings {
   repositories: string[];
   viewerLogin?: string;
   apiBaseUrl?: string;
+  tokenConfigured: boolean;
 }
 
-export interface LocalGithubCredentials extends LocalGithubSettings {
+export interface LocalGithubCredentials
+  extends Omit<LocalGithubSettings, "tokenConfigured"> {
   token: string;
 }
 
@@ -35,16 +38,22 @@ export interface LocalGithubSettingsOptions {
 export async function getLocalGithubSettingsStatus(
   options: LocalGithubSettingsOptions = {}
 ): Promise<LocalGithubSettingsStatus> {
-  const [settings, token] = await Promise.all([
-    readLocalGithubSettings(options.configPath),
-    getSettingsStore(options.store).readToken()
-  ]);
+  let settings = await readLocalGithubSettings(options.configPath);
+  if (!settings.tokenConfigured && settings.repositories.length > 0) {
+    const tokenConfigured = Boolean(
+      await getSettingsStore(options.store).readToken()
+    );
+    if (tokenConfigured) {
+      settings = { ...settings, tokenConfigured };
+      await writeLocalGithubSettings(settings, options.configPath);
+    }
+  }
 
   return {
     repositories: settings.repositories,
     viewerLogin: settings.viewerLogin,
     apiBaseUrl: settings.apiBaseUrl,
-    tokenConfigured: Boolean(token),
+    tokenConfigured: settings.tokenConfigured,
     storage: "macos-keychain"
   };
 }
@@ -67,12 +76,19 @@ export async function saveLocalGithubSettings(
 
   const token = input.token?.trim();
   const store = getSettingsStore(options.store);
+  const existingSettings = await readLocalGithubSettings(options.configPath);
+  let tokenConfigured = existingSettings.tokenConfigured;
+
   if (token) {
     await store.writeToken(token);
+    tokenConfigured = true;
   }
 
-  const existingToken = token ? token : await store.readToken();
-  if (!existingToken) {
+  if (!tokenConfigured) {
+    tokenConfigured = Boolean(await store.readToken());
+  }
+
+  if (!tokenConfigured) {
     throw new Error("A GitHub token is required.");
   }
 
@@ -80,12 +96,19 @@ export async function saveLocalGithubSettings(
     {
       repositories,
       viewerLogin: cleanOptionalString(input.viewerLogin),
-      apiBaseUrl: cleanOptionalString(input.apiBaseUrl)
+      apiBaseUrl: cleanOptionalString(input.apiBaseUrl),
+      tokenConfigured
     },
     options.configPath
   );
 
-  return getLocalGithubSettingsStatus(options);
+  return {
+    repositories,
+    viewerLogin: cleanOptionalString(input.viewerLogin),
+    apiBaseUrl: cleanOptionalString(input.apiBaseUrl),
+    tokenConfigured,
+    storage: "macos-keychain"
+  };
 }
 
 export async function loadLocalGithubCredentials(
@@ -98,7 +121,9 @@ export async function loadLocalGithubCredentials(
 
   const token = await getSettingsStore(options.store).readToken();
   if (!token) {
-    return undefined;
+    throw new Error(
+      "GitHub settings are saved, but the Keychain token is missing. Re-enter your GitHub token in Settings."
+    );
   }
 
   return {
@@ -151,13 +176,14 @@ async function readLocalGithubSettings(
   });
 
   if (!raw) {
-    return { repositories: [] };
+    return { repositories: [], tokenConfigured: false };
   }
 
   const parsed = JSON.parse(raw) as {
     repositories?: unknown;
     viewerLogin?: unknown;
     apiBaseUrl?: unknown;
+    tokenConfigured?: unknown;
   };
 
   return {
@@ -167,7 +193,8 @@ async function readLocalGithubSettings(
     viewerLogin:
       typeof parsed.viewerLogin === "string" ? parsed.viewerLogin : undefined,
     apiBaseUrl:
-      typeof parsed.apiBaseUrl === "string" ? parsed.apiBaseUrl : undefined
+      typeof parsed.apiBaseUrl === "string" ? parsed.apiBaseUrl : undefined,
+    tokenConfigured: parsed.tokenConfigured === true
   };
 }
 
@@ -207,6 +234,10 @@ function cleanOptionalString(value: string | undefined): string | undefined {
 
 const macosKeychainGithubSettingsStore: LocalGithubSettingsStore = {
   async readToken() {
+    if (macosKeychainCachedToken) {
+      return macosKeychainCachedToken;
+    }
+
     if (process.platform !== "darwin") {
       throw new Error("Local token storage currently requires macOS Keychain.");
     }
@@ -228,7 +259,8 @@ const macosKeychainGithubSettingsStore: LocalGithubSettingsStore = {
       throw new Error(result.stderr || "Failed to read token from Keychain.");
     }
 
-    return result.stdout.trim() || undefined;
+    macosKeychainCachedToken = result.stdout.trim() || undefined;
+    return macosKeychainCachedToken;
   },
 
   async writeToken(token) {
@@ -250,6 +282,8 @@ const macosKeychainGithubSettingsStore: LocalGithubSettingsStore = {
     if (result.exitCode !== 0) {
       throw new Error(result.stderr || "Failed to save token to Keychain.");
     }
+
+    macosKeychainCachedToken = token;
   }
 };
 

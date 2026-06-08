@@ -381,7 +381,17 @@ describe("api app", () => {
       await mkdtemp(join(tmpdir(), "pr-tracker-settings-")),
       "github-settings.json"
     );
-    const store = createMemoryGithubSettingsStore();
+    let storedToken: string | undefined;
+    let tokenReadCount = 0;
+    const store = {
+      async readToken() {
+        tokenReadCount += 1;
+        return storedToken;
+      },
+      async writeToken(token: string) {
+        storedToken = token;
+      }
+    };
     const app = createApp({
       repository: createSampleRepository(),
       settingsOptions: { configPath, store },
@@ -412,13 +422,79 @@ describe("api app", () => {
       storage: "macos-keychain"
     });
     expect(saveBody.token).toBeUndefined();
-    await expect(store.readToken()).resolves.toBe("github_pat_read_only");
+    expect(storedToken).toBe("github_pat_read_only");
+    expect(tokenReadCount).toBe(0);
 
     const statusResponse = await app.request("/api/local-settings/github");
     const statusBody = await statusResponse.json();
 
     expect(statusResponse.status).toBe(200);
     expect(statusBody).toEqual(saveBody);
+    expect(tokenReadCount).toBe(0);
+
+    const updateResponse = await app.request("/api/local-settings/github", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        repositories: "zulip/zulip, acme/api",
+        viewerLogin: "reviewer"
+      })
+    });
+    const updateBody = await updateResponse.json();
+
+    expect(updateResponse.status).toBe(200);
+    expect(updateBody).toMatchObject({
+      repositories: ["zulip/zulip", "acme/api"],
+      viewerLogin: "reviewer",
+      tokenConfigured: true,
+      storage: "macos-keychain"
+    });
+    expect(tokenReadCount).toBe(0);
+  });
+
+  it("migrates saved GitHub settings to a token status marker", async () => {
+    const configPath = join(
+      await mkdtemp(join(tmpdir(), "pr-tracker-legacy-settings-")),
+      "github-settings.json"
+    );
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        repositories: ["zulip/zulip"],
+        viewerLogin: "reviewer"
+      })
+    );
+    let tokenReadCount = 0;
+    const store = {
+      async readToken() {
+        tokenReadCount += 1;
+        return "github_pat_read_only";
+      },
+      async writeToken() {
+        throw new Error("Status migration should not rewrite the token.");
+      }
+    };
+    const app = createApp({
+      repository: createSampleRepository(),
+      settingsOptions: { configPath, store },
+      webhookSink: createMemoryWebhookSink()
+    });
+
+    const firstResponse = await app.request("/api/local-settings/github");
+    const firstBody = await firstResponse.json();
+    const secondResponse = await app.request("/api/local-settings/github");
+    const secondBody = await secondResponse.json();
+
+    expect(firstResponse.status).toBe(200);
+    expect(firstBody).toMatchObject({
+      repositories: ["zulip/zulip"],
+      viewerLogin: "reviewer",
+      tokenConfigured: true,
+      storage: "macos-keychain"
+    });
+    expect(secondResponse.status).toBe(200);
+    expect(secondBody).toEqual(firstBody);
+    expect(tokenReadCount).toBe(1);
   });
 
   it("stores local onboarding state without returning token-like input", async () => {
@@ -565,6 +641,60 @@ describe("api app", () => {
         }
       });
       expect(fetchMock).toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      await repository.close?.();
+    }
+  });
+
+  it("reports local GitHub sync failures to the inbox caller", async () => {
+    const databasePath = join(
+      await mkdtemp(join(tmpdir(), "pr-tracker-local-sync-error-db-")),
+      "pr-tracker.sqlite"
+    );
+    const configPath = join(
+      await mkdtemp(join(tmpdir(), "pr-tracker-local-sync-error-settings-")),
+      "github-settings.json"
+    );
+    const store = createMemoryGithubSettingsStore();
+    const settingsOptions = { configPath, store };
+    await saveLocalGithubSettings(
+      {
+        token: "github_pat_read_only",
+        repositories: "acme/web",
+        viewerLogin: "viewer",
+        apiBaseUrl: "https://api.github.test"
+      },
+      settingsOptions
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("bad credentials", {
+            status: 401,
+            statusText: "Unauthorized"
+          })
+      )
+    );
+    const repository = createConfiguredRepository(
+      {
+        PR_TRACKER_LOCAL_DB_PATH: databasePath
+      },
+      settingsOptions
+    );
+    const app = createApp({
+      repository,
+      webhookSink: createMemoryWebhookSink()
+    });
+
+    try {
+      const response = await app.request("/api/reviewer-inbox");
+      const body = (await response.json()) as { error?: string };
+
+      expect(response.status).toBe(502);
+      expect(body.error).toContain("Failed to sync GitHub data");
+      expect(body.error).toContain("401 Unauthorized");
     } finally {
       vi.unstubAllGlobals();
       await repository.close?.();

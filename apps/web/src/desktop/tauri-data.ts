@@ -39,6 +39,7 @@ const githubSettingsKey = "github-settings"
 const onboardingSettingsKey = "onboarding"
 const keychainService = "pr-tracker.github-token"
 const keychainAccount = "github-token"
+let cachedToken: string | undefined
 
 type SqlValue = string | number | boolean | null
 
@@ -51,9 +52,11 @@ interface LocalGithubSettings {
   repositories: string[]
   viewerLogin?: string
   apiBaseUrl?: string
+  tokenConfigured: boolean
 }
 
-interface LocalGithubCredentials extends LocalGithubSettings {
+interface LocalGithubCredentials
+  extends Omit<LocalGithubSettings, "tokenConfigured"> {
   token: string
 }
 
@@ -315,14 +318,20 @@ export async function saveDesktopBoardState(
 
 export async function getDesktopGithubSettingsStatus(): Promise<GithubSettingsStatus> {
   const db = await getDatabase()
-  const [settings, token] = await Promise.all([
-    readLocalGithubSettings(db),
-    readToken(),
-  ])
+  let settings = await readLocalGithubSettings(db)
+  if (!settings.tokenConfigured && settings.repositories.length > 0) {
+    const tokenConfigured = Boolean(await readToken())
+    if (tokenConfigured) {
+      settings = { ...settings, tokenConfigured }
+      await writeLocalGithubSettings(db, settings)
+    }
+  }
 
   return {
-    ...settings,
-    tokenConfigured: Boolean(token),
+    repositories: settings.repositories,
+    viewerLogin: settings.viewerLogin,
+    apiBaseUrl: settings.apiBaseUrl,
+    tokenConfigured: settings.tokenConfigured,
     storage: "os-keychain",
   }
 }
@@ -337,12 +346,20 @@ export async function saveDesktopGithubSettings(
   }
 
   const token = input.token?.trim()
+  const existingSettings = await readLocalGithubSettings(db)
+  let tokenConfigured = existingSettings.tokenConfigured
+
   if (token) {
     await setPassword(keychainService, keychainAccount, token)
+    cachedToken = token
+    tokenConfigured = true
   }
 
-  const existingToken = token || (await readToken())
-  if (!existingToken) {
+  if (!tokenConfigured) {
+    tokenConfigured = Boolean(await readToken())
+  }
+
+  if (!tokenConfigured) {
     throw new Error("A GitHub token is required.")
   }
 
@@ -350,10 +367,17 @@ export async function saveDesktopGithubSettings(
     repositories,
     viewerLogin: cleanOptionalString(input.viewerLogin),
     apiBaseUrl: cleanOptionalString(input.apiBaseUrl),
+    tokenConfigured,
   })
   lastSuccessfulSyncFingerprint = undefined
 
-  return getDesktopGithubSettingsStatus()
+  return {
+    repositories,
+    viewerLogin: cleanOptionalString(input.viewerLogin),
+    apiBaseUrl: cleanOptionalString(input.apiBaseUrl),
+    tokenConfigured,
+    storage: "os-keychain",
+  }
 }
 
 export async function createDesktopSqliteBackup(): Promise<SqliteBackupResult> {
@@ -1366,12 +1390,13 @@ async function readLocalGithubSettings(
   db: SqlDatabase
 ): Promise<LocalGithubSettings> {
   const raw = await readAppSetting(db, githubSettingsKey)
-  if (!raw) return { repositories: [] }
+  if (!raw) return { repositories: [], tokenConfigured: false }
 
   const parsed = JSON.parse(raw) as {
     repositories?: unknown
     viewerLogin?: unknown
     apiBaseUrl?: unknown
+    tokenConfigured?: unknown
   }
 
   return {
@@ -1382,6 +1407,7 @@ async function readLocalGithubSettings(
       typeof parsed.viewerLogin === "string" ? parsed.viewerLogin : undefined,
     apiBaseUrl:
       typeof parsed.apiBaseUrl === "string" ? parsed.apiBaseUrl : undefined,
+    tokenConfigured: parsed.tokenConfigured === true,
   }
 }
 
@@ -1449,11 +1475,22 @@ async function loadLocalGithubCredentials(
     return undefined
   }
   const token = await readToken()
-  return token ? { ...settings, token } : undefined
+  if (!token) {
+    throw new Error(
+      "GitHub settings are saved, but the Keychain token is missing. Re-enter your GitHub token in Settings."
+    )
+  }
+
+  return { ...settings, token }
 }
 
 async function readToken(): Promise<string | undefined> {
-  return (await getPassword(keychainService, keychainAccount)) ?? undefined
+  if (cachedToken) {
+    return cachedToken
+  }
+
+  cachedToken = (await getPassword(keychainService, keychainAccount)) ?? undefined
+  return cachedToken
 }
 
 function normalizeOnboardingVersion(value: unknown): number {
