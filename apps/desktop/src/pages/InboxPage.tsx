@@ -1064,7 +1064,7 @@ export function InboxPage() {
                 onRestore={restoreSelected}
                 onTogglePin={togglePinSelected}
                 onMute={muteSelected}
-                onNotesChange={updateSelectedNotes}
+                onNotesSave={updateSelectedNotes}
                 onMoveToBucket={moveSelectedToBucket}
                 onCaughtUp={() => void markSelectedCaughtUp()}
                 onClose={() => setSelectedId("")}
@@ -2680,7 +2680,7 @@ function QuickPeekPanel({
   onRestore,
   onTogglePin,
   onMute,
-  onNotesChange,
+  onNotesSave,
   onMoveToBucket,
   onCaughtUp,
   onClose,
@@ -2699,7 +2699,7 @@ function QuickPeekPanel({
   onRestore: () => void
   onTogglePin: () => void
   onMute: () => void
-  onNotesChange: (notes: string) => void
+  onNotesSave: (notes: string) => void
   onMoveToBucket: (bucketId: UserBucketId) => void
   onCaughtUp: () => void
   onClose: () => void
@@ -2802,7 +2802,7 @@ function QuickPeekPanel({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        <BoardItemNotes value={notes} onChange={onNotesChange} />
+        <BoardItemNotes value={notes} onSave={onNotesSave} />
 
         <Separator className="my-4 bg-border" />
 

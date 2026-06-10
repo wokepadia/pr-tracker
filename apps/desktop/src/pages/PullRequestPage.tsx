@@ -329,7 +329,7 @@ export function PullRequestPage() {
         <main className="min-w-0 px-7 py-6">
           <BoardItemNotes
             value={loadedItemLocalState.notes ?? ""}
-            onChange={updateNotes}
+            onSave={updateNotes}
             className="mb-6"
           />
           <DescriptionPanel description={loadedItem.description} />
