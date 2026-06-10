@@ -945,7 +945,6 @@ export function InboxPage() {
               onDragStart={handleKanbanDragStart}
               onDragEnd={handleKanbanDragEnd}
               onDragCancel={() => setDraggingItemId(null)}
-              onMoveItemToBucket={moveItemToBucket}
               onBucketColumnWidthChange={(bucketId, width) => {
                 setBucketColumnWidths((current) => ({
                   ...current,
@@ -1960,7 +1959,6 @@ function KanbanBoard({
   onDragStart,
   onDragEnd,
   onDragCancel,
-  onMoveItemToBucket,
   onBucketColumnWidthChange,
   onOpenPeek,
 }: {
@@ -1976,11 +1974,6 @@ function KanbanBoard({
   onDragStart: (event: DragStartEvent) => void
   onDragEnd: (event: DragEndEvent) => void
   onDragCancel: () => void
-  onMoveItemToBucket: (
-    itemId: string,
-    bucketId: UserBucketId,
-    overItemId?: string
-  ) => void
   onBucketColumnWidthChange: (bucketId: UserBucketId, width: number) => void
   onOpenPeek: (id: string) => void
 }) {
@@ -2041,7 +2034,6 @@ function KanbanBoard({
                   selectedId={selectedId}
                   bucketLanes={bucketLanes}
                   userBuckets={userBuckets}
-                  onMoveItemToBucket={onMoveItemToBucket}
                   onOpenPeek={onOpenPeek}
                 />
                 {index < bucketLanes.length - 1 ? (
@@ -2072,7 +2064,6 @@ function KanbanBoard({
               bucketLanes={bucketLanes}
               userBuckets={userBuckets}
               dragging
-              onMoveToBucket={() => undefined}
               onOpenPeek={() => undefined}
             />
           </div>
@@ -2089,7 +2080,6 @@ function KanbanColumn({
   selectedId,
   bucketLanes,
   userBuckets,
-  onMoveItemToBucket,
   onOpenPeek,
 }: {
   lane: LaneDefinition
@@ -2098,11 +2088,6 @@ function KanbanColumn({
   selectedId: string
   bucketLanes: LaneDefinition[]
   userBuckets: UserBucketDefinition[]
-  onMoveItemToBucket: (
-    itemId: string,
-    bucketId: UserBucketId,
-    overItemId?: string
-  ) => void
   onOpenPeek: (id: string) => void
 }) {
   const { isOver, setNodeRef } = useDroppable({
@@ -2159,9 +2144,6 @@ function KanbanColumn({
                 bucketLanes={bucketLanes}
                 userBuckets={userBuckets}
                 onOpenPeek={() => onOpenPeek(item.id)}
-                onMoveToBucket={(bucketId) =>
-                  onMoveItemToBucket(item.id, bucketId)
-                }
               />
             ))
           ) : (
@@ -2182,7 +2164,6 @@ function SortableQueueCard({
   bucketLanes,
   userBuckets,
   onOpenPeek,
-  onMoveToBucket,
 }: {
   item: ReviewQueueItemView
   selected: boolean
@@ -2190,7 +2171,6 @@ function SortableQueueCard({
   bucketLanes: LaneDefinition[]
   userBuckets: UserBucketDefinition[]
   onOpenPeek: () => void
-  onMoveToBucket: (bucketId: UserBucketId) => void
 }) {
   const {
     attributes,
@@ -2234,7 +2214,6 @@ function SortableQueueCard({
           </button>
         }
         onOpenPeek={onOpenPeek}
-        onMoveToBucket={onMoveToBucket}
       />
     </div>
   )
@@ -2249,7 +2228,6 @@ function QueueCard({
   dragHandle,
   dragging,
   onOpenPeek,
-  onMoveToBucket,
 }: {
   item: ReviewQueueItemView
   selected: boolean
@@ -2259,7 +2237,6 @@ function QueueCard({
   dragHandle?: ReactNode
   dragging?: boolean
   onOpenPeek: () => void
-  onMoveToBucket: (bucketId: UserBucketId) => void
 }) {
   const tone = toneForItem(item)
   const reReviewRequested = item.activityEvents.some((event) =>
@@ -2351,15 +2328,6 @@ function QueueCard({
             {item.waitingAge}
           </span>
         </div>
-      </div>
-      <div className="mt-3">
-        <BucketMoveMenu
-          bucketId={bucketId}
-          bucketLanes={bucketLanes}
-          userBuckets={userBuckets}
-          onMoveToBucket={onMoveToBucket}
-          compact
-        />
       </div>
     </article>
   )
