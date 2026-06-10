@@ -1,32 +1,10 @@
 import { describe, expect, it } from "vitest"
 import { createQueuedTransaction } from "./sqlite-transaction"
 
-class FakeDatabase {
-  inTransaction = false
-  queries: string[] = []
-
-  async execute(query: string): Promise<{ rowsAffected: number }> {
-    this.queries.push(query)
-
-    if (query === "begin") {
-      if (this.inTransaction) {
-        throw new Error("cannot start a transaction within a transaction")
-      }
-      this.inTransaction = true
-    }
-
-    if (query === "commit" || query === "rollback") {
-      this.inTransaction = false
-    }
-
-    return { rowsAffected: 0 }
-  }
-}
-
 describe("createQueuedTransaction", () => {
-  it("serializes overlapping transactions on the same database connection", async () => {
-    const db = new FakeDatabase()
-    const transaction = createQueuedTransaction<FakeDatabase>()
+  it("serializes overlapping write sections", async () => {
+    const db = {}
+    const transaction = createQueuedTransaction<typeof db>()
     const events: string[] = []
     let finishFirstTransaction: () => void = () => undefined
 
@@ -53,12 +31,11 @@ describe("createQueuedTransaction", () => {
       "second",
     ])
     expect(events).toEqual(["first:start", "first:end", "second:start"])
-    expect(db.queries).toEqual(["begin", "commit", "begin", "commit"])
   })
 
-  it("releases the queue after rolling back a failed transaction", async () => {
-    const db = new FakeDatabase()
-    const transaction = createQueuedTransaction<FakeDatabase>()
+  it("releases the queue after a failed write section", async () => {
+    const db = {}
+    const transaction = createQueuedTransaction<typeof db>()
 
     await expect(
       transaction(db, async () => {
@@ -67,7 +44,6 @@ describe("createQueuedTransaction", () => {
     ).rejects.toThrow("boom")
 
     await expect(transaction(db, async () => "next")).resolves.toBe("next")
-    expect(db.queries).toEqual(["begin", "rollback", "begin", "commit"])
   })
 })
 

@@ -1,12 +1,8 @@
-export interface QueuedTransactionDatabase {
-  execute(query: string, bindValues?: unknown[]): Promise<unknown>
-}
-
-export function createQueuedTransaction<Db extends QueuedTransactionDatabase>() {
+export function createQueuedTransaction<Db>() {
   let transactionQueue: Promise<void> = Promise.resolve()
 
   return async function transaction<T>(
-    db: Db,
+    _db: Db,
     callback: () => Promise<T>
   ): Promise<T> {
     const previousTransaction = transactionQueue
@@ -17,15 +13,7 @@ export function createQueuedTransaction<Db extends QueuedTransactionDatabase>() 
 
     await previousTransaction
     try {
-      await db.execute("begin")
-      try {
-        const result = await callback()
-        await db.execute("commit")
-        return result
-      } catch (error) {
-        await db.execute("rollback").catch(() => undefined)
-        throw error
-      }
+      return await callback()
     } finally {
       releaseTransaction()
     }
