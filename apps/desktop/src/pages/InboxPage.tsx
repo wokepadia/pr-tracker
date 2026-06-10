@@ -2440,7 +2440,7 @@ function QueueLane({
         type="button"
         onClick={onToggle}
         aria-expanded={isOpen}
-        className="grid w-full grid-cols-[4px_16px_1fr_auto] items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-muted/25"
+        className="grid w-full grid-cols-[4px_16px_1fr] items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-muted/25"
       >
         <span className={cn("h-5 w-1 rounded-full", laneToneClasses[group.tone])} />
         {isOpen ? (
@@ -2449,8 +2449,19 @@ function QueueLane({
           <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/70" />
         )}
         <span className="min-w-0">
-          <span className="block truncate text-xs font-medium text-foreground">
-            {group.label}
+          <span className="flex items-center gap-2">
+            <span className="truncate text-xs font-medium text-foreground">
+              {group.label}
+            </span>
+            <Badge
+              variant="outline"
+              className={cn(
+                "h-5 rounded-full px-2 text-xs",
+                laneBadgeToneClasses[group.tone]
+              )}
+            >
+              {items.length}
+            </Badge>
           </span>
           {group.description ? (
             <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
@@ -2458,15 +2469,6 @@ function QueueLane({
             </span>
           ) : null}
         </span>
-        <Badge
-          variant="outline"
-          className={cn(
-            "h-5 justify-self-end rounded-full px-2 text-xs",
-            laneBadgeToneClasses[group.tone]
-          )}
-        >
-          {items.length}
-        </Badge>
       </button>
       {isOpen && (
         <div>
@@ -2607,7 +2609,7 @@ function QueueRow({
           ) : null}
         </span>
       </span>
-      <span className="flex min-w-[74px] flex-col items-end gap-1">
+      <span className="flex shrink-0 items-center gap-2">
         <BucketMoveMenu
           bucketId={bucketIdForAvailableBucketId(bucketId, userBuckets, fallbackBucketId)}
           bucketLanes={bucketLanes}
@@ -2615,16 +2617,18 @@ function QueueRow({
           onMoveToBucket={onMoveToBucket}
           compact
         />
-        <span
-          className={cn(
-            "text-xs text-muted-foreground",
-            item.waitingOn === "you" && "font-semibold text-foreground"
-          )}
-        >
-          {item.waitingAge}
-        </span>
-        <span className="text-xs text-muted-foreground/70">
-          {queueTimingLabel(item)}
+        <span className="whitespace-nowrap text-xs text-muted-foreground">
+          <span
+            className={cn(
+              item.waitingOn === "you" && "font-semibold text-foreground"
+            )}
+          >
+            {item.waitingAge}
+          </span>
+          <span className="text-muted-foreground/70">
+            {" "}
+            · {queueTimingLabel(item)}
+          </span>
         </span>
       </span>
     </div>
