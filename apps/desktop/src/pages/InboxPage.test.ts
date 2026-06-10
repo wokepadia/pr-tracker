@@ -90,10 +90,10 @@ describe("inbox queue selection", () => {
 })
 
 describe("inbox empty state copy", () => {
-  it("prompts for an explicit sneak peek when visible items exist", () => {
-    expect(getEmptyPeekCopy("action", "", true)).toEqual({
-      title: "Choose a PR to sneak peek",
-      detail: "Use the sneak peek button on a card to load the right panel.",
+  it("uses active review copy for the unselected action view", () => {
+    expect(getEmptyPeekCopy("action", "")).toEqual({
+      title: "No active review items",
+      detail: "There are no active review items in the current view.",
     })
   })
 

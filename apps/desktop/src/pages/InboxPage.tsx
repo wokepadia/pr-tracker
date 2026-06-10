@@ -50,6 +50,7 @@ import {
   ExternalLink,
   Eye,
   BellOff,
+  Maximize2,
   GitCommitHorizontal,
   GitPullRequest,
   GripVertical,
@@ -122,7 +123,6 @@ import {
 import {
   bucketDropId,
   filterQueueItems,
-  getEmptyPeekCopy,
   moveItemInBucketItemOrder,
   resolveVisibleQueueItem,
   resolveKanbanDropTarget,
@@ -859,12 +859,137 @@ export function InboxPage() {
     )
   }
 
+  const reviewWorkspaceMinWidth = selectedItem
+    ? REVIEW_WORKSPACE_MIN_WIDTH
+    : REVIEW_QUEUE_MIN_WIDTH
+  const reviewQueuePanel = (
+    <div className="flex h-full min-w-0 flex-col border-b border-border">
+      <InboxHeader
+        groupMode={groupMode}
+        activeCount={searchedActiveItems.length}
+        searchQuery={searchQuery}
+        syncLabel={formatSyncLabel(inboxQuery.dataUpdatedAt)}
+        githubSearchQuery={githubSearchQueryDraft}
+        isGithubSearchPending={inboxQuery.isFetching}
+        onGroupModeChange={setGroupMode}
+        onGithubSearchQueryChange={setGithubSearchQueryDraft}
+        onGithubSearchQueryReset={resetGithubSearchQuery}
+        onGithubSearchQuerySubmit={applyGithubSearchQuery}
+        onSearchQueryChange={setSearchQuery}
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto pt-2 pb-7">
+        {groupMode === "action" ? (
+          activeActionTabId !== "new_activity" ? (
+            <KanbanBoard
+              laneItems={laneItems}
+              selectedId={selectedId}
+              activeBucketId={
+                activeActionTabId === "home" ? undefined : activeActionTabId
+              }
+              draggingItem={draggingItem}
+              draggingItemBucketId={draggingItemBucketId}
+              bucketLanes={bucketLanes}
+              bucketColumnWidths={bucketColumnWidths}
+              sensors={dragSensors}
+              userBuckets={userBuckets}
+              onDragStart={handleKanbanDragStart}
+              onDragEnd={handleKanbanDragEnd}
+              onDragCancel={() => setDraggingItemId(null)}
+              onMoveItemToBucket={moveItemToBucket}
+              onBucketColumnWidthChange={(bucketId, width) => {
+                setBucketColumnWidths((current) => ({
+                  ...current,
+                  [bucketId]: clampBucketColumnWidth(width),
+                }))
+              }}
+              onOpenPeek={setSelectedId}
+            />
+          ) : (
+            <ActionQueueList
+              items={visibleActionItems}
+              selectedId={selectedId}
+              bucketLanes={bucketLanes}
+              userBuckets={userBuckets}
+              fallbackBucketId={fallbackBucketId}
+              localQueueState={localQueueState}
+              onMoveItemToBucket={moveItemToBucket}
+              onOpenPeek={setSelectedId}
+            />
+          )
+        ) : groupMode === "repository" ? (
+          repositoryGroups.map((group) => (
+            <QueueLane
+              key={group.id}
+              group={group}
+              isOpen={openRepositoryIds.has(group.id)}
+              items={group.items}
+              selectedId={selectedId}
+              bucketLanes={bucketLanes}
+              userBuckets={userBuckets}
+              fallbackBucketId={fallbackBucketId}
+              localQueueState={localQueueState}
+              onMoveItemToBucket={moveItemToBucket}
+              onToggle={() => {
+                setOpenRepositoryIds((current) =>
+                  toggleOpenGroup(current, group.id)
+                )
+              }}
+              onOpenPeek={setSelectedId}
+            />
+          ))
+        ) : groupMode === "pinned" ? (
+          <QueueLane
+            group={{ id: "pinned", label: "Pinned", tone: "changed" }}
+            isOpen
+            items={searchedPinnedItems}
+            selectedId={selectedId}
+            bucketLanes={bucketLanes}
+            userBuckets={userBuckets}
+            fallbackBucketId={fallbackBucketId}
+            localQueueState={localQueueState}
+            onMoveItemToBucket={moveItemToBucket}
+            onToggle={() => undefined}
+            onOpenPeek={setSelectedId}
+          />
+        ) : groupMode === "snoozed" ? (
+          <QueueLane
+            group={{ id: "snoozed", label: "Snoozed", tone: "quiet" }}
+            isOpen
+            items={searchedSnoozedItems}
+            selectedId={selectedId}
+            bucketLanes={bucketLanes}
+            userBuckets={userBuckets}
+            fallbackBucketId={fallbackBucketId}
+            localQueueState={localQueueState}
+            onMoveItemToBucket={moveItemToBucket}
+            onToggle={() => undefined}
+            onOpenPeek={setSelectedId}
+          />
+        ) : (
+          <QueueLane
+            group={{ id: "muted", label: "Muted", tone: "quiet" }}
+            isOpen
+            items={searchedMutedItems}
+            selectedId={selectedId}
+            bucketLanes={bucketLanes}
+            userBuckets={userBuckets}
+            fallbackBucketId={fallbackBucketId}
+            localQueueState={localQueueState}
+            onMoveItemToBucket={moveItemToBucket}
+            onToggle={() => undefined}
+            onOpenPeek={setSelectedId}
+          />
+        )}
+      </div>
+    </div>
+  )
+
   return (
     <TooltipProvider delayDuration={200}>
       <div
         className="grid min-h-[calc(100vh-48px)] overflow-x-auto"
         style={{
-          gridTemplateColumns: `${REVIEW_SIDEBAR_WIDTH}px minmax(${REVIEW_WORKSPACE_MIN_WIDTH}px, 1fr)`,
+          gridTemplateColumns: `${REVIEW_SIDEBAR_WIDTH}px minmax(${reviewWorkspaceMinWidth}px, 1fr)`,
         }}
       >
       <InboxSidebar
@@ -889,154 +1014,36 @@ export function InboxPage() {
       />
 
       <section className="min-w-0 bg-background">
-        <ResizablePanelGroup
-          id="review-inbox-split"
-          orientation="horizontal"
-          defaultLayout={{ reviewQueue: 68, quickPeek: 32 }}
-          resizeTargetMinimumSize={{ fine: 12, coarse: 36 }}
-          className="h-full min-h-[calc(100vh-48px)]"
-          style={{ minWidth: REVIEW_WORKSPACE_MIN_WIDTH }}
-        >
-          <ResizablePanel
-            id="reviewQueue"
-            defaultSize="58%"
-            minSize={REVIEW_QUEUE_MIN_WIDTH}
-            className="min-w-0"
+        {selectedItem ? (
+          <ResizablePanelGroup
+            id="review-inbox-split"
+            orientation="horizontal"
+            defaultLayout={{ reviewQueue: 68, quickPeek: 32 }}
+            resizeTargetMinimumSize={{ fine: 12, coarse: 36 }}
+            className="h-full min-h-[calc(100vh-48px)]"
+            style={{ minWidth: REVIEW_WORKSPACE_MIN_WIDTH }}
           >
-            <div className="flex h-full min-w-0 flex-col border-b border-border">
-              <InboxHeader
-                groupMode={groupMode}
-                activeCount={searchedActiveItems.length}
-                searchQuery={searchQuery}
-                syncLabel={formatSyncLabel(inboxQuery.dataUpdatedAt)}
-                githubSearchQuery={githubSearchQueryDraft}
-                isGithubSearchPending={inboxQuery.isFetching}
-                onGroupModeChange={setGroupMode}
-                onGithubSearchQueryChange={setGithubSearchQueryDraft}
-                onGithubSearchQueryReset={resetGithubSearchQuery}
-                onGithubSearchQuerySubmit={applyGithubSearchQuery}
-                onSearchQueryChange={setSearchQuery}
-              />
-              <div className="min-h-0 flex-1 overflow-y-auto pt-2 pb-7">
-                {groupMode === "action" ? (
-                  activeActionTabId !== "new_activity" ? (
-                    <KanbanBoard
-                      laneItems={laneItems}
-                      selectedId={selectedId}
-                      activeBucketId={
-                        activeActionTabId === "home" ? undefined : activeActionTabId
-                      }
-                      draggingItem={draggingItem}
-                      draggingItemBucketId={draggingItemBucketId}
-                      bucketLanes={bucketLanes}
-                      bucketColumnWidths={bucketColumnWidths}
-                      sensors={dragSensors}
-                      userBuckets={userBuckets}
-                      onDragStart={handleKanbanDragStart}
-                      onDragEnd={handleKanbanDragEnd}
-                      onDragCancel={() => setDraggingItemId(null)}
-                      onMoveItemToBucket={moveItemToBucket}
-                      onBucketColumnWidthChange={(bucketId, width) => {
-                        setBucketColumnWidths((current) => ({
-                          ...current,
-                          [bucketId]: clampBucketColumnWidth(width),
-                        }))
-                      }}
-                      onOpenPeek={setSelectedId}
-                    />
-                  ) : (
-                    <ActionQueueList
-                      items={visibleActionItems}
-                      selectedId={selectedId}
-                      bucketLanes={bucketLanes}
-                      userBuckets={userBuckets}
-                      fallbackBucketId={fallbackBucketId}
-                      localQueueState={localQueueState}
-                      onMoveItemToBucket={moveItemToBucket}
-                      onOpenPeek={setSelectedId}
-                    />
-                  )
-                ) : groupMode === "repository" ? (
-                  repositoryGroups.map((group) => (
-                    <QueueLane
-                      key={group.id}
-                      group={group}
-                      isOpen={openRepositoryIds.has(group.id)}
-                      items={group.items}
-                      selectedId={selectedId}
-                      bucketLanes={bucketLanes}
-                      userBuckets={userBuckets}
-                      fallbackBucketId={fallbackBucketId}
-                      localQueueState={localQueueState}
-                      onMoveItemToBucket={moveItemToBucket}
-                      onToggle={() => {
-                        setOpenRepositoryIds((current) =>
-                          toggleOpenGroup(current, group.id)
-                        )
-                      }}
-                      onOpenPeek={setSelectedId}
-                    />
-                  ))
-                ) : groupMode === "pinned" ? (
-                  <QueueLane
-                    group={{ id: "pinned", label: "Pinned", tone: "changed" }}
-                    isOpen
-                    items={searchedPinnedItems}
-                    selectedId={selectedId}
-                    bucketLanes={bucketLanes}
-                    userBuckets={userBuckets}
-                    fallbackBucketId={fallbackBucketId}
-                    localQueueState={localQueueState}
-                    onMoveItemToBucket={moveItemToBucket}
-                    onToggle={() => undefined}
-                    onOpenPeek={setSelectedId}
-                  />
-                ) : groupMode === "snoozed" ? (
-                  <QueueLane
-                    group={{ id: "snoozed", label: "Snoozed", tone: "quiet" }}
-                    isOpen
-                    items={searchedSnoozedItems}
-                    selectedId={selectedId}
-                    bucketLanes={bucketLanes}
-                    userBuckets={userBuckets}
-                    fallbackBucketId={fallbackBucketId}
-                    localQueueState={localQueueState}
-                    onMoveItemToBucket={moveItemToBucket}
-                    onToggle={() => undefined}
-                    onOpenPeek={setSelectedId}
-                  />
-                ) : (
-                  <QueueLane
-                    group={{ id: "muted", label: "Muted", tone: "quiet" }}
-                    isOpen
-                    items={searchedMutedItems}
-                    selectedId={selectedId}
-                    bucketLanes={bucketLanes}
-                    userBuckets={userBuckets}
-                    fallbackBucketId={fallbackBucketId}
-                    localQueueState={localQueueState}
-                    onMoveItemToBucket={moveItemToBucket}
-                    onToggle={() => undefined}
-                    onOpenPeek={setSelectedId}
-                  />
-                )}
-              </div>
-            </div>
-          </ResizablePanel>
-          <ResizablePanelResizeHandle
-            id="review-inbox-resize-handle"
-            aria-label="Resize quick peek"
-            className="group relative w-2 cursor-col-resize bg-background outline-none transition-colors hover:bg-muted/70 focus-visible:bg-muted data-[separator=active]:bg-muted"
-          >
-            <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-foreground/30 group-focus-visible:bg-foreground/40" />
-          </ResizablePanelResizeHandle>
-          <ResizablePanel
-            id="quickPeek"
-            defaultSize="42%"
-            minSize={QUICK_PEEK_MIN_WIDTH}
-            className="min-w-0"
-          >
-            {selectedItem ? (
+            <ResizablePanel
+              id="reviewQueue"
+              defaultSize="58%"
+              minSize={REVIEW_QUEUE_MIN_WIDTH}
+              className="min-w-0"
+            >
+              {reviewQueuePanel}
+            </ResizablePanel>
+            <ResizablePanelResizeHandle
+              id="review-inbox-resize-handle"
+              aria-label="Resize quick peek"
+              className="group relative w-2 cursor-col-resize bg-background outline-none transition-colors hover:bg-muted/70 focus-visible:bg-muted data-[separator=active]:bg-muted"
+            >
+              <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-foreground/30 group-focus-visible:bg-foreground/40" />
+            </ResizablePanelResizeHandle>
+            <ResizablePanel
+              id="quickPeek"
+              defaultSize="42%"
+              minSize={QUICK_PEEK_MIN_WIDTH}
+              className="min-w-0"
+            >
               <QuickPeekPanel
                 item={selectedItem}
                 bucketId={bucketIdForAvailableUserBucket(
@@ -1060,16 +1067,18 @@ export function InboxPage() {
                 onNotesChange={updateSelectedNotes}
                 onMoveToBucket={moveSelectedToBucket}
                 onCaughtUp={() => void markSelectedCaughtUp()}
+                onClose={() => setSelectedId("")}
               />
-            ) : (
-              <EmptyPeekPanel
-                groupMode={groupMode}
-                searchQuery={searchQuery}
-                hasVisibleItems={visibleQueueItems.length > 0}
-              />
-            )}
-          </ResizablePanel>
-        </ResizablePanelGroup>
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        ) : (
+          <div
+            className="h-full min-h-[calc(100vh-48px)]"
+            style={{ minWidth: REVIEW_QUEUE_MIN_WIDTH }}
+          >
+            {reviewQueuePanel}
+          </div>
+        )}
       </section>
       </div>
     </TooltipProvider>
@@ -2205,8 +2214,18 @@ function QueueCard({
   return (
     <article
       data-selected={selected ? "true" : undefined}
+      role="button"
+      tabIndex={0}
+      aria-label={`Sneak peek ${item.title}`}
+      onClick={onOpenPeek}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return
+        if (event.key !== "Enter" && event.key !== " ") return
+        event.preventDefault()
+        onOpenPeek()
+      }}
       className={cn(
-        "group relative rounded-md border border-border bg-card p-3 text-left shadow-sm transition hover:border-foreground/20 hover:shadow-md",
+        "group relative cursor-pointer rounded-md border border-border bg-card p-3 text-left shadow-sm outline-none transition hover:border-foreground/20 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring",
         selected && "border-foreground/35 ring-2 ring-foreground/10",
         dragging && "cursor-grabbing"
       )}
@@ -2238,10 +2257,6 @@ function QueueCard({
             {item.title}
           </h4>
         </div>
-        <SneakPeekButton
-          label={`Sneak peek ${item.title}`}
-          onOpenPeek={onOpenPeek}
-        />
       </div>
       <div className="mt-3 border-t border-border pt-3">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -2453,8 +2468,18 @@ function QueueRow({
 
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-label={`Sneak peek ${item.title}`}
+      onClick={onOpenPeek}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return
+        if (event.key !== "Enter" && event.key !== " ") return
+        event.preventDefault()
+        onOpenPeek()
+      }}
       className={cn(
-        "relative grid w-full grid-cols-[26px_1fr_auto] items-center gap-3 border-t border-border px-5 py-3 text-left transition-colors hover:bg-muted/40",
+        "relative grid w-full cursor-pointer grid-cols-[26px_1fr_auto] items-center gap-3 border-t border-border px-5 py-3 text-left outline-none transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring",
         selected && rowSelectedToneClasses[tone]
       )}
     >
@@ -2506,10 +2531,6 @@ function QueueRow({
         </span>
       </span>
       <span className="flex min-w-[74px] flex-col items-end gap-1">
-        <SneakPeekButton
-          label={`Sneak peek ${item.title}`}
-          onOpenPeek={onOpenPeek}
-        />
         <BucketMoveMenu
           bucketId={bucketIdForAvailableBucketId(bucketId, userBuckets, fallbackBucketId)}
           bucketLanes={bucketLanes}
@@ -2530,35 +2551,6 @@ function QueueRow({
         </span>
       </span>
     </div>
-  )
-}
-
-function SneakPeekButton({
-  label,
-  onOpenPeek,
-}: {
-  label: string
-  onOpenPeek: () => void
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-sm"
-          aria-label={label}
-          onClick={(event) => {
-            event.stopPropagation()
-            onOpenPeek()
-          }}
-          className="shrink-0 rounded-md border-border bg-background text-muted-foreground hover:text-foreground"
-        >
-          <PanelRight className="h-4 w-4" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>Sneak peek</TooltipContent>
-    </Tooltip>
   )
 }
 
@@ -2691,6 +2683,7 @@ function QuickPeekPanel({
   onNotesChange,
   onMoveToBucket,
   onCaughtUp,
+  onClose,
 }: {
   item: ReviewQueueItemView
   bucketId: UserBucketId
@@ -2709,6 +2702,7 @@ function QuickPeekPanel({
   onNotesChange: (notes: string) => void
   onMoveToBucket: (bucketId: UserBucketId) => void
   onCaughtUp: () => void
+  onClose: () => void
 }) {
   const canMarkCaughtUp = canMarkReviewItemCaughtUp(item, isMarkingSeen)
   const tone = toneForItem(item)
@@ -2735,9 +2729,47 @@ function QuickPeekPanel({
   return (
     <aside className="flex h-full min-h-[520px] min-w-0 flex-col bg-card">
       <div className="border-b border-border px-5 py-5">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <PanelRight className="h-3.5 w-3.5" />
-          Quick peek · no need to open
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <PanelRight className="h-3.5 w-3.5" />
+            Sneak peek
+          </div>
+          <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  asChild
+                  variant="ghost"
+                  size="icon-sm"
+                  className="h-8 w-8 rounded-md text-muted-foreground hover:text-foreground"
+                >
+                  <Link
+                    to="/pull-requests/$pullRequestId"
+                    params={{ pullRequestId: item.id }}
+                    aria-label={`Open PR detail for ${item.title}`}
+                  >
+                    <Maximize2 className="h-4 w-4" />
+                  </Link>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Open PR detail</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Close sneak peek"
+                  onClick={onClose}
+                  className="h-8 w-8 rounded-md text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Close sneak peek</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <BucketMoveMenu
@@ -3059,30 +3091,4 @@ function toggleOpenGroup<T extends string>(current: Set<T>, id: T): Set<T> {
     next.add(id)
   }
   return next
-}
-
-function EmptyPeekPanel({
-  groupMode,
-  searchQuery,
-  hasVisibleItems,
-}: {
-  groupMode: QueueGroupMode
-  searchQuery: string
-  hasVisibleItems: boolean
-}) {
-  const copy = getEmptyPeekCopy(groupMode, searchQuery, hasVisibleItems)
-
-  return (
-    <aside className="flex h-full min-w-0 flex-col items-center justify-center bg-card px-8 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-muted/30 text-foreground">
-        <Check className="h-5 w-5" />
-      </div>
-      <h2 className="mt-5 text-lg font-semibold tracking-tight text-foreground">
-        {copy.title}
-      </h2>
-      <p className="mt-2 max-w-[300px] text-sm leading-6 text-muted-foreground">
-        {copy.detail}
-      </p>
-    </aside>
-  )
 }

@@ -106,16 +106,8 @@ export function moveItemInBucketItemOrder({
 
 export function getEmptyPeekCopy(
   groupMode: QueueGroupMode,
-  searchQuery: string,
-  hasVisibleItems = false
+  searchQuery: string
 ): { title: string; detail: string } {
-  if (hasVisibleItems) {
-    return {
-      title: "Choose a PR to sneak peek",
-      detail: "Use the sneak peek button on a card to load the right panel.",
-    }
-  }
-
   if (searchQuery.trim().length > 0) {
     return {
       title: "No matching review items",
