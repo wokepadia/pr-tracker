@@ -5,6 +5,10 @@ use std::{
 };
 
 use tauri::Manager;
+use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
+
+const LOG_FILE_SIZE_BYTES: u128 = 1_048_576;
+const LOG_RETAINED_FILE_COUNT: usize = 5;
 
 struct AppInstanceLock {
     _file: File,
@@ -13,8 +17,22 @@ struct AppInstanceLock {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(log::LevelFilter::Info)
+                .max_file_size(LOG_FILE_SIZE_BYTES)
+                .rotation_strategy(RotationStrategy::KeepSome(LOG_RETAINED_FILE_COUNT))
+                .targets([
+                    Target::new(TargetKind::LogDir {
+                        file_name: Some("review-ninja.log".into()),
+                    }),
+                    Target::new(TargetKind::Stdout),
+                ])
+                .build(),
+        )
         .setup(|app| {
             let Some(instance_lock) = acquire_app_instance_lock(app)? else {
+                log::warn!("another Review Ninja instance is already running; exiting");
                 std::process::exit(0);
             };
             app.manage(instance_lock);

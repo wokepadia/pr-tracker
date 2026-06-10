@@ -77,3 +77,14 @@ names, pull request titles, comments, review activity, and local queue state. Yo
 are responsible for storing backup files safely.
 
 No GitHub writes are made from the app in this phase. Review submission still happens in GitHub.
+
+## Local Logs
+
+The desktop app writes native and renderer error logs through Tauri's log plugin.
+Logs are stored in the operating system's app log directory with the filename
+`review-ninja.log`.
+
+Log files are bounded to 1 MiB each and keep the 5 most recent rotated files, so
+local debugging logs do not grow without limit. Renderer logging records only
+error name, message, and stack strings; it does not serialize arbitrary objects
+or GitHub settings payloads.

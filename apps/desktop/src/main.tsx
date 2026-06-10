@@ -13,7 +13,10 @@ import { InboxPage } from "./pages/InboxPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { PullRequestPage } from "./pages/PullRequestPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { installRendererErrorLogging } from "./lib/error-logging";
 import "./index.css";
+
+installRendererErrorLogging();
 
 const queryClient = new QueryClient({
   defaultOptions: {

@@ -35,6 +35,7 @@ import type {
   SaveGithubSettingsInput,
   SqliteBackupResult,
 } from "@/api"
+import { logRendererError } from "@/lib/error-logging"
 import { localDesktopSchemaSql } from "../../../../packages/db/src/local-schema"
 import { createQueuedTransaction } from "./sqlite-transaction"
 
@@ -498,7 +499,7 @@ async function syncBeforeReadWithTimeout(
 
   if (didTimeOut) {
     syncPromise.catch((error) => {
-      console.error("Background GitHub sync failed.", error)
+      void logRendererError("Background GitHub sync failed", error)
     })
   }
 
