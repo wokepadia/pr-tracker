@@ -2244,28 +2244,28 @@ function QueueCard({
           laneToneClasses[tone]
         )}
       />
-      <div className="flex items-start gap-2 pl-1">
+      <div className="flex items-center gap-2 pl-1">
         {dragHandle}
         <AuthorAvatar
           login={item.authorLogin}
           avatarUrl={item.authorAvatarUrl}
-          className="h-7 w-7"
+          className="h-6 w-6"
         />
-        <div className="min-w-0 flex-1">
-          <div className="mb-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="flex min-w-0 items-center gap-1.5">
             <span className="truncate font-medium">{item.repository}</span>
-            <span className="text-muted-foreground/40">#{item.number}</span>
-            {item.unseenEventCount > 0 ? (
-              <span className="rounded-full border border-sky-200 bg-sky-50 px-1.5 py-[1px] font-medium text-sky-800">
-                {formatCount(item.unseenEventCount, "new event")}
-              </span>
-            ) : null}
-          </div>
-          <h4 className="line-clamp-3 text-sm font-semibold leading-5 text-foreground">
-            {item.title}
-          </h4>
+            <span className="shrink-0 text-muted-foreground/40">#{item.number}</span>
+          </span>
+          {item.unseenEventCount > 0 ? (
+            <span className="shrink-0 rounded-full border border-sky-200 bg-sky-50 px-1.5 py-[1px] font-medium text-sky-800">
+              {formatCount(item.unseenEventCount, "new event")}
+            </span>
+          ) : null}
         </div>
       </div>
+      <h4 className="mt-2 line-clamp-2 pl-1 text-sm font-semibold leading-5 text-foreground">
+        {item.title}
+      </h4>
       <div className="mt-3 border-t border-border pt-3">
         <div className="flex flex-wrap items-center gap-1.5">
           <span
