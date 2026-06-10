@@ -52,7 +52,6 @@ import {
   BellOff,
   Maximize2,
   GitCommitHorizontal,
-  GitPullRequest,
   GripVertical,
   Inbox,
   LoaderCircle,
@@ -2882,30 +2881,28 @@ function QuickPeekPanel({
     <aside className="flex h-full min-h-0 min-w-0 flex-col bg-card">
       <div className="border-b border-border px-5 py-5">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             <PanelRight className="h-3.5 w-3.5" />
-            Sneak peek
+            <span className="truncate">
+              {item.repository} / #{item.number}
+            </span>
           </div>
           <div className="flex items-center gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  asChild
-                  variant="ghost"
-                  size="icon-sm"
-                  className="h-8 w-8 rounded-md text-muted-foreground hover:text-foreground"
-                >
-                  <Link
-                    to="/pull-requests/$pullRequestId"
-                    params={{ pullRequestId: item.id }}
-                    aria-label={`Open PR detail for ${item.title}`}
-                  >
-                    <Maximize2 className="h-4 w-4" />
-                  </Link>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Open PR detail</TooltipContent>
-            </Tooltip>
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-md text-xs"
+            >
+              <Link
+                to="/pull-requests/$pullRequestId"
+                params={{ pullRequestId: item.id }}
+                aria-label={`Open full view for ${item.title}`}
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+                Open full view
+              </Link>
+            </Button>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -2954,7 +2951,11 @@ function QuickPeekPanel({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        <BoardItemNotes value={notes} onSave={onNotesSave} />
+        <BoardItemNotes
+          value={notes}
+          onSave={onNotesSave}
+          compactWhenEmpty
+        />
 
         <Separator className="my-4 bg-border" />
 
@@ -2996,46 +2997,46 @@ function QuickPeekPanel({
 
         <Separator className="my-4 bg-border" />
 
-        <section>
-          <div className="text-xs text-muted-foreground">
-            Open threads · {item.unresolvedThreadCount} of{" "}
-            {item.totalThreadCount} unresolved
-          </div>
-          <div className="mt-3 space-y-2">
-            {item.reviewThreads.length > 0 ? item.reviewThreads.map((thread) => (
-              <div
-                key={thread.id}
-                className="grid grid-cols-[30px_1fr] gap-3 rounded-md border border-border bg-muted/30 p-3"
-              >
-                <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-border bg-muted/40 text-xs text-muted-foreground">
-                  {thread.author.slice(0, 2).toUpperCase()}
-                </span>
-                <div className="min-w-0">
-                  <div className="line-clamp-2 text-sm leading-5 text-foreground">
-                    {thread.excerpt}
-                  </div>
+        {item.reviewThreads.length > 0 ? (
+          <>
+            <section>
+              <div className="text-xs text-muted-foreground">
+                Open threads · {item.unresolvedThreadCount} of{" "}
+                {item.totalThreadCount} unresolved
+              </div>
+              <div className="mt-3 space-y-2">
+                {item.reviewThreads.map((thread) => (
                   <div
-                    className={cn(
-                      "mt-1.5 text-xs",
-                      thread.status === "unresolved"
-                        ? "text-foreground"
-                        : "text-muted-foreground/70"
-                    )}
+                    key={thread.id}
+                    className="grid grid-cols-[30px_1fr] gap-3 rounded-md border border-border bg-muted/30 p-3"
                   >
-                    {thread.status}
-                    {thread.authorReplied ? " · author replied" : ""}
+                    <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-border bg-muted/40 text-xs text-muted-foreground">
+                      {thread.author.slice(0, 2).toUpperCase()}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="line-clamp-2 text-sm leading-5 text-foreground">
+                        {thread.excerpt}
+                      </div>
+                      <div
+                        className={cn(
+                          "mt-1.5 text-xs",
+                          thread.status === "unresolved"
+                            ? "text-foreground"
+                            : "text-muted-foreground/70"
+                        )}
+                      >
+                        {thread.status}
+                        {thread.authorReplied ? " · author replied" : ""}
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
-            )) : (
-              <div className="rounded-md border border-border bg-muted/30 p-3 text-sm leading-5 text-muted-foreground">
-                No open review threads.
-              </div>
-            )}
-          </div>
-        </section>
+            </section>
 
-        <Separator className="my-4 bg-border" />
+            <Separator className="my-4 bg-border" />
+          </>
+        ) : null}
 
         <section>
           <div className="text-xs text-muted-foreground">
@@ -3144,16 +3145,6 @@ function QuickPeekPanel({
             : item.unseenEventCount === 0
               ? "All caught up"
               : "Mark caught up"}
-        </Button>
-        <Button
-          asChild
-          variant="ghost"
-          className="col-span-2 h-9"
-        >
-          <Link to="/pull-requests/$pullRequestId" params={{ pullRequestId: item.id }}>
-            <GitPullRequest className="h-4 w-4" />
-            Open PR detail
-          </Link>
         </Button>
       </div>
     </aside>
