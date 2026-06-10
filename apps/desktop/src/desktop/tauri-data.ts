@@ -6,6 +6,7 @@ import type {
   ReviewThread,
 } from "@pr-tracker/core"
 import {
+  sampleAvatarUrlsByLogin,
   sampleLastSeenAtByPullRequestId,
   samplePullRequests,
 } from "@pr-tracker/core"
@@ -133,7 +134,11 @@ export async function getDesktopReviewerInbox(input?: {
   })
   const settings = await readLocalGithubSettings(db)
   const viewerLogin = settings.viewerLogin ?? "viewer"
-  const actors = buildActors(pullRequests, [viewerLogin])
+  const actors = buildActors(
+    pullRequests,
+    [viewerLogin],
+    await loadAvatarUrlsByLogin(db)
+  )
   const viewer = ensureActor(actors, viewerLogin)
   const lastSeenAtByPullRequestId = await loadLastSeen(db)
 
@@ -159,7 +164,11 @@ export async function getDesktopPullRequest(
 
   const settings = await readLocalGithubSettings(db)
   const viewerLogin = settings.viewerLogin ?? "viewer"
-  const actors = buildActors(pullRequests, [viewerLogin])
+  const actors = buildActors(
+    pullRequests,
+    [viewerLogin],
+    await loadAvatarUrlsByLogin(db)
+  )
   const viewer = ensureActor(actors, viewerLogin)
   const inbox = buildReviewerInbox({
     viewer,
@@ -664,6 +673,15 @@ async function seedLocalSampleData(db: SqlDatabase): Promise<void> {
       await ensureDefaultBoardItem(db, storedPullRequestId, now)
     }
 
+    for (const [login, avatarUrl] of Object.entries(sampleAvatarUrlsByLogin)) {
+      await upsertGithubAccount(db, {
+        login,
+        accountType: "user",
+        avatarUrl,
+        now,
+      })
+    }
+
     for (const [pullRequestId, lastSeenAt] of Object.entries(
       sampleLastSeenAtByPullRequestId
     )) {
@@ -712,8 +730,35 @@ async function upsertLocalPullRequestSnapshot(
     githubNodeId,
     rawPayload: snapshot,
   })
+  await storeSnapshotAvatarUrls(db, snapshot, now)
   await ensureDefaultBoardItem(db, storedPullRequestId, now)
   return { pullRequestId: storedPullRequestId, isFreshEnough: true }
+}
+
+async function storeSnapshotAvatarUrls(
+  db: SqlDatabase,
+  snapshot: GitHubPullRequestSnapshot,
+  now: string
+): Promise<void> {
+  const avatarUrlByLogin = new Map<string, string>()
+  const collect = (user?: { login?: string; avatar_url?: string }) => {
+    if (user?.login && user.avatar_url) {
+      avatarUrlByLogin.set(user.login, user.avatar_url)
+    }
+  }
+
+  collect(snapshot.pull_request.user)
+  snapshot.pull_request.requested_reviewers?.forEach(collect)
+  snapshot.reviews?.forEach((review) => collect(review.user))
+
+  for (const [login, avatarUrl] of avatarUrlByLogin) {
+    await upsertGithubAccount(db, {
+      login,
+      accountType: "user",
+      avatarUrl,
+      now,
+    })
+  }
 }
 
 async function getStoredPullRequestIdByGithubNodeId(
@@ -1801,7 +1846,8 @@ function snapshotToPullRequestItem(
 
 function buildActors(
   pullRequests: PullRequestItem[],
-  extraLogins: string[]
+  extraLogins: string[],
+  avatarUrlByLogin: Map<string, string>
 ): Actor[] {
   const logins = new Set<string>(extraLogins)
   for (const pullRequest of pullRequests) {
@@ -1814,7 +1860,20 @@ function buildActors(
     pullRequest.activity.forEach((event) => logins.add(event.actorId))
   }
 
-  return Array.from(logins).map((login) => ({ id: login, login }))
+  return Array.from(logins).map((login) => ({
+    id: login,
+    login,
+    avatarUrl: avatarUrlByLogin.get(login),
+  }))
+}
+
+async function loadAvatarUrlsByLogin(
+  db: SqlDatabase
+): Promise<Map<string, string>> {
+  const rows = await db.select<Array<{ login: string; avatar_url: string }>>(
+    `select login, avatar_url from github_accounts where avatar_url is not null`
+  )
+  return new Map(rows.map((row) => [row.login, row.avatar_url]))
 }
 
 function ensureActor(actors: Actor[], id: string): Actor {

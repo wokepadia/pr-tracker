@@ -21,6 +21,7 @@ export type WaitingOn = "you" | "author" | "none"
 
 export interface ReviewerState {
   login: string
+  avatarUrl?: string
   decision: ReviewDecision | "pending"
 }
 
@@ -35,6 +36,7 @@ export interface ReviewThreadView {
 export interface ActivityEventView {
   id: string
   actor: string
+  actorAvatarUrl?: string
   action: string
   occurredAt: string
   occurredAtIso: string
@@ -290,6 +292,7 @@ function buildReviewerStates(
 
   return [...latestByReviewer].map(([reviewerId, decision]) => ({
     login: actorLogin(actorById, reviewerId),
+    avatarUrl: actorById.get(reviewerId)?.avatarUrl,
     decision,
   }))
 }
@@ -304,6 +307,7 @@ function toActivityEventView(
   return {
     id: event.id,
     actor,
+    actorAvatarUrl: actorById.get(event.actorId)?.avatarUrl,
     action: withoutActorPrefix(event.title, actor),
     occurredAt: formatRelativeTime(event.occurredAt),
     occurredAtIso: event.occurredAt,

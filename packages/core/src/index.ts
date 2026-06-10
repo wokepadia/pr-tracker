@@ -79,6 +79,12 @@ export const sampleActors: Actor[] = [
   { id: "sam", login: "sam" }
 ];
 
+export const sampleAvatarUrlsByLogin: Record<string, string> = {
+  maya: "https://github.com/identicons/maya.png",
+  ari: "https://github.com/identicons/ari.png",
+  sam: "https://github.com/identicons/sam.png"
+};
+
 export const samplePullRequests: PullRequestItem[] = [
   {
     id: "pr_1",
