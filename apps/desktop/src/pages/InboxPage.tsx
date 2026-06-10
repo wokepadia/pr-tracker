@@ -1765,7 +1765,7 @@ function InboxHeader({
             <span className="text-xs text-muted-foreground">· {syncLabel}</span>
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            {activeCount} active PRs across user buckets
+            {activeCount} active PRs
           </div>
         </div>
         <div className="relative min-w-0 flex-[1_1_100%] lg:ml-auto lg:min-w-[220px] lg:max-w-[360px] lg:flex-1">
@@ -1907,10 +1907,6 @@ function KanbanBoard({
   onBucketColumnWidthChange: (bucketId: UserBucketId, width: number) => void
   onOpenPeek: (id: string) => void
 }) {
-  const totalCount = bucketLanes.reduce(
-    (total, lane) => total + (laneItems[lane.id]?.length ?? 0),
-    0
-  )
   const columnWidths = bucketLanes.map(
     (lane) => bucketColumnWidths[lane.id] ?? DEFAULT_BUCKET_COLUMN_WIDTH
   )
@@ -1946,24 +1942,6 @@ function KanbanBoard({
       onDragCancel={onDragCancel}
     >
       <section className="flex h-full min-h-0 flex-col bg-muted/20">
-        <div className="border-b border-border bg-background px-5 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-foreground">
-                Review board
-              </h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {totalCount} active PRs arranged in editable user buckets
-              </p>
-            </div>
-            <Badge
-              variant="outline"
-              className="rounded-full border-border bg-card px-2.5 text-xs text-muted-foreground"
-            >
-              Board
-            </Badge>
-          </div>
-        </div>
         <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
           <div
             className="flex h-full"
