@@ -16,7 +16,6 @@ import {
   saveGithubSettings,
   type GithubSettingsStatus,
 } from "@/api"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 
@@ -28,9 +27,6 @@ interface GithubSettingsFormProps {
   advancedInDisclosure?: boolean
   onSaved?: (settings: GithubSettingsStatus) => void | Promise<void>
 }
-
-const settingsInputClass =
-  "h-9 rounded-md border-border bg-background px-3 placeholder:text-muted-foreground/60"
 
 export function GithubSettingsForm({
   settings,
@@ -87,7 +83,7 @@ export function GithubSettingsForm({
     <label className="flex flex-col gap-2">
       <span className="text-sm font-medium">API base URL</span>
       <Input
-        className={settingsInputClass}
+        className="rounded-md"
         placeholder="https://api.github.com"
         value={apiBaseUrl}
         onChange={(event) => setApiBaseUrl(event.target.value)}
@@ -98,15 +94,10 @@ export function GithubSettingsForm({
   return (
     <form className="flex flex-col gap-4" onSubmit={submitSettings}>
       <label className="flex flex-col gap-2">
-        <span className="flex items-center gap-2 text-sm font-medium">
-          Read-only GitHub token
-          <Badge variant={tokenConfigured ? "default" : "secondary"}>
-            {tokenConfigured ? "Token saved" : "Not configured"}
-          </Badge>
-        </span>
+        <span className="text-sm font-medium">Read-only GitHub token</span>
         <Input
           autoComplete="off"
-          className={settingsInputClass}
+          className="rounded-md"
           placeholder={
             tokenConfigured
               ? "Leave blank to keep the saved token"
@@ -125,7 +116,7 @@ export function GithubSettingsForm({
       <label className="flex flex-col gap-2">
         <span className="text-sm font-medium">Repositories</span>
         <Input
-          className={settingsInputClass}
+          className="rounded-md"
           placeholder="zulip/zulip"
           value={repositories}
           onChange={(event) => setRepositories(event.target.value)}
@@ -138,7 +129,7 @@ export function GithubSettingsForm({
       <label className="flex flex-col gap-2">
         <span className="text-sm font-medium">Your GitHub username</span>
         <Input
-          className={settingsInputClass}
+          className="rounded-md"
           placeholder="your-github-login"
           value={viewerLogin}
           onChange={(event) => setViewerLogin(event.target.value)}

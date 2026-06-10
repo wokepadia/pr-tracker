@@ -16,6 +16,7 @@ import {
   getGithubSettingsStatus,
 } from "@/api"
 import { GithubSettingsForm } from "@/components/GithubSettingsForm"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
@@ -29,6 +30,7 @@ export function SettingsPage() {
     mutationFn: createSqliteBackup,
   })
 
+  const tokenConfigured = settingsQuery.data?.tokenConfigured ?? false
   const storageDescription =
     settingsQuery.data?.storage === "stronghold"
       ? "Saved tokens are stored in an encrypted local Tauri Stronghold vault, not in the browser or macOS Keychain."
@@ -58,16 +60,21 @@ export function SettingsPage() {
         </div>
 
         <Card className="rounded-md border-border p-5 shadow-none">
-          <div>
-            <div className="text-sm font-medium text-foreground">
-              Token storage
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium text-foreground">
+                Token storage
+              </div>
+              <div className="mt-1 text-sm text-muted-foreground">
+                {storageDescription}
+              </div>
             </div>
-            <div className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-              {storageDescription}
-            </div>
+            <Badge variant={tokenConfigured ? "default" : "secondary"}>
+              {tokenConfigured ? "Token saved" : "Not configured"}
+            </Badge>
           </div>
 
-          <Separator className="my-4" />
+          <Separator className="my-5" />
 
           {settingsQuery.error ? (
             <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
