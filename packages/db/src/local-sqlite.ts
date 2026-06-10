@@ -47,6 +47,9 @@ export interface LocalPullRequestRow {
   state: string;
   is_draft: number;
   latest_commit_sha: string | null;
+  additions: number | null;
+  deletions: number | null;
+  changed_files: number | null;
   github_created_at: string | null;
   github_updated_at: string | null;
   raw_payload_json: string;
@@ -198,6 +201,7 @@ export function initializeLocalDatabase(db: DatabaseSync): void {
   db.exec(localDesktopSchemaSql);
   ensureLocalBoardItemNotesColumn(db);
   ensureLocalReviewThreadLedgerColumns(db);
+  ensureLocalPullRequestSizeColumns(db);
 }
 
 function sqliteStringLiteral(value: string): string {
@@ -311,6 +315,9 @@ export function listLocalPullRequestRows(
           pr.state,
           pr.is_draft,
           pr.latest_commit_sha,
+          pr.additions,
+          pr.deletions,
+          pr.changed_files,
           pr.github_created_at,
           pr.github_updated_at,
           pr.raw_payload_json
@@ -793,13 +800,16 @@ function upsertLocalPullRequest(
         state,
         is_draft,
         latest_commit_sha,
+        additions,
+        deletions,
+        changed_files,
         github_created_at,
         github_updated_at,
         raw_payload_json,
         created_at,
         updated_at
       )
-      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       on conflict(github_node_id)
       do update set
         repository_id = excluded.repository_id,
@@ -810,6 +820,9 @@ function upsertLocalPullRequest(
         state = excluded.state,
         is_draft = excluded.is_draft,
         latest_commit_sha = excluded.latest_commit_sha,
+        additions = excluded.additions,
+        deletions = excluded.deletions,
+        changed_files = excluded.changed_files,
         github_created_at = excluded.github_created_at,
         github_updated_at = excluded.github_updated_at,
         raw_payload_json = excluded.raw_payload_json,
@@ -827,6 +840,9 @@ function upsertLocalPullRequest(
     pullRequest.state === "merged" ? "closed" : pullRequest.state,
     boolToSqlite(pullRequest.isDraft),
     pullRequest.latestCommitSha,
+    pullRequest.additions ?? null,
+    pullRequest.deletions ?? null,
+    pullRequest.changedFiles ?? null,
     pullRequest.createdAt,
     pullRequest.updatedAt,
     JSON.stringify(options.rawPayload ?? pullRequest),
@@ -874,6 +890,9 @@ function snapshotToPullRequestItem(snapshot: GitHubPullRequestSnapshot): PullReq
     createdAt: pullRequest.created_at ?? updatedAt,
     updatedAt,
     latestCommitSha: pullRequest.head?.sha ?? "",
+    additions: pullRequest.additions,
+    deletions: pullRequest.deletions,
+    changedFiles: pullRequest.changed_files,
     requestedReviewerIds: (pullRequest.requested_reviewers ?? [])
       .map((reviewer) => reviewer.login)
       .filter((login): login is string => Boolean(login)),
@@ -1061,6 +1080,19 @@ function ensureLocalBoardItemNotesColumn(db: DatabaseSync): void {
   if (rows.some((row) => row.name === "notes")) return;
 
   db.exec(`alter table board_items add column notes text`);
+}
+
+function ensureLocalPullRequestSizeColumns(db: DatabaseSync): void {
+  const rows = db
+    .prepare(`pragma table_info(pull_requests)`)
+    .all() as Array<{ name: string }>;
+  const columnNames = new Set(rows.map((row) => row.name));
+
+  for (const column of ["additions", "deletions", "changed_files"]) {
+    if (!columnNames.has(column)) {
+      db.exec(`alter table pull_requests add column ${column} integer`);
+    }
+  }
 }
 
 function ensureLocalReviewThreadLedgerColumns(db: DatabaseSync): void {

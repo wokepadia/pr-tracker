@@ -61,6 +61,9 @@ describe("GitHub token pull request source", () => {
               data: {
                 repository: {
                   pullRequest: {
+                    additions: 120,
+                    deletions: 30,
+                    changedFiles: 7,
                     reviewThreads: {
                       nodes: [
                         {
@@ -108,7 +111,10 @@ describe("GitHub token pull request source", () => {
       repository: { full_name: "acme/web" },
       pull_request: {
         number: 42,
-        requested_reviewers: [{ login: "viewer" }]
+        requested_reviewers: [{ login: "viewer" }],
+        additions: 120,
+        deletions: 30,
+        changed_files: 7
       }
     });
     expect(snapshots[0]?.review_threads).toEqual([

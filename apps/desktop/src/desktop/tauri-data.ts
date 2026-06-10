@@ -86,6 +86,9 @@ interface LocalPullRequestRow {
   state: string
   is_draft: number
   latest_commit_sha: string | null
+  additions: number | null
+  deletions: number | null
+  changed_files: number | null
   github_created_at: string | null
   github_updated_at: string | null
   raw_payload_json: string
@@ -455,6 +458,7 @@ async function initializeDatabase(): Promise<SqlDatabase> {
   }
   await ensureBoardItemNotesColumn(db)
   await ensureReviewThreadLedgerColumns(db)
+  await ensurePullRequestSizeColumns(db)
   return db
 }
 
@@ -854,9 +858,13 @@ async function upsertPullRequestItem(
       insert into pull_requests (
         id, github_node_id, repository_id, number, title, body, url,
         author_account_id, state, is_draft, latest_commit_sha,
+        additions, deletions, changed_files,
         github_created_at, github_updated_at, raw_payload_json, created_at, updated_at
       )
-      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      values (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+        $17, $18, $19
+      )
       on conflict(github_node_id)
       do update set
         repository_id = excluded.repository_id,
@@ -867,6 +875,9 @@ async function upsertPullRequestItem(
         state = excluded.state,
         is_draft = excluded.is_draft,
         latest_commit_sha = excluded.latest_commit_sha,
+        additions = excluded.additions,
+        deletions = excluded.deletions,
+        changed_files = excluded.changed_files,
         github_created_at = excluded.github_created_at,
         github_updated_at = excluded.github_updated_at,
         raw_payload_json = excluded.raw_payload_json,
@@ -884,6 +895,9 @@ async function upsertPullRequestItem(
       pullRequest.state === "merged" ? "closed" : pullRequest.state,
       boolToSqlite(pullRequest.isDraft),
       pullRequest.latestCommitSha,
+      pullRequest.additions ?? null,
+      pullRequest.deletions ?? null,
+      pullRequest.changedFiles ?? null,
       pullRequest.createdAt,
       pullRequest.updatedAt,
       JSON.stringify(options.rawPayload ?? pullRequest),
@@ -1298,6 +1312,9 @@ async function listPullRequestRows(
         pr.state,
         pr.is_draft,
         pr.latest_commit_sha,
+        pr.additions,
+        pr.deletions,
+        pr.changed_files,
         pr.github_created_at,
         pr.github_updated_at,
         pr.raw_payload_json
@@ -1347,6 +1364,9 @@ async function toPullRequestItem(
     createdAt: row.github_created_at ?? new Date().toISOString(),
     updatedAt: row.github_updated_at ?? new Date().toISOString(),
     latestCommitSha: row.latest_commit_sha ?? "",
+    additions: row.additions ?? undefined,
+    deletions: row.deletions ?? undefined,
+    changedFiles: row.changed_files ?? undefined,
     requestedReviewerIds: reviewRequests.flatMap((request) =>
       request.login ? [request.login] : []
     ),
@@ -1852,6 +1872,9 @@ function snapshotToPullRequestItem(
     createdAt: pullRequest.created_at ?? updatedAt,
     updatedAt,
     latestCommitSha: pullRequest.head?.sha ?? "",
+    additions: pullRequest.additions,
+    deletions: pullRequest.deletions,
+    changedFiles: pullRequest.changed_files,
     requestedReviewerIds: (pullRequest.requested_reviewers ?? [])
       .map((reviewer) => reviewer.login)
       .filter((login): login is string => Boolean(login)),
@@ -2108,6 +2131,19 @@ async function ensureBoardItemNotesColumn(db: SqlDatabase): Promise<void> {
   if (rows.some((row) => row.name === "notes")) return
 
   await db.execute(`alter table board_items add column notes text`)
+}
+
+async function ensurePullRequestSizeColumns(db: SqlDatabase): Promise<void> {
+  const rows = await db.select<Array<{ name: string }>>(
+    `pragma table_info(pull_requests)`
+  )
+  const columnNames = new Set(rows.map((row) => row.name))
+
+  for (const column of ["additions", "deletions", "changed_files"]) {
+    if (!columnNames.has(column)) {
+      await db.execute(`alter table pull_requests add column ${column} integer`)
+    }
+  }
 }
 
 async function ensureReviewThreadLedgerColumns(db: SqlDatabase): Promise<void> {

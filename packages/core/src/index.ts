@@ -63,6 +63,10 @@ export interface PullRequestItem {
   createdAt: string;
   updatedAt: string;
   latestCommitSha: string;
+  /** Diff size facts; undefined when the sync source did not provide them. */
+  additions?: number;
+  deletions?: number;
+  changedFiles?: number;
   requestedReviewerIds: string[];
   reviews: ReviewDecisionEvent[];
   threads: ReviewThread[];
@@ -102,6 +106,9 @@ export const samplePullRequests: PullRequestItem[] = [
     createdAt: "2026-05-29T08:20:00.000Z",
     updatedAt: "2026-06-01T11:30:00.000Z",
     latestCommitSha: "c2",
+    additions: 38,
+    deletions: 6,
+    changedFiles: 3,
     requestedReviewerIds: ["viewer"],
     reviews: [],
     threads: [],
@@ -127,6 +134,9 @@ export const samplePullRequests: PullRequestItem[] = [
     createdAt: "2026-05-24T09:00:00.000Z",
     updatedAt: "2026-06-01T09:12:00.000Z",
     latestCommitSha: "f3",
+    additions: 214,
+    deletions: 58,
+    changedFiles: 9,
     requestedReviewerIds: [],
     reviews: [
       {
@@ -167,6 +177,9 @@ export const samplePullRequests: PullRequestItem[] = [
     createdAt: "2026-05-28T13:45:00.000Z",
     updatedAt: "2026-05-30T10:05:00.000Z",
     latestCommitSha: "d1",
+    additions: 1240,
+    deletions: 310,
+    changedFiles: 21,
     requestedReviewerIds: [],
     reviews: [
       {

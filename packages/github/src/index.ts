@@ -60,6 +60,9 @@ export interface GitHubPullRequestSnapshot {
     user?: { login?: string; avatar_url?: string };
     head?: { sha?: string };
     merged?: boolean;
+    additions?: number;
+    deletions?: number;
+    changed_files?: number;
     requested_reviewers?: Array<{ login?: string; avatar_url?: string }>;
   };
   reviews?: GitHubReviewSnapshot[];
@@ -154,6 +157,10 @@ interface GitHubPullRequestFromApi {
   head?: { sha?: string };
   merged?: boolean;
   merged_at?: string | null;
+  // Only present on the single-PR detail endpoint, not the list endpoint.
+  additions?: number;
+  deletions?: number;
+  changed_files?: number;
   requested_reviewers?: Array<{ login?: string; avatar_url?: string }>;
 }
 
@@ -308,9 +315,9 @@ async function listConfiguredRepositoryPullRequests(
       pullRequests,
       8,
       async (pullRequest) => {
-        const [reviews, reviewThreads] = await Promise.all([
+        const [reviews, graphqlFacts] = await Promise.all([
           listPullRequestReviews(octokit, owner, name, pullRequest.number),
-          listPullRequestReviewThreads(octokit, owner, name, pullRequest.number)
+          fetchPullRequestGraphqlFacts(octokit, owner, name, pullRequest.number)
         ]);
 
         return {
@@ -320,11 +327,11 @@ async function listConfiguredRepositoryPullRequests(
             owner: { login: owner }
           },
           pull_request: {
-            ...pullRequest,
+            ...withGraphqlSizeFallback(pullRequest, graphqlFacts.size),
             merged: pullRequest.merged ?? Boolean(pullRequest.merged_at)
           },
           reviews: stripReviewBodies(reviews),
-          review_threads: reviewThreads
+          review_threads: graphqlFacts.reviewThreads
         };
       }
     );
@@ -538,9 +545,9 @@ async function getTokenPullRequest(
         pull_number: lookup.number
       }
     );
-    const [reviews, reviewThreads] = await Promise.all([
+    const [reviews, graphqlFacts] = await Promise.all([
       listPullRequestReviews(octokit, owner, repo, response.data.number),
-      listPullRequestReviewThreads(octokit, owner, repo, response.data.number)
+      fetchPullRequestGraphqlFacts(octokit, owner, repo, response.data.number)
     ]);
 
     return {
@@ -550,11 +557,11 @@ async function getTokenPullRequest(
         owner: { login: owner }
       },
       pull_request: {
-        ...response.data,
+        ...withGraphqlSizeFallback(response.data, graphqlFacts.size),
         merged: response.data.merged ?? Boolean(response.data.merged_at)
       },
       reviews: options.stripReviewBodies ? stripReviewBodies(reviews) : reviews,
-      review_threads: reviewThreads
+      review_threads: graphqlFacts.reviewThreads
     };
   } catch (error) {
     if (isGithubNotFoundError(error)) {
@@ -578,6 +585,9 @@ const reviewThreadsGraphqlQuery = `
   query ReviewThreads($owner: String!, $name: String!, $number: Int!) {
     repository(owner: $owner, name: $name) {
       pullRequest(number: $number) {
+        additions
+        deletions
+        changedFiles
         reviewThreads(first: 100) {
           nodes {
             id
@@ -602,6 +612,9 @@ interface GitHubReviewThreadsGraphqlResponse {
   data?: {
     repository?: {
       pullRequest?: {
+        additions?: number;
+        deletions?: number;
+        changedFiles?: number;
         reviewThreads?: {
           nodes?: Array<{
             id?: string;
@@ -623,12 +636,21 @@ interface GitHubReviewThreadsGraphqlResponse {
   errors?: unknown[];
 }
 
-async function listPullRequestReviewThreads(
+interface PullRequestGraphqlFacts {
+  reviewThreads?: GitHubReviewThreadSnapshot[];
+  size?: {
+    additions?: number;
+    deletions?: number;
+    changed_files?: number;
+  };
+}
+
+async function fetchPullRequestGraphqlFacts(
   octokit: RequestingOctokit,
   owner: string,
   repo: string,
   pullNumber: number
-): Promise<GitHubReviewThreadSnapshot[] | undefined> {
+): Promise<PullRequestGraphqlFacts> {
   try {
     const response = await octokit.request<GitHubReviewThreadsGraphqlResponse>(
       "POST /graphql",
@@ -639,34 +661,57 @@ async function listPullRequestReviewThreads(
     );
     const pullRequest = response.data.data?.repository?.pullRequest;
     if (!pullRequest) {
-      return undefined;
+      return {};
     }
 
     const nodes = pullRequest.reviewThreads?.nodes ?? [];
-    return nodes
-      .filter((node): node is NonNullable<typeof node> => Boolean(node?.id))
-      .map((node) => ({
-        id: node.id as string,
-        is_resolved: node.isResolved ?? false,
-        is_outdated: node.isOutdated ?? false,
-        path: node.path,
-        line: node.line,
-        comments: (node.comments?.nodes ?? [])
-          .filter((comment): comment is NonNullable<typeof comment> =>
-            Boolean(comment)
-          )
-          .map((comment) => ({
-            author: comment.author?.login
-              ? { login: comment.author.login }
-              : undefined,
-            created_at: comment.createdAt
-          }))
-      }));
+    return {
+      size: {
+        additions: pullRequest.additions,
+        deletions: pullRequest.deletions,
+        changed_files: pullRequest.changedFiles
+      },
+      reviewThreads: nodes
+        .filter((node): node is NonNullable<typeof node> => Boolean(node?.id))
+        .map((node) => ({
+          id: node.id as string,
+          is_resolved: node.isResolved ?? false,
+          is_outdated: node.isOutdated ?? false,
+          path: node.path,
+          line: node.line,
+          comments: (node.comments?.nodes ?? [])
+            .filter((comment): comment is NonNullable<typeof comment> =>
+              Boolean(comment)
+            )
+            .map((comment) => ({
+              author: comment.author?.login
+                ? { login: comment.author.login }
+                : undefined,
+              created_at: comment.createdAt
+            }))
+        }))
+    };
   } catch {
-    // Thread data is an enrichment; a failed GraphQL call (older GHES,
-    // token without GraphQL access) must not fail the whole sync.
-    return undefined;
+    // GraphQL facts are an enrichment; a failed call (older GHES, token
+    // without GraphQL access) must not fail the whole sync.
+    return {};
   }
+}
+
+function withGraphqlSizeFallback(
+  pullRequest: GitHubPullRequestFromApi,
+  size: PullRequestGraphqlFacts["size"]
+): GitHubPullRequestFromApi {
+  if (!size) {
+    return pullRequest;
+  }
+
+  return {
+    ...pullRequest,
+    additions: pullRequest.additions ?? size.additions,
+    deletions: pullRequest.deletions ?? size.deletions,
+    changed_files: pullRequest.changed_files ?? size.changed_files
+  };
 }
 
 async function listPullRequestReviews(

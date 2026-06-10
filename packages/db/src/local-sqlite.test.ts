@@ -232,6 +232,9 @@ describe("local SQLite storage", () => {
                   updated_at: "2026-06-01T09:00:00.000Z",
                   user: { login: "author" },
                   head: { sha: "head-sha" },
+                  additions: 120,
+                  deletions: 30,
+                  changed_files: 7,
                   requested_reviewers: [{ login: "viewer" }]
                 },
                 reviews: [
@@ -265,7 +268,10 @@ describe("local SQLite storage", () => {
           title: "Ship local cache sync",
           author_login: "author",
           state: "open",
-          latest_commit_sha: "head-sha"
+          latest_commit_sha: "head-sha",
+          additions: 120,
+          deletions: 30,
+          changed_files: 7
         }
       ]);
       expect(
