@@ -131,6 +131,7 @@ import {
 
 type LaneId = UserBucketId
 type ActionQueueTabId = "home" | "new_activity" | LaneId
+type BoardGroupMode = Extract<QueueGroupMode, "action" | "repository">
 
 const REVIEW_QUEUE_MIN_WIDTH = 680
 const QUICK_PEEK_MIN_WIDTH = 320
@@ -317,6 +318,12 @@ export function InboxPage() {
   const [hasHydratedBoardState, setHasHydratedBoardState] = useState(false)
   const [failedCaughtUpItemId, setFailedCaughtUpItemId] = useState<string>()
   const [groupMode, setGroupMode] = useState<QueueGroupMode>("action")
+  const [groupModeByActionView, setGroupModeByActionView] = useState<
+    Record<string, BoardGroupMode>
+  >({
+    home: "action",
+    new_activity: "action",
+  })
   const [searchQuery, setSearchQuery] = useState("")
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null)
   const [bucketColumnWidths, setBucketColumnWidths] = useState<
@@ -425,6 +432,11 @@ export function InboxPage() {
   )
   const [activeActionTabId, setActiveActionTabId] =
     useState<ActionQueueTabId>("home")
+  const activeBoardGroupMode =
+    groupModeByActionView[activeActionTabId] ?? "action"
+  const effectiveGroupMode = isStashedGroupMode(groupMode)
+    ? groupMode
+    : activeBoardGroupMode
   const visibleActionItems = useMemo(
     () =>
       activeActionTabId === "home"
@@ -434,9 +446,13 @@ export function InboxPage() {
           : boardItems,
     [activeActionTabId, boardItems, searchedNewActivityItems]
   )
+  const actionGroupItems =
+    activeActionTabId === "new_activity"
+      ? searchedNewActivityItems
+      : searchedActiveItems
   const repositoryGroups = useMemo(
-    () => buildRepositoryGroups(searchedActiveItems),
-    [searchedActiveItems]
+    () => buildRepositoryGroups(actionGroupItems),
+    [actionGroupItems]
   )
   const [openRepositoryIds, setOpenRepositoryIds] = useState<Set<string>>(
     () => new Set()
@@ -449,13 +465,13 @@ export function InboxPage() {
     [openRepositoryIds, repositoryGroups]
   )
   const visibleQueueItems =
-    groupMode === "action"
+    effectiveGroupMode === "action"
       ? visibleActionItems
-      : groupMode === "repository"
+      : effectiveGroupMode === "repository"
         ? visibleRepositoryItems
-        : groupMode === "pinned"
+        : effectiveGroupMode === "pinned"
           ? searchedPinnedItems
-          : groupMode === "snoozed"
+          : effectiveGroupMode === "snoozed"
             ? searchedSnoozedItems
             : searchedMutedItems
   const [selectedId, setSelectedId] = useState<string>("")
@@ -516,7 +532,7 @@ export function InboxPage() {
   ])
 
   useEffect(() => {
-    if (groupMode !== "repository") return
+    if (effectiveGroupMode !== "repository") return
     if (repositoryGroups.length === 0) return
 
     setOpenRepositoryIds((current) => {
@@ -529,7 +545,7 @@ export function InboxPage() {
       if (hasEveryRepositoryOpen) return current
       return new Set(repositoryGroups.map((group) => group.id))
     })
-  }, [groupMode, repositoryGroups])
+  }, [effectiveGroupMode, repositoryGroups])
 
   useEffect(() => {
     if (!inboxView) return
@@ -541,14 +557,13 @@ export function InboxPage() {
   function moveSelectionAfterHiding(itemId: string) {
     const remainingVisible = visibleQueueItems.filter((item) => item.id !== itemId)
 
-    if (remainingVisible.length === 0 && isStashedGroupMode(groupMode)) {
-      setGroupMode("action")
-      setActiveActionTabId("home")
+    if (remainingVisible.length === 0 && isStashedGroupMode(effectiveGroupMode)) {
+      activateActionView("home")
     }
 
     if (
       remainingVisible.length === 0 &&
-      groupMode === "action" &&
+      effectiveGroupMode === "action" &&
       activeActionTabId !== "home"
     ) {
       setActiveActionTabId("home")
@@ -704,8 +719,7 @@ export function InboxPage() {
   function moveSelectedToBucket(bucketId: UserBucketId) {
     if (!selectedItem) return
     moveItemToBucket(selectedItem.id, bucketId)
-    setActiveActionTabId(bucketId)
-    setGroupMode("action")
+    activateActionView(bucketId)
   }
 
   function snoozeSelected() {
@@ -728,8 +742,7 @@ export function InboxPage() {
       delete next.muted
       return next
     })
-    setGroupMode("action")
-    setActiveActionTabId(bucketIdForItem(selectedItem, localQueueState) ?? "home")
+    activateActionView(bucketIdForItem(selectedItem, localQueueState) ?? "home")
     setSelectedId(itemId)
   }
 
@@ -742,9 +755,8 @@ export function InboxPage() {
       pinned: current.pinned ? undefined : true,
     }))
 
-    if (wasPinned && groupMode === "pinned") {
-      setGroupMode("action")
-      setActiveActionTabId(bucketIdForItem(selectedItem, localQueueState) ?? "home")
+    if (wasPinned && effectiveGroupMode === "pinned") {
+      activateActionView(bucketIdForItem(selectedItem, localQueueState) ?? "home")
       setSelectedId(itemId)
     }
   }
@@ -767,22 +779,32 @@ export function InboxPage() {
     }))
   }
 
+  function activateActionView(actionViewId: ActionQueueTabId) {
+    setGroupMode(groupModeByActionView[actionViewId] ?? "action")
+    setActiveActionTabId(actionViewId)
+  }
+
+  function changeBoardGroupMode(nextGroupMode: BoardGroupMode) {
+    setGroupMode(nextGroupMode)
+    setGroupModeByActionView((current) => ({
+      ...current,
+      [activeActionTabId]: nextGroupMode,
+    }))
+  }
+
   function focusHome() {
-    setGroupMode("action")
-    setActiveActionTabId("home")
+    activateActionView("home")
     setSelectedId("")
   }
 
   function focusNewActivity() {
     if (searchedNewActivityItems.length === 0) return
-    setGroupMode("action")
-    setActiveActionTabId("new_activity")
+    activateActionView("new_activity")
     setSelectedId("")
   }
 
   function focusLane(laneId: LaneId) {
-    setGroupMode("action")
-    setActiveActionTabId(laneId)
+    activateActionView(laneId)
     setSelectedId("")
   }
 
@@ -835,8 +857,7 @@ export function InboxPage() {
 
     if (!target) return
     moveItemToBucket(itemId, target.bucketId, target.overItemId)
-    setGroupMode("action")
-    setActiveActionTabId("home")
+    activateActionView("home")
   }
 
   if (inboxQuery.isLoading) {
@@ -862,23 +883,39 @@ export function InboxPage() {
   const reviewWorkspaceMinWidth = selectedItem
     ? REVIEW_WORKSPACE_MIN_WIDTH
     : REVIEW_QUEUE_MIN_WIDTH
+  const headerTitle = inboxHeaderTitle({
+    activeActionTabId,
+    groupMode: effectiveGroupMode,
+    userBuckets,
+  })
+  const headerCount = inboxHeaderCount({
+    activeActionTabId,
+    groupMode: effectiveGroupMode,
+    searchedActiveItems,
+    searchedNewActivityItems,
+    searchedPinnedItems,
+    searchedSnoozedItems,
+    searchedMutedItems,
+    laneItems,
+  })
   const reviewQueuePanel = (
     <div className="flex h-full min-h-0 min-w-0 flex-col border-b border-border">
       <InboxHeader
-        groupMode={groupMode}
-        activeCount={searchedActiveItems.length}
+        groupMode={activeBoardGroupMode}
+        title={headerTitle}
+        activeCount={headerCount}
         searchQuery={searchQuery}
         syncLabel={formatSyncLabel(inboxQuery.dataUpdatedAt)}
         githubSearchQuery={githubSearchQueryDraft}
         isGithubSearchPending={inboxQuery.isFetching}
-        onGroupModeChange={setGroupMode}
+        onGroupModeChange={changeBoardGroupMode}
         onGithubSearchQueryChange={setGithubSearchQueryDraft}
         onGithubSearchQueryReset={resetGithubSearchQuery}
         onGithubSearchQuerySubmit={applyGithubSearchQuery}
         onSearchQueryChange={setSearchQuery}
       />
       <div className="min-h-0 flex-1 overflow-y-auto pt-2 pb-7">
-        {groupMode === "action" ? (
+        {effectiveGroupMode === "action" ? (
           activeActionTabId !== "new_activity" ? (
             <KanbanBoard
               laneItems={laneItems}
@@ -916,7 +953,7 @@ export function InboxPage() {
               onOpenPeek={setSelectedId}
             />
           )
-        ) : groupMode === "repository" ? (
+        ) : effectiveGroupMode === "repository" ? (
           repositoryGroups.map((group) => (
             <QueueLane
               key={group.id}
@@ -937,7 +974,7 @@ export function InboxPage() {
               onOpenPeek={setSelectedId}
             />
           ))
-        ) : groupMode === "pinned" ? (
+        ) : effectiveGroupMode === "pinned" ? (
           <QueueLane
             group={{ id: "pinned", label: "Pinned", tone: "changed" }}
             isOpen
@@ -951,7 +988,7 @@ export function InboxPage() {
             onToggle={() => undefined}
             onOpenPeek={setSelectedId}
           />
-        ) : groupMode === "snoozed" ? (
+        ) : effectiveGroupMode === "snoozed" ? (
           <QueueLane
             group={{ id: "snoozed", label: "Snoozed", tone: "quiet" }}
             isOpen
@@ -995,13 +1032,15 @@ export function InboxPage() {
       <InboxSidebar
         laneItems={laneItems}
         bucketLanes={bucketLanes}
-        activeActionTabId={groupMode === "action" ? activeActionTabId : undefined}
+        activeActionTabId={
+          isStashedGroupMode(effectiveGroupMode) ? undefined : activeActionTabId
+        }
         newActivityCount={searchedNewActivityItems.length}
-        pinnedActive={groupMode === "pinned"}
+        pinnedActive={effectiveGroupMode === "pinned"}
         pinnedCount={searchedPinnedItems.length}
-        snoozedActive={groupMode === "snoozed"}
+        snoozedActive={effectiveGroupMode === "snoozed"}
         snoozedCount={searchedSnoozedItems.length}
-        mutedActive={groupMode === "muted"}
+        mutedActive={effectiveGroupMode === "muted"}
         mutedCount={searchedMutedItems.length}
         onSelectHome={focusHome}
         onSelectNewActivity={focusNewActivity}
@@ -1696,6 +1735,7 @@ function BucketManagerDialog({
 
 function InboxHeader({
   groupMode,
+  title,
   activeCount,
   searchQuery,
   syncLabel,
@@ -1707,13 +1747,14 @@ function InboxHeader({
   onGithubSearchQuerySubmit,
   onSearchQueryChange,
 }: {
-  groupMode: QueueGroupMode
+  groupMode: BoardGroupMode
+  title: string
   activeCount: number
   searchQuery: string
   syncLabel: string
   githubSearchQuery: string
   isGithubSearchPending: boolean
-  onGroupModeChange: (mode: QueueGroupMode) => void
+  onGroupModeChange: (mode: BoardGroupMode) => void
   onGithubSearchQueryChange: (query: string) => void
   onGithubSearchQueryReset: () => void
   onGithubSearchQuerySubmit: (event: FormEvent<HTMLFormElement>) => void
@@ -1724,7 +1765,7 @@ function InboxHeader({
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight">Review Inbox</h1>
+            <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
             <span className="text-xs text-muted-foreground">· {syncLabel}</span>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -1787,7 +1828,7 @@ function InboxHeader({
             </DropdownMenu>
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            {activeCount} active PRs
+            {formatCount(activeCount, "PR")}
           </div>
         </div>
         <div className="relative min-w-0 flex-[1_1_100%] lg:ml-auto lg:min-w-[220px] lg:max-w-[360px] lg:flex-1">
@@ -1803,7 +1844,7 @@ function InboxHeader({
         </div>
         <Tabs
           value={groupMode}
-          onValueChange={(value) => onGroupModeChange(value as QueueGroupMode)}
+          onValueChange={(value) => onGroupModeChange(value as BoardGroupMode)}
           className="gap-0"
         >
           <TabsList aria-label="Group pull requests">
@@ -1832,6 +1873,52 @@ function formatSyncLabel(dataUpdatedAt: number): string {
   if (hours < 24) return `synced ${hours}h ago`
 
   return `synced ${Math.floor(hours / 24)}d ago`
+}
+
+function inboxHeaderTitle({
+  activeActionTabId,
+  groupMode,
+  userBuckets,
+}: {
+  activeActionTabId: ActionQueueTabId
+  groupMode: QueueGroupMode
+  userBuckets: UserBucketDefinition[]
+}): string {
+  if (groupMode === "pinned") return "Pinned"
+  if (groupMode === "snoozed") return "Snoozed"
+  if (groupMode === "muted") return "Muted"
+  if (activeActionTabId === "new_activity") return "New activity"
+  if (activeActionTabId !== "home") {
+    return userBucketLabelFromId(userBuckets, activeActionTabId)
+  }
+  return "Review Inbox"
+}
+
+function inboxHeaderCount({
+  activeActionTabId,
+  groupMode,
+  searchedActiveItems,
+  searchedNewActivityItems,
+  searchedPinnedItems,
+  searchedSnoozedItems,
+  searchedMutedItems,
+  laneItems,
+}: {
+  activeActionTabId: ActionQueueTabId
+  groupMode: QueueGroupMode
+  searchedActiveItems: ReviewQueueItemView[]
+  searchedNewActivityItems: ReviewQueueItemView[]
+  searchedPinnedItems: ReviewQueueItemView[]
+  searchedSnoozedItems: ReviewQueueItemView[]
+  searchedMutedItems: ReviewQueueItemView[]
+  laneItems: Record<LaneId, ReviewQueueItemView[]>
+}): number {
+  if (groupMode === "pinned") return searchedPinnedItems.length
+  if (groupMode === "snoozed") return searchedSnoozedItems.length
+  if (groupMode === "muted") return searchedMutedItems.length
+  if (activeActionTabId === "new_activity") return searchedNewActivityItems.length
+  if (activeActionTabId !== "home") return laneItems[activeActionTabId]?.length ?? 0
+  return searchedActiveItems.length
 }
 
 function formatUnknownError(error: unknown): string {
