@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Edit3, Eye, Save, StickyNote, X } from "lucide-react"
+import { Edit3, Save, StickyNote, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { MarkdownContent } from "./MarkdownContent"
@@ -16,7 +16,6 @@ export function BoardItemNotes({
   const [draft, setDraft] = useState(value)
   const [isEditing, setIsEditing] = useState(false)
   const hasNotes = value.trim().length > 0
-  const hasDraft = draft.trim().length > 0
   const hasDraftChanges = draft !== value
 
   useEffect(() => {
@@ -70,17 +69,6 @@ export function BoardItemNotes({
             rows={5}
             className="min-h-[116px] w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm leading-5 text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-foreground/35 focus:ring-2 focus:ring-foreground/10"
           />
-          <div className="rounded-md border border-border bg-muted/20 p-3">
-            <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-              <Eye className="h-3.5 w-3.5" />
-              Preview
-            </div>
-            {hasDraft ? (
-              <MarkdownContent source={draft} className="text-sm leading-5" />
-            ) : (
-              <p className="text-sm text-muted-foreground">No notes yet.</p>
-            )}
-          </div>
           <div className="flex items-center justify-end gap-2">
             <Button
               type="button"
