@@ -44,4 +44,6 @@ Keep code readable, deterministic, and easy to review. Update tests and docs in 
 
 Commit at each logical step according to the Zulip-inspired discipline in [docs/commit-guidelines.md](docs/commit-guidelines.md). Each commit should be one minimal coherent idea that can be reviewed independently. Use `area: Imperative sentence.` summaries, keep them specific, and write a body when the reasoning is non-obvious. Amend/rebase away temporary fixup commits before review; the final history should explain the codebase evolution, not the messy development path.
 
+Agents should create these commits without asking for separate permission once a coherent checkpoint is implemented, verified, and reviewed. Do not wait for the user to prompt "commit"; keep the branch history current as work progresses. Stage only files that belong to the completed checkpoint, and leave unrelated dirty or untracked files alone.
+
 Do not create merge commits when bringing branch work onto `main`; rebase the branch onto `main` and fast-forward `main` to the rebased tip.
