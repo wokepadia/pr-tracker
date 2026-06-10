@@ -863,7 +863,7 @@ export function InboxPage() {
     ? REVIEW_WORKSPACE_MIN_WIDTH
     : REVIEW_QUEUE_MIN_WIDTH
   const reviewQueuePanel = (
-    <div className="flex h-full min-h-0 min-w-0 flex-col border-b border-border">
+    <div className="flex h-full min-w-0 flex-col border-b border-border">
       <InboxHeader
         groupMode={groupMode}
         activeCount={searchedActiveItems.length}
@@ -987,7 +987,7 @@ export function InboxPage() {
   return (
     <TooltipProvider delayDuration={200}>
       <div
-        className="grid h-full min-h-0 overflow-x-auto"
+        className="grid min-h-[calc(100vh-48px)] overflow-x-auto"
         style={{
           gridTemplateColumns: `${REVIEW_SIDEBAR_WIDTH}px minmax(${reviewWorkspaceMinWidth}px, 1fr)`,
         }}
@@ -1013,14 +1013,14 @@ export function InboxPage() {
         onSaveBuckets={saveUserBucketDefinitions}
       />
 
-      <section className="min-h-0 min-w-0 bg-background">
+      <section className="min-w-0 bg-background">
         {selectedItem ? (
           <ResizablePanelGroup
             id="review-inbox-split"
             orientation="horizontal"
             defaultLayout={{ reviewQueue: 68, quickPeek: 32 }}
             resizeTargetMinimumSize={{ fine: 12, coarse: 36 }}
-            className="h-full min-h-0"
+            className="h-full min-h-[calc(100vh-48px)]"
             style={{ minWidth: REVIEW_WORKSPACE_MIN_WIDTH }}
           >
             <ResizablePanel
@@ -1073,7 +1073,7 @@ export function InboxPage() {
           </ResizablePanelGroup>
         ) : (
           <div
-            className="h-full min-h-0"
+            className="h-full min-h-[calc(100vh-48px)]"
             style={{ minWidth: REVIEW_QUEUE_MIN_WIDTH }}
           >
             {reviewQueuePanel}
@@ -1279,7 +1279,7 @@ function InboxSidebar({
   )
 
   return (
-    <aside className="flex h-full min-h-0 flex-col overflow-y-auto border-b border-border bg-card px-3 py-3 sm:border-r sm:border-b-0 sm:py-4">
+    <aside className="flex flex-col border-b border-border bg-card px-3 py-3 sm:border-r sm:border-b-0 sm:py-4">
       <div className="flex items-center gap-2 px-2 pt-1 pb-2 sm:pb-4">
         <AppLogo className="text-xs font-medium text-foreground" />
       </div>
@@ -2727,7 +2727,7 @@ function QuickPeekPanel({
     },
   ].filter((row) => row.show)
   return (
-    <aside className="flex h-full min-h-0 min-w-0 flex-col bg-card">
+    <aside className="flex h-full min-h-[520px] min-w-0 flex-col bg-card">
       <div className="border-b border-border px-5 py-5">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">

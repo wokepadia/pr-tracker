@@ -57,8 +57,8 @@ export function AppFrame() {
   ])
 
   return (
-    <div className="grid h-screen grid-rows-[48px_minmax(0,1fr)] overflow-hidden bg-background text-foreground">
-      <header className="z-20 flex h-[48px] items-center border-b border-border bg-white px-5 text-xs text-muted-foreground">
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="fixed inset-x-0 top-0 z-20 flex h-[48px] items-center border-b border-border bg-white/95 px-5 text-xs text-muted-foreground backdrop-blur">
         <Link to="/" className="mr-auto inline-flex items-center gap-2 font-medium text-foreground">
           <AppLogo />
         </Link>
@@ -74,8 +74,8 @@ export function AppFrame() {
         </Link>
       </header>
 
-      <main className="min-h-0 overflow-hidden">
-        <div className="h-full min-h-0 bg-card">
+      <main className="pt-[48px]">
+        <div className="min-h-[calc(100vh-48px)] bg-card">
           {showGateError ? (
             <div className="border-b border-destructive/20 bg-destructive/5 px-5 py-3 text-sm text-destructive">
               <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
