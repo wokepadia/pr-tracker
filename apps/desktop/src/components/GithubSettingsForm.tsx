@@ -16,6 +16,7 @@ import {
   saveGithubSettings,
   type GithubSettingsStatus,
 } from "@/api"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 
@@ -79,11 +80,12 @@ export function GithubSettingsForm({
   }
 
   const tokenConfigured = settings?.tokenConfigured ?? false
+  const fieldInputClassName = "rounded-md border-border bg-background"
   const apiBaseUrlField = (
     <label className="flex flex-col gap-2">
       <span className="text-sm font-medium">API base URL</span>
       <Input
-        className="rounded-md"
+        className={fieldInputClassName}
         placeholder="https://api.github.com"
         value={apiBaseUrl}
         onChange={(event) => setApiBaseUrl(event.target.value)}
@@ -94,10 +96,17 @@ export function GithubSettingsForm({
   return (
     <form className="flex flex-col gap-4" onSubmit={submitSettings}>
       <label className="flex flex-col gap-2">
-        <span className="text-sm font-medium">Read-only GitHub token</span>
+        <span className="flex items-center justify-between gap-2">
+          <span className="text-sm font-medium">Read-only GitHub token</span>
+          {settings ? (
+            <Badge variant={tokenConfigured ? "default" : "secondary"}>
+              {tokenConfigured ? "Token saved" : "Not configured"}
+            </Badge>
+          ) : null}
+        </span>
         <Input
           autoComplete="off"
-          className="rounded-md"
+          className={fieldInputClassName}
           placeholder={
             tokenConfigured
               ? "Leave blank to keep the saved token"
@@ -116,7 +125,7 @@ export function GithubSettingsForm({
       <label className="flex flex-col gap-2">
         <span className="text-sm font-medium">Repositories</span>
         <Input
-          className="rounded-md"
+          className={fieldInputClassName}
           placeholder="zulip/zulip"
           value={repositories}
           onChange={(event) => setRepositories(event.target.value)}
@@ -129,7 +138,7 @@ export function GithubSettingsForm({
       <label className="flex flex-col gap-2">
         <span className="text-sm font-medium">Your GitHub username</span>
         <Input
-          className="rounded-md"
+          className={fieldInputClassName}
           placeholder="your-github-login"
           value={viewerLogin}
           onChange={(event) => setViewerLogin(event.target.value)}
