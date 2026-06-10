@@ -308,6 +308,86 @@ describe("local SQLite storage", () => {
     }
   });
 
+  it("uses the stored pull request id when a GitHub node id already exists", async () => {
+    const local = openLocalDatabase({ path: ":memory:" });
+
+    try {
+      await syncPullRequestsToLocalSqlite(local.db, {
+        async listPullRequests() {
+          return [
+            {
+              repository: { full_name: "zulip/zulip" },
+              pull_request: {
+                id: 91,
+                node_id: "PR_kw_case_91",
+                number: 91,
+                title: "Normalize repository identity",
+                html_url: "https://github.com/zulip/zulip/pull/91",
+                state: "open",
+                created_at: "2026-06-01T08:00:00.000Z",
+                updated_at: "2026-06-01T09:00:00.000Z",
+                user: { login: "author" },
+                head: { sha: "old-sha" }
+              }
+            }
+          ];
+        }
+      });
+
+      const result = await syncPullRequestsToLocalSqlite(local.db, {
+        async listPullRequests() {
+          return [
+            {
+              repository: { full_name: "Zulip/zulip" },
+              pull_request: {
+                id: 91,
+                node_id: "PR_kw_case_91",
+                number: 91,
+                title: "Normalize repository identity",
+                html_url: "https://github.com/Zulip/zulip/pull/91",
+                state: "open",
+                created_at: "2026-06-01T08:00:00.000Z",
+                updated_at: "2026-06-01T10:00:00.000Z",
+                user: { login: "author" },
+                head: { sha: "new-sha" },
+                requested_reviewers: [{ login: "viewer" }]
+              },
+              reviews: [
+                {
+                  id: 11,
+                  node_id: "PRR_kw_case_11",
+                  state: "COMMENTED",
+                  submitted_at: "2026-06-01T09:30:00.000Z",
+                  user: { login: "reviewer" }
+                }
+              ]
+            }
+          ];
+        }
+      });
+
+      expect(result.pullRequestIds).toEqual(["github:zulip~zulip:91"]);
+      expect(listLocalPullRequestRows(local.db, { id: "github:zulip~zulip:91" }))
+        .toMatchObject([
+          {
+            latest_commit_sha: "new-sha",
+            repository_full_name: "Zulip/zulip"
+          }
+        ]);
+      expect(
+        listLocalReviewRequestRows(local.db, "github:zulip~zulip:91")
+      ).toMatchObject([{ login: "viewer" }]);
+      expect(
+        listLocalReviewEventRows(local.db, "github:zulip~zulip:91")
+      ).toMatchObject([{ id: "PRR_kw_case_11", reviewer_login: "reviewer" }]);
+      expect(
+        listLocalBoardItemStateRows(local.db).map((row) => row.pull_request_id)
+      ).toEqual(["github:zulip~zulip:91"]);
+    } finally {
+      local.close();
+    }
+  });
+
   it("reconciles known open pull requests through the local sync path", async () => {
     const local = openLocalDatabase({ path: ":memory:" });
 

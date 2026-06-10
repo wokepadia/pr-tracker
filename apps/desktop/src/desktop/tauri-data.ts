@@ -495,7 +495,16 @@ async function syncBeforeReadWithTimeout(
     didTimeOut = true
     return undefined
   })
-  const result = await Promise.race([syncPromise, timeoutPromise])
+  let result: { pullRequestIds?: string[] } | undefined
+  try {
+    result = await Promise.race([syncPromise, timeoutPromise])
+  } catch (error) {
+    if (await isLocalDatabaseEmpty(db)) {
+      throw error
+    }
+    void logRendererError("Foreground GitHub sync failed; using cached data", error)
+    return undefined
+  }
 
   if (didTimeOut) {
     syncPromise.catch((error) => {
@@ -651,8 +660,8 @@ async function seedLocalSampleData(db: SqlDatabase): Promise<void> {
     await ensureDefaultBoard(db, now)
 
     for (const pullRequest of samplePullRequests) {
-      await upsertPullRequestItem(db, pullRequest, now)
-      await ensureDefaultBoardItem(db, pullRequest.id, now)
+      const storedPullRequestId = await upsertPullRequestItem(db, pullRequest, now)
+      await ensureDefaultBoardItem(db, storedPullRequestId, now)
     }
 
     for (const [pullRequestId, lastSeenAt] of Object.entries(
@@ -679,8 +688,8 @@ async function upsertLocalPullRequestSnapshot(
   const githubNodeId = githubNodeIdFromSnapshot(snapshot)
   const incomingUpdatedAt = pullRequest.updatedAt
   const current = (
-    await db.select<Array<{ github_updated_at: string | null }>>(
-      `select github_updated_at from pull_requests where github_node_id = $1`,
+    await db.select<Array<{ id: string; github_updated_at: string | null }>>(
+      `select id, github_updated_at from pull_requests where github_node_id = $1`,
       [githubNodeId]
     )
   )[0]
@@ -689,7 +698,7 @@ async function upsertLocalPullRequestSnapshot(
     current?.github_updated_at &&
     Date.parse(incomingUpdatedAt) < Date.parse(current.github_updated_at)
   ) {
-    return { pullRequestId: pullRequest.id, isFreshEnough: false }
+    return { pullRequestId: current.id, isFreshEnough: false }
   }
 
   const now = new Date().toISOString()
@@ -699,12 +708,24 @@ async function upsertLocalPullRequestSnapshot(
     now,
   })
   await ensureDefaultBoard(db, now)
-  await upsertPullRequestItem(db, pullRequest, now, {
+  const storedPullRequestId = await upsertPullRequestItem(db, pullRequest, now, {
     githubNodeId,
     rawPayload: snapshot,
   })
-  await ensureDefaultBoardItem(db, pullRequest.id, now)
-  return { pullRequestId: pullRequest.id, isFreshEnough: true }
+  await ensureDefaultBoardItem(db, storedPullRequestId, now)
+  return { pullRequestId: storedPullRequestId, isFreshEnough: true }
+}
+
+async function getStoredPullRequestIdByGithubNodeId(
+  db: SqlDatabase,
+  githubNodeId: string
+): Promise<string | undefined> {
+  return (
+    await db.select<Array<{ id: string }>>(
+      `select id from pull_requests where github_node_id = $1`,
+      [githubNodeId]
+    )
+  )[0]?.id
 }
 
 async function upsertPullRequestItem(
@@ -712,7 +733,7 @@ async function upsertPullRequestItem(
   pullRequest: PullRequestItem,
   now: string,
   options: { githubNodeId?: string; rawPayload?: unknown } = {}
-): Promise<void> {
+): Promise<string> {
   const [owner = "unknown", repoName = pullRequest.repository] =
     pullRequest.repository.split("/")
   const ownerAccountId = await upsertGithubAccount(db, {
@@ -785,6 +806,7 @@ async function upsertPullRequestItem(
       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       on conflict(github_node_id)
       do update set
+        repository_id = excluded.repository_id,
         title = excluded.title,
         body = excluded.body,
         url = excluded.url,
@@ -817,10 +839,21 @@ async function upsertPullRequestItem(
     ]
   )
 
-  await replaceReviewRequests(db, pullRequest, now)
-  await replaceReviews(db, pullRequest.reviews, pullRequest.id, now)
-  await replaceThreads(db, pullRequest.threads, pullRequest.id, now)
-  await replaceActivity(db, pullRequest.activity, pullRequest.id, now)
+  const storedPullRequestId = await getStoredPullRequestIdByGithubNodeId(
+    db,
+    options.githubNodeId ?? pullRequest.id
+  )
+  if (!storedPullRequestId) {
+    throw new Error("Could not resolve stored pull request after upsert.")
+  }
+
+  const storedPullRequest = { ...pullRequest, id: storedPullRequestId }
+  await replaceReviewRequests(db, storedPullRequest, now)
+  await replaceReviews(db, storedPullRequest.reviews, storedPullRequest.id, now)
+  await replaceThreads(db, storedPullRequest.threads, storedPullRequest.id, now)
+  await replaceActivity(db, storedPullRequest.activity, storedPullRequest.id, now)
+
+  return storedPullRequestId
 }
 
 async function upsertLocalProfile(

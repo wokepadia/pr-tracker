@@ -218,8 +218,8 @@ export function seedLocalSampleData(
     ensureDefaultBoard(db, profileId, now);
 
     for (const pullRequest of samplePullRequests) {
-      upsertLocalPullRequest(db, pullRequest, now);
-      ensureDefaultBoardItem(db, pullRequest, now);
+      const storedPullRequestId = upsertLocalPullRequest(db, pullRequest, now);
+      ensureDefaultBoardItem(db, { ...pullRequest, id: storedPullRequestId }, now);
     }
 
     for (const [pullRequestId, lastSeenAt] of Object.entries(
@@ -241,6 +241,10 @@ export function upsertLocalPullRequestSnapshot(
   const pullRequest = snapshotToPullRequestItem(snapshot);
   const githubNodeId = githubNodeIdFromSnapshot(snapshot);
   const incomingUpdatedAt = pullRequest.updatedAt;
+  const existingPullRequestId = getLocalPullRequestIdByGithubNodeId(
+    db,
+    githubNodeId
+  );
   const isFreshEnough = isFreshEnoughLocalPullRequestPayload(
     db,
     githubNodeId,
@@ -249,6 +253,7 @@ export function upsertLocalPullRequestSnapshot(
   const now = new Date().toISOString();
   const profileId = options.profileId ?? defaultLocalProfileId;
   const viewerLogin = options.viewerLogin ?? "viewer";
+  let storedPullRequestId = existingPullRequestId ?? pullRequest.id;
 
   transaction(db, () => {
     upsertLocalProfile(db, {
@@ -260,15 +265,15 @@ export function upsertLocalPullRequestSnapshot(
     ensureDefaultBoard(db, profileId, now);
 
     if (isFreshEnough) {
-      upsertLocalPullRequest(db, pullRequest, now, {
+      storedPullRequestId = upsertLocalPullRequest(db, pullRequest, now, {
         githubNodeId,
         rawPayload: snapshot
       });
-      ensureDefaultBoardItem(db, pullRequest, now);
+      ensureDefaultBoardItem(db, { ...pullRequest, id: storedPullRequestId }, now);
     }
   });
 
-  return { pullRequestId: pullRequest.id, isFreshEnough };
+  return { pullRequestId: storedPullRequestId, isFreshEnough };
 }
 
 export function listLocalPullRequestRows(
@@ -692,7 +697,7 @@ function upsertLocalPullRequest(
     githubNodeId?: string;
     rawPayload?: unknown;
   } = {}
-): void {
+): string {
   const [owner, repoName = pullRequest.repository] = pullRequest.repository.split("/");
   const ownerAccountId = upsertGithubAccount(db, {
     login: owner ?? "unknown",
@@ -788,6 +793,7 @@ function upsertLocalPullRequest(
       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       on conflict(github_node_id)
       do update set
+        repository_id = excluded.repository_id,
         title = excluded.title,
         body = excluded.body,
         url = excluded.url,
@@ -819,10 +825,21 @@ function upsertLocalPullRequest(
     now
   );
 
-  replaceLocalReviewRequests(db, pullRequest, now);
-  replaceLocalReviews(db, pullRequest.reviews, pullRequest.id, now);
-  replaceLocalThreads(db, pullRequest.threads, pullRequest.id, now);
-  replaceLocalActivity(db, pullRequest.activity, pullRequest.id, now);
+  const storedPullRequestId = getLocalPullRequestIdByGithubNodeId(
+    db,
+    options.githubNodeId ?? pullRequest.id
+  );
+  if (!storedPullRequestId) {
+    throw new Error("Could not resolve stored pull request after upsert.");
+  }
+
+  const storedPullRequest = { ...pullRequest, id: storedPullRequestId };
+  replaceLocalReviewRequests(db, storedPullRequest, now);
+  replaceLocalReviews(db, storedPullRequest.reviews, storedPullRequest.id, now);
+  replaceLocalThreads(db, storedPullRequest.threads, storedPullRequest.id, now);
+  replaceLocalActivity(db, storedPullRequest.activity, storedPullRequest.id, now);
+
+  return storedPullRequestId;
 }
 
 function snapshotToPullRequestItem(snapshot: GitHubPullRequestSnapshot): PullRequestItem {
@@ -1061,6 +1078,17 @@ function isFreshEnoughLocalPullRequestPayload(
   }
 
   return Date.parse(incomingUpdatedAt) >= Date.parse(current.github_updated_at);
+}
+
+function getLocalPullRequestIdByGithubNodeId(
+  db: DatabaseSync,
+  githubNodeId: string
+): string | undefined {
+  return (
+    db
+      .prepare(`select id from pull_requests where github_node_id = ?`)
+      .get(githubNodeId) as { id: string } | undefined
+  )?.id;
 }
 
 function ensureDefaultBoardItem(
