@@ -25,6 +25,7 @@ import {
   ShieldAlert,
   Sparkles,
 } from "lucide-react"
+import { useGithubSync } from "@/app/use-github-sync"
 import { Button } from "@/components/ui/button"
 import { ActivityEventLine } from "@/components/ActivityEventLine"
 import { AuthorAvatar } from "@/components/AuthorAvatar"
@@ -125,6 +126,9 @@ export function PullRequestPage() {
     queryKey: ["pull-request", pullRequestId],
     queryFn: () => getPullRequest(pullRequestId),
   })
+  // Keeps deep links fresh: reads stay local while the deduped background
+  // sync refreshes this page through query invalidation.
+  useGithubSync()
   const boardStateQuery = useQuery({
     queryKey: ["board-state"],
     queryFn: getBoardState,
@@ -262,7 +266,7 @@ export function PullRequestPage() {
   }
 
   if (detailQuery.isLoading) {
-    return <DetailStatusPanel title="Loading pull request" />
+    return <div className="min-h-[760px] bg-background" aria-busy="true" />
   }
 
   if (detailQuery.isError || !item) {

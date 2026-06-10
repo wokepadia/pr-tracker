@@ -166,7 +166,6 @@ export async function getDesktopPullRequest(
   id: string
 ): Promise<PullRequestDetailResponse> {
   const db = await getDatabase()
-  await syncBeforeRead(db)
   const pullRequests = await loadPullRequests(db, id)
   const pullRequest = pullRequests[0]
   if (!pullRequest) {
