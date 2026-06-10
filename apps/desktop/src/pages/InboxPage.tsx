@@ -2292,28 +2292,55 @@ function QueueCard({
       </h4>
       <div className="mt-3 border-t border-border pt-3">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span
-            className={cn(
-              "rounded-full border border-border px-2 py-[1px] text-xs text-muted-foreground",
-              item.waitingOn === "you" && laneBadgeToneClasses[tone]
-            )}
-          >
-            {queuePillLabel(item)}
-          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                aria-label={queuePillTooltip(item)}
+                className={cn(
+                  "rounded-full border border-border px-2 py-[1px] text-xs text-muted-foreground",
+                  item.waitingOn === "you" && laneBadgeToneClasses[tone]
+                )}
+              >
+                {queuePillLabel(item)}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{queuePillTooltip(item)}</TooltipContent>
+          </Tooltip>
           {item.newCommitCount > 0 ? (
-            <FactChip icon={GitCommitHorizontal} text={`+${item.newCommitCount}`} active />
+            <FactChip
+              icon={GitCommitHorizontal}
+              text={`+${item.newCommitCount}`}
+              label={formatCount(item.newCommitCount, "new commit")}
+              active
+            />
           ) : null}
           {item.newReplyCount > 0 ? (
-            <FactChip icon={MessageSquareText} text={`${item.newReplyCount}`} active />
+            <FactChip
+              icon={MessageSquareText}
+              text={`${item.newReplyCount}`}
+              label={formatCount(item.newReplyCount, "new reply", "new replies")}
+              active
+            />
           ) : null}
           {item.totalThreadCount > 0 ? (
             <FactChip
               icon={Inbox}
               text={`${item.unresolvedThreadCount}/${item.totalThreadCount}`}
+              label={`${item.unresolvedThreadCount} of ${formatCount(
+                item.totalThreadCount,
+                "review thread"
+              )} unresolved`}
               active={item.unresolvedThreadCount > 0}
             />
           ) : null}
-          {reReviewRequested ? <FactChip icon={Eye} text="requested" active /> : null}
+          {reReviewRequested ? (
+            <FactChip
+              icon={Eye}
+              text="requested"
+              label="Your review was requested again"
+              active
+            />
+          ) : null}
         </div>
         <div className="mt-3 flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
@@ -2522,14 +2549,20 @@ function QueueRow({
           <span className="line-clamp-2 min-w-0 flex-1 text-sm font-medium text-foreground sm:truncate sm:line-clamp-1">
             {item.title}
           </span>
-          <span
-            className={cn(
-              "shrink-0 rounded-full border border-border px-2 py-[1px] text-xs text-muted-foreground",
-              item.waitingOn === "you" && laneBadgeToneClasses[tone]
-            )}
-          >
-            {queuePillLabel(item)}
-          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                aria-label={queuePillTooltip(item)}
+                className={cn(
+                  "shrink-0 rounded-full border border-border px-2 py-[1px] text-xs text-muted-foreground",
+                  item.waitingOn === "you" && laneBadgeToneClasses[tone]
+                )}
+              >
+                {queuePillLabel(item)}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{queuePillTooltip(item)}</TooltipContent>
+          </Tooltip>
         </span>
         <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           <span className="text-muted-foreground">
@@ -2538,19 +2571,40 @@ function QueueRow({
           <span className="text-muted-foreground/40">·</span>
           <span>{item.authorLogin}</span>
           {item.newCommitCount > 0 ? (
-            <FactChip icon={GitCommitHorizontal} text={`+${item.newCommitCount}`} active />
+            <FactChip
+              icon={GitCommitHorizontal}
+              text={`+${item.newCommitCount}`}
+              label={formatCount(item.newCommitCount, "new commit")}
+              active
+            />
           ) : null}
           {item.newReplyCount > 0 ? (
-            <FactChip icon={MessageSquareText} text={`${item.newReplyCount}`} active />
+            <FactChip
+              icon={MessageSquareText}
+              text={`${item.newReplyCount}`}
+              label={formatCount(item.newReplyCount, "new reply", "new replies")}
+              active
+            />
           ) : null}
           {item.totalThreadCount > 0 ? (
             <FactChip
               icon={Inbox}
               text={`${item.unresolvedThreadCount}/${item.totalThreadCount}`}
+              label={`${item.unresolvedThreadCount} of ${formatCount(
+                item.totalThreadCount,
+                "review thread"
+              )} unresolved`}
               active={item.unresolvedThreadCount > 0}
             />
           ) : null}
-          {reReviewRequested ? <FactChip icon={Eye} text="review requested" active /> : null}
+          {reReviewRequested ? (
+            <FactChip
+              icon={Eye}
+              text="review requested"
+              label="Your review was requested again"
+              active
+            />
+          ) : null}
         </span>
       </span>
       <span className="flex min-w-[74px] flex-col items-end gap-1">
@@ -2636,22 +2690,30 @@ function BucketMoveMenu({
 function FactChip({
   icon: Icon,
   text,
+  label,
   active,
 }: {
   icon: ComponentType<{ className?: string }>
   text: string
+  label: string
   active?: boolean
 }) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-[4px] border border-border bg-card px-1.5 py-[1px] text-xs text-muted-foreground",
-        active && "border-foreground/50 bg-foreground/12 text-foreground"
-      )}
-    >
-      <Icon className="h-3 w-3" />
-      {text}
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          aria-label={label}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-[4px] border border-border bg-card px-1.5 py-[1px] text-xs text-muted-foreground",
+            active && "border-foreground/50 bg-foreground/12 text-foreground"
+          )}
+        >
+          <Icon className="h-3 w-3" />
+          {text}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -3038,6 +3100,15 @@ function queuePillLabel(item: ReviewQueueItemView): string {
   if (item.laneId === "caught_up") return "caught up"
   if (item.laneId === "stale") return "stale"
   return "watching"
+}
+
+function queuePillTooltip(item: ReviewQueueItemView): string {
+  if (item.waitingOn === "you") return "Waiting on your review"
+  if (item.waitingOn === "author") return "Waiting on the author"
+  if (item.laneId === "approved") return "You approved this PR"
+  if (item.laneId === "caught_up") return "You are caught up on this PR"
+  if (item.laneId === "stale") return "No recent activity on this PR"
+  return "You are watching this PR"
 }
 
 function queueTimingLabel(item: ReviewQueueItemView): string {
