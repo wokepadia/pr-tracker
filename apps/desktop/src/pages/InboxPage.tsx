@@ -211,27 +211,27 @@ const customLaneToneCycle: LaneDefinition["tone"][] = [
 ]
 
 const laneToneClasses: Record<LaneDefinition["tone"], string> = {
-  hot: "bg-amber-500",
-  changed: "bg-sky-500",
-  waiting: "bg-emerald-500",
-  success: "bg-teal-500",
-  quiet: "bg-slate-300",
+  hot: "bg-rose-500",
+  changed: "bg-blue-500",
+  waiting: "bg-amber-500",
+  success: "bg-emerald-600",
+  quiet: "bg-violet-500",
 }
 
 const laneBadgeToneClasses: Record<LaneDefinition["tone"], string> = {
-  hot: "border-amber-200 bg-amber-50 text-amber-800",
-  changed: "border-sky-200 bg-sky-50 text-sky-800",
-  waiting: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  success: "border-teal-200 bg-teal-50 text-teal-800",
-  quiet: "border-border bg-muted/40 text-muted-foreground",
+  hot: "border-rose-200 bg-rose-50 text-rose-800",
+  changed: "border-blue-200 bg-blue-50 text-blue-800",
+  waiting: "border-amber-200 bg-amber-50 text-amber-800",
+  success: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  quiet: "border-violet-200 bg-violet-50 text-violet-800",
 }
 
 const rowSelectedToneClasses: Record<LaneDefinition["tone"], string> = {
-  hot: "bg-amber-50/80 shadow-[inset_3px_0_0_#f59e0b]",
-  changed: "bg-sky-50/80 shadow-[inset_3px_0_0_#0ea5e9]",
-  waiting: "bg-emerald-50/80 shadow-[inset_3px_0_0_#10b981]",
-  success: "bg-teal-50/80 shadow-[inset_3px_0_0_#14b8a6]",
-  quiet: "bg-muted shadow-[inset_3px_0_0_#94a3b8]",
+  hot: "bg-rose-50/80 shadow-[inset_3px_0_0_#f43f5e]",
+  changed: "bg-blue-50/80 shadow-[inset_3px_0_0_#3b82f6]",
+  waiting: "bg-amber-50/80 shadow-[inset_3px_0_0_#f59e0b]",
+  success: "bg-emerald-50/80 shadow-[inset_3px_0_0_#059669]",
+  quiet: "bg-violet-50/80 shadow-[inset_3px_0_0_#8b5cf6]",
 }
 
 const inboxLoadingSteps: InboxLoadingStep[] = [
