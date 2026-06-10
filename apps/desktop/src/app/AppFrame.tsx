@@ -62,9 +62,6 @@ export function AppFrame() {
         <Link to="/" className="mr-auto inline-flex items-center gap-2 font-medium text-foreground">
           <AppLogo />
         </Link>
-        <div className="ml-auto hidden text-right md:block">
-          tracker, not a review surface · review happens in GitHub
-        </div>
         <Link
           to="/settings"
           className="ml-4 inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-muted"

@@ -69,7 +69,6 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ActivityEventLine } from "@/components/ActivityEventLine"
-import { AppLogo } from "@/components/AppLogo"
 import { BoardItemNotes } from "@/components/BoardItemNotes"
 import {
   DropdownMenu,
@@ -1330,9 +1329,6 @@ function InboxSidebar({
 
   return (
     <aside className="flex min-h-0 flex-col overflow-y-auto border-b border-border bg-card px-3 py-3 sm:border-r sm:border-b-0 sm:py-4">
-      <div className="flex items-center gap-2 px-2 pt-1 pb-2 sm:pb-4">
-        <AppLogo className="text-xs font-medium text-foreground" />
-      </div>
       <SidebarSection label="Views">
         <SidebarItem
           active={activeActionTabId === "home"}
