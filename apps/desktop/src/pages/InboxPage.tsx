@@ -20,6 +20,7 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import {
+  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
@@ -94,11 +95,13 @@ import {
 } from "@/components/ui/tooltip"
 import {
   getBoardState,
+  getGithubSettingsStatus,
   getReviewerInbox,
   markPullRequestSeen,
   getAttentionSettings,
   saveBoardState,
 } from "@/api"
+import { useGithubSync } from "@/app/use-github-sync"
 import { formatCount } from "@/lib/copy"
 import { cn, externalLinkProps } from "@/lib/utils"
 import {
@@ -130,6 +133,7 @@ import {
 import {
   bucketDropId,
   filterQueueItems,
+  formatSyncStatusLabel,
   moveItemInBucketItemOrder,
   resolveVisibleQueueItem,
   resolveKanbanDropTarget,
@@ -145,7 +149,6 @@ const REVIEW_SPLIT_HANDLE_WIDTH = 8
 const REVIEW_WORKSPACE_MIN_WIDTH =
   REVIEW_QUEUE_MIN_WIDTH + QUICK_PEEK_MIN_WIDTH + REVIEW_SPLIT_HANDLE_WIDTH
 const REVIEW_SIDEBAR_WIDTH = 212
-const INBOX_LOADING_STEP_INTERVAL_MS = 1050
 const githubReviewQueryStorageKey = "pr-tracker:github-review-query:v1"
 const DEFAULT_BUCKET_COLUMN_WIDTH = 232
 const MIN_BUCKET_COLUMN_WIDTH = 200
@@ -178,12 +181,6 @@ interface LaneDefinition {
   label: string
   tone: "hot" | "changed" | "waiting" | "success" | "quiet"
   description?: string
-}
-
-interface InboxLoadingStep {
-  label: string
-  detail: string
-  progress: string
 }
 
 interface QueueGroupDefinition {
@@ -251,49 +248,6 @@ const rowSelectedToneClasses: Record<LaneDefinition["tone"], string> = {
   quiet: "bg-muted shadow-[inset_3px_0_0_#94a3b8]",
 }
 
-const inboxLoadingSteps: InboxLoadingStep[] = [
-  {
-    label: "Opening local inbox",
-    detail: "Reading the desktop reviewer inbox from local SQLite.",
-    progress: "Opening local reviewer data",
-  },
-  {
-    label: "Checking GitHub source",
-    detail: "Reading the configured token, viewer login, and repository scope.",
-    progress: "Resolving local GitHub settings",
-  },
-  {
-    label: "Identifying reviewer",
-    detail: "Confirming which GitHub user the queue should be computed for.",
-    progress: "Matching PR facts to the current reviewer",
-  },
-  {
-    label: "Collecting pull requests",
-    detail: "Scanning configured repositories for open reviewable PRs.",
-    progress: "Fetching active pull request metadata",
-  },
-  {
-    label: "Reading review history",
-    detail: "Loading review decisions, comments, threads, and commits.",
-    progress: "Fetching per-PR review activity",
-  },
-  {
-    label: "Normalizing activity",
-    detail: "Turning GitHub events into deterministic reviewer activity records.",
-    progress: "Building ordered activity events",
-  },
-  {
-    label: "Preparing queue signals",
-    detail: "Computing reviewer activity signals and default bucket placement.",
-    progress: "Applying reviewer queue rules",
-  },
-  {
-    label: "Preparing workspace",
-    detail: "Arranging lanes, quick peek context, and the initial selection.",
-    progress: "Rendering the review inbox",
-  },
-]
-
 export function InboxPage() {
   const queryClient = useQueryClient()
   const [githubSearchQueryDraft, setGithubSearchQueryDraft] = useState(() =>
@@ -305,6 +259,12 @@ export function InboxPage() {
     queryKey: ["reviewer-inbox", appliedGithubSearchQuery ?? ""],
     queryFn: () =>
       getReviewerInbox({ githubSearchQuery: appliedGithubSearchQuery }),
+    placeholderData: keepPreviousData,
+  })
+  const githubSync = useGithubSync()
+  const githubSettingsQuery = useQuery({
+    queryKey: ["github-settings"],
+    queryFn: getGithubSettingsStatus,
   })
   const attentionSettingsQuery = useQuery({
     queryKey: ["attention-settings"],
@@ -879,8 +839,8 @@ export function InboxPage() {
     setActiveActionTabId("home")
   }
 
-  if (inboxQuery.isLoading) {
-    return <InboxLoadingScreen />
+  if (inboxQuery.isLoading || githubSync.isStatusLoading) {
+    return <div className="h-full bg-background" aria-busy="true" />
   }
 
   if (inboxQuery.isError || !inboxView) {
@@ -897,6 +857,23 @@ export function InboxPage() {
         onRetry={() => void inboxQuery.refetch()}
       />
     )
+  }
+
+  // First run only: nothing local to show until the initial GitHub sync
+  // lands. Every later visit renders local data immediately.
+  if (inboxView.items.length === 0 && !githubSync.lastSyncedAt) {
+    if (githubSync.syncError) {
+      return (
+        <InboxStatusPanel
+          title="Could not sync with GitHub"
+          detail={formatUnknownError(githubSync.syncError)}
+          retryLabel={githubSync.isSyncing ? "Retrying" : "Retry"}
+          retryDisabled={githubSync.isSyncing}
+          onRetry={githubSync.syncNow}
+        />
+      )
+    }
+    return <FirstSyncScreen />
   }
 
   const reviewWorkspaceMinWidth = selectedItem
@@ -938,7 +915,13 @@ export function InboxPage() {
         title={headerView.title}
         countLabel={headerView.countLabel}
         searchQuery={searchQuery}
-        syncLabel={formatSyncLabel(inboxQuery.dataUpdatedAt)}
+        syncLabel={formatSyncStatusLabel({
+          isSyncing: githubSync.isSyncing,
+          lastSyncedAt: githubSync.lastSyncedAt,
+          tokenConfigured: Boolean(githubSettingsQuery.data?.tokenConfigured),
+        })}
+        isSyncing={githubSync.isSyncing}
+        onSyncNow={githubSync.syncNow}
         githubSearchQuery={githubSearchQueryDraft}
         isGithubSearchPending={inboxQuery.isFetching}
         onGroupModeChange={changeGroupMode}
@@ -1162,151 +1145,39 @@ export function InboxPage() {
   )
 }
 
-function useInboxLoadingProgress(): {
-  activeStepIndex: number
-  elapsedSeconds: number
-} {
-  const [elapsedMs, setElapsedMs] = useState(0)
+function FirstSyncScreen() {
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
 
   useEffect(() => {
     const startedAt = Date.now()
     const timer = globalThis.setInterval(() => {
-      setElapsedMs(Date.now() - startedAt)
-    }, 250)
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000))
+    }, 1000)
 
     return () => globalThis.clearInterval(timer)
   }, [])
 
-  return {
-    activeStepIndex: Math.min(
-      inboxLoadingSteps.length - 1,
-      Math.floor(elapsedMs / INBOX_LOADING_STEP_INTERVAL_MS)
-    ),
-    elapsedSeconds: Math.floor(elapsedMs / 1000),
-  }
-}
-
-function InboxLoadingScreen() {
-  const { activeStepIndex, elapsedSeconds } = useInboxLoadingProgress()
-  const activeStep = inboxLoadingSteps[activeStepIndex] ?? inboxLoadingSteps[0]!
-  const slowRequest = elapsedSeconds >= 8
-
   return (
-    <div className="grid h-full place-items-center bg-muted/20 px-6 py-10">
-      <section
-        className="w-full max-w-[620px] overflow-hidden rounded-lg border border-border bg-card shadow-sm"
-        aria-live="polite"
-      >
-        <div className="border-b border-border px-5 py-5">
-          <div className="mb-4 flex items-center gap-3">
-            <div className="relative flex h-9 w-9 flex-none items-center justify-center rounded-full bg-foreground text-background">
-              <LoaderCircle className="h-4 w-4 animate-spin" />
-              <span className="absolute inset-0 rounded-full ring-4 ring-foreground/10" />
-            </div>
-            <div className="min-w-0">
-              <div className="font-mono text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                {activeStep.progress}
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                Waiting {elapsedSeconds}s for the reviewer inbox response
-              </div>
-            </div>
-          </div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            {activeStep.label}
-          </h1>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-            {activeStep.detail}
+    <div className="grid h-full place-items-center bg-background px-6" aria-live="polite">
+      <div className="max-w-sm rounded-lg border border-border bg-card p-6 text-center">
+        <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-muted/40 text-foreground">
+          <LoaderCircle className="h-5 w-5 animate-spin" />
+        </div>
+        <h1 className="text-lg font-semibold tracking-tight text-foreground">
+          Setting up your review inbox
+        </h1>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          Fetching pull requests from GitHub for the first time. After this,
+          the inbox opens instantly from local data.
+        </p>
+        {elapsedSeconds >= 10 ? (
+          <p className="mt-2 text-xs leading-5 text-muted-foreground">
+            Still working — large repositories can take a minute on the first
+            sync.
           </p>
-          <div className="mt-5 h-1 overflow-hidden rounded-full bg-border">
-            <div className="h-full w-1/3 animate-pulse rounded-full bg-foreground" />
-          </div>
-        </div>
-
-        <div className="grid gap-5 px-5 py-5">
-          <div>
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div className="font-mono text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                Request progress
-              </div>
-              <div className="font-mono text-xs text-muted-foreground">
-                local sync · pending
-              </div>
-            </div>
-            <ol className="space-y-1">
-              {inboxLoadingSteps.map((step, index) => (
-                <LoadingStepRow
-                  key={step.label}
-                  step={step}
-                  state={
-                    index < activeStepIndex
-                      ? "done"
-                      : index === activeStepIndex
-                        ? "active"
-                        : "pending"
-                  }
-                />
-              ))}
-            </ol>
-          </div>
-
-          <div className="border-l-2 border-border pl-4 text-sm leading-6 text-muted-foreground">
-            {slowRequest
-              ? "Still waiting on GitHub data. Larger repositories can spend most of the first load on per-PR reviews and activity metadata."
-              : "Keeping the local inbox read open while the desktop app resolves source data and builds deterministic queue classifications."}
-          </div>
-        </div>
-      </section>
+        ) : null}
+      </div>
     </div>
-  )
-}
-
-function LoadingStepRow({
-  step,
-  state,
-}: {
-  step: InboxLoadingStep
-  state: "done" | "active" | "pending"
-}) {
-  return (
-    <li
-      className={cn(
-        "flex gap-3 rounded-md px-2 py-2.5 transition-colors",
-        state === "active" && "bg-background",
-        state === "done" && "text-foreground",
-        state === "pending" && "text-muted-foreground"
-      )}
-    >
-      <div
-        className={cn(
-          "mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full border",
-          state === "done" && "border-emerald-200 bg-emerald-50 text-emerald-700",
-          state === "active" && "border-foreground bg-foreground text-background",
-          state === "pending" && "border-border bg-muted/30 text-muted-foreground"
-        )}
-      >
-        {state === "done" ? (
-          <Check className="h-3 w-3" />
-        ) : state === "active" ? (
-          <LoaderCircle className="h-3 w-3 animate-spin" />
-        ) : (
-          <span className="h-1.5 w-1.5 rounded-full bg-current opacity-50" />
-        )}
-      </div>
-      <div className="min-w-0">
-        <div
-          className={cn(
-            "text-sm font-medium",
-            state === "pending" ? "text-muted-foreground" : "text-foreground"
-          )}
-        >
-          {step.label}
-        </div>
-        <div className="mt-1 text-xs leading-5 text-muted-foreground">
-          {step.detail}
-        </div>
-      </div>
-    </li>
   )
 }
 
@@ -1774,6 +1645,8 @@ function InboxHeader({
   countLabel,
   searchQuery,
   syncLabel,
+  isSyncing,
+  onSyncNow,
   githubSearchQuery,
   isGithubSearchPending,
   onGroupModeChange,
@@ -1787,6 +1660,8 @@ function InboxHeader({
   countLabel: string
   searchQuery: string
   syncLabel: string
+  isSyncing: boolean
+  onSyncNow: () => void
   githubSearchQuery: string
   isGithubSearchPending: boolean
   onGroupModeChange: (mode: QueueGroupMode) => void
@@ -1805,6 +1680,16 @@ function InboxHeader({
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
             <span className="text-xs text-muted-foreground">· {syncLabel}</span>
+            <button
+              type="button"
+              aria-label="Sync with GitHub now"
+              title="Sync with GitHub now"
+              disabled={isSyncing}
+              onClick={onSyncNow}
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
+            >
+              <RotateCcw className={cn("h-3.5 w-3.5", isSyncing && "animate-spin")} />
+            </button>
             <button
               type="button"
               aria-expanded={isQueryOpen}
@@ -1896,20 +1781,6 @@ function InboxHeader({
       ) : null}
     </div>
   )
-}
-
-function formatSyncLabel(dataUpdatedAt: number): string {
-  if (!dataUpdatedAt) return "not synced"
-
-  const elapsedMs = Math.max(0, Date.now() - dataUpdatedAt)
-  const minutes = Math.floor(elapsedMs / 60_000)
-  if (minutes < 1) return "synced just now"
-  if (minutes < 60) return `synced ${minutes}m ago`
-
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `synced ${hours}h ago`
-
-  return `synced ${Math.floor(hours / 24)}d ago`
 }
 
 function formatUnknownError(error: unknown): string {

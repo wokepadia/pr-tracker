@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   bucketDropId,
   filterQueueItems,
+  formatSyncStatusLabel,
   getEmptyPeekCopy,
   moveItemInBucketItemOrder,
   resolveKanbanDropTarget,
@@ -204,6 +205,60 @@ describe("inbox kanban ordering", () => {
       "pr_2",
       "pr_3",
     ])
+  })
+})
+
+describe("inbox sync status label", () => {
+  const now = Date.parse("2026-06-11T12:00:00.000Z")
+
+  it("reports an active sync first", () => {
+    expect(
+      formatSyncStatusLabel({
+        isSyncing: true,
+        lastSyncedAt: "2026-06-11T11:00:00.000Z",
+        tokenConfigured: true,
+        now,
+      })
+    ).toBe("syncing with GitHub…")
+  })
+
+  it("labels sample data when no token is configured", () => {
+    expect(
+      formatSyncStatusLabel({ isSyncing: false, tokenConfigured: false, now })
+    ).toBe("local sample data")
+  })
+
+  it("reports when a configured inbox has never synced", () => {
+    expect(
+      formatSyncStatusLabel({ isSyncing: false, tokenConfigured: true, now })
+    ).toBe("not synced yet")
+  })
+
+  it("formats the elapsed time since the last sync", () => {
+    expect(
+      formatSyncStatusLabel({
+        isSyncing: false,
+        lastSyncedAt: "2026-06-11T11:58:00.000Z",
+        tokenConfigured: true,
+        now,
+      })
+    ).toBe("synced 2m ago")
+    expect(
+      formatSyncStatusLabel({
+        isSyncing: false,
+        lastSyncedAt: "2026-06-11T09:00:00.000Z",
+        tokenConfigured: true,
+        now,
+      })
+    ).toBe("synced 3h ago")
+    expect(
+      formatSyncStatusLabel({
+        isSyncing: false,
+        lastSyncedAt: "2026-06-08T12:00:00.000Z",
+        tokenConfigured: true,
+        now,
+      })
+    ).toBe("synced 3d ago")
   })
 })
 

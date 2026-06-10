@@ -41,7 +41,6 @@ import type {
   SyncStatus,
 } from "@/api"
 import { defaultAttentionThresholds } from "@/reviewer/view-model"
-import { logRendererError } from "@/lib/error-logging"
 import { localDesktopSchemaSql } from "../../../../packages/db/src/local-schema"
 import { createQueuedTransaction } from "./sqlite-transaction"
 
@@ -135,9 +134,12 @@ export async function getDesktopReviewerInbox(input?: {
   githubSearchQuery?: string
 }) {
   const db = await getDatabase()
+  // GitHub-scoped searches need a sync to resolve which PRs match. The
+  // default inbox reads local SQLite only; syncDesktopGithubData refreshes
+  // it in the background.
   const readScope = input?.githubSearchQuery
     ? await syncBeforeRead(db, input)
-    : await syncBeforeReadWithTimeout(db, input, 6_000)
+    : undefined
   const pullRequests = await loadPullRequests(db, {
     ids: input?.githubSearchQuery ? readScope?.pullRequestIds ?? [] : undefined,
   })
@@ -218,7 +220,6 @@ export async function markDesktopPullRequestSeen(id: string): Promise<{
 
 export async function getDesktopBoardState(): Promise<BoardState> {
   const db = await getDatabase()
-  await syncBeforeReadWithTimeout(db, undefined, 6_000)
   return loadBoardState(db)
 }
 
@@ -581,37 +582,6 @@ async function syncBeforeRead(
   syncPromise.then(cleanupSyncPromise, cleanupSyncPromise)
 
   return syncPromise
-}
-
-async function syncBeforeReadWithTimeout(
-  db: SqlDatabase,
-  options: { githubSearchQuery?: string } | undefined,
-  timeoutMs: number
-): Promise<{ pullRequestIds?: string[] } | undefined> {
-  const syncPromise = syncBeforeRead(db, options)
-  let didTimeOut = false
-  const timeoutPromise = delay(timeoutMs).then(() => {
-    didTimeOut = true
-    return undefined
-  })
-  let result: { pullRequestIds?: string[] } | undefined
-  try {
-    result = await Promise.race([syncPromise, timeoutPromise])
-  } catch (error) {
-    if (await isLocalDatabaseEmpty(db)) {
-      throw error
-    }
-    void logRendererError("Foreground GitHub sync failed; using cached data", error)
-    return undefined
-  }
-
-  if (didTimeOut) {
-    syncPromise.catch((error) => {
-      void logRendererError("Background GitHub sync failed", error)
-    })
-  }
-
-  return result
 }
 
 async function syncLocalGithubData(
@@ -1853,12 +1823,6 @@ function stringToBytes(value: string): number[] {
 
 function bytesToString(value: Uint8Array): string {
   return new TextDecoder().decode(value)
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms)
-  })
 }
 
 function normalizeOnboardingVersion(value: unknown): number {
