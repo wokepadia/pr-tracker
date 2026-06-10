@@ -76,6 +76,24 @@ export function SettingsPage() {
 
           <Separator className="my-5" />
 
+          {settingsQuery.error ? (
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              <span>{settingsQuery.error.message}</span>
+              <Button
+                className="h-8 rounded-md px-2 text-xs"
+                disabled={settingsQuery.isFetching}
+                type="button"
+                variant="outline"
+                onClick={() => void settingsQuery.refetch()}
+              >
+                {settingsQuery.isFetching ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : null}
+                Retry
+              </Button>
+            </div>
+          ) : null}
+
           <GithubSettingsForm settings={settingsQuery.data} />
         </Card>
 
@@ -123,8 +141,20 @@ export function SettingsPage() {
           </div>
 
           {backupMutation.error ? (
-            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-              {backupMutation.error.message}
+            <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              <span>{backupMutation.error.message}</span>
+              <Button
+                className="h-8 rounded-md px-2 text-xs"
+                disabled={backupMutation.isPending}
+                type="button"
+                variant="outline"
+                onClick={() => backupMutation.mutate()}
+              >
+                {backupMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : null}
+                Retry
+              </Button>
             </div>
           ) : null}
 

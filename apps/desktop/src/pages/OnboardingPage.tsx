@@ -17,6 +17,7 @@ import {
   KeyRound,
   Layers,
   Loader2,
+  RotateCcw,
   ShieldCheck,
   type LucideIcon,
 } from "lucide-react"
@@ -173,6 +174,30 @@ export function OnboardingPage() {
 
             <Separator className="my-5" />
 
+            {settingsQuery.error ? (
+              <OnboardingErrorNotice
+                message={settingsQuery.error.message}
+                retryDisabled={settingsQuery.isFetching}
+                onRetry={() => void settingsQuery.refetch()}
+              />
+            ) : null}
+
+            {onboardingQuery.error ? (
+              <OnboardingErrorNotice
+                message={onboardingQuery.error.message}
+                retryDisabled={onboardingQuery.isFetching}
+                onRetry={() => void onboardingQuery.refetch()}
+              />
+            ) : null}
+
+            {saveOnboardingMutation.error ? (
+              <OnboardingErrorNotice
+                message={saveOnboardingMutation.error.message}
+                retryDisabled={saveOnboardingMutation.isPending}
+                onRetry={() => void completeOnboarding()}
+              />
+            ) : null}
+
             <GithubSettingsForm
               advancedInDisclosure
               settings={settingsQuery.data}
@@ -217,6 +242,22 @@ export function OnboardingPage() {
     >
       <div className="mx-auto grid w-full max-w-5xl grid-cols-[minmax(0,1fr)_340px] gap-5 px-6 py-8">
         <Card className="rounded-md border-border p-5 shadow-none">
+          {onboardingQuery.error ? (
+            <OnboardingErrorNotice
+              message={onboardingQuery.error.message}
+              retryDisabled={onboardingQuery.isFetching}
+              onRetry={() => void onboardingQuery.refetch()}
+            />
+          ) : null}
+
+          {saveOnboardingMutation.error ? (
+            <OnboardingErrorNotice
+              message={saveOnboardingMutation.error.message}
+              retryDisabled={saveOnboardingMutation.isPending}
+              onRetry={() => void skipIntro()}
+            />
+          ) : null}
+
           <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
             <Icon className="h-4 w-4" />
             Step {slideIndex + 1} of {slides.length}
@@ -281,6 +322,32 @@ export function OnboardingPage() {
         <SlidePreview type={currentSlide.preview} />
       </div>
     </OnboardingShell>
+  )
+}
+
+function OnboardingErrorNotice({
+  message,
+  retryDisabled,
+  onRetry,
+}: {
+  message: string
+  retryDisabled: boolean
+  onRetry: () => void
+}) {
+  return (
+    <div className="mb-4 flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+      <span>{message}</span>
+      <Button
+        className="h-8 rounded-md px-2 text-xs"
+        disabled={retryDisabled}
+        type="button"
+        variant="outline"
+        onClick={onRetry}
+      >
+        <RotateCcw className={cn("h-3.5 w-3.5", retryDisabled && "animate-spin")} />
+        Retry
+      </Button>
+    </div>
   )
 }
 

@@ -852,6 +852,9 @@ export function InboxPage() {
             ? formatUnknownError(inboxQuery.error)
             : "The desktop data layer could not load. Restart the app, then reload."
         }
+        retryLabel={inboxQuery.isFetching ? "Retrying" : "Retry"}
+        retryDisabled={inboxQuery.isFetching}
+        onRetry={() => void inboxQuery.refetch()}
       />
     )
   }
@@ -1366,9 +1369,15 @@ function InboxSidebar({
 function InboxStatusPanel({
   title,
   detail,
+  retryLabel,
+  retryDisabled = false,
+  onRetry,
 }: {
   title: string
   detail?: string
+  retryLabel?: string
+  retryDisabled?: boolean
+  onRetry?: () => void
 }) {
   return (
     <div className="grid min-h-[760px] place-items-center bg-background px-6">
@@ -1381,6 +1390,18 @@ function InboxStatusPanel({
         </h1>
         {detail ? (
           <p className="mt-2 text-sm leading-6 text-muted-foreground">{detail}</p>
+        ) : null}
+        {onRetry ? (
+          <Button
+            className="mt-4 rounded-md"
+            disabled={retryDisabled}
+            type="button"
+            variant="outline"
+            onClick={onRetry}
+          >
+            <RotateCcw className={cn("h-4 w-4", retryDisabled && "animate-spin")} />
+            {retryLabel ?? "Retry"}
+          </Button>
         ) : null}
       </div>
     </div>
@@ -2871,8 +2892,18 @@ function QuickPeekPanel({
 
       <div className="mt-auto grid grid-cols-2 gap-2 border-t border-border px-5 py-4">
         {caughtUpError ? (
-          <div className="col-span-2 rounded-md border border-foreground/30 bg-foreground/10 px-3 py-2 text-xs leading-5 text-foreground">
-            Could not save caught-up state. Try again.
+          <div className="col-span-2 flex items-center justify-between gap-3 rounded-md border border-foreground/30 bg-foreground/10 px-3 py-2 text-xs leading-5 text-foreground">
+            <span>Could not save caught-up state.</span>
+            <Button
+              className="h-7 rounded-md px-2 text-xs"
+              disabled={isMarkingSeen}
+              type="button"
+              variant="outline"
+              onClick={onCaughtUp}
+            >
+              <RotateCcw className={cn("h-3.5 w-3.5", isMarkingSeen && "animate-spin")} />
+              Retry
+            </Button>
           </div>
         ) : null}
         <Button asChild className="col-span-2 h-9">

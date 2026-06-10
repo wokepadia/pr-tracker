@@ -66,6 +66,10 @@ export function GithubSettingsForm({
 
   function submitSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    retrySaveSettings()
+  }
+
+  function retrySaveSettings() {
     saveMutation.mutate({
       token: token || undefined,
       repositories,
@@ -147,8 +151,20 @@ export function GithubSettingsForm({
       )}
 
       {saveMutation.error ? (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {saveMutation.error.message}
+        <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          <span>{saveMutation.error.message}</span>
+          <Button
+            className="h-8 rounded-md px-2 text-xs"
+            disabled={saveMutation.isPending}
+            type="button"
+            variant="outline"
+            onClick={retrySaveSettings}
+          >
+            {saveMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : null}
+            Retry
+          </Button>
         </div>
       ) : null}
 
