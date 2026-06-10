@@ -445,12 +445,6 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
           <span className={cn("mr-2 inline-block h-2 w-2 rounded-full", detailDotClasses[tone])} />
           {userReviewStanding(item.userLastReviewDecision)}
         </div>
-        <Button asChild className="h-9">
-          <a href={item.url} {...externalLinkProps}>
-            Open in GitHub
-            <ExternalLink className="h-4 w-4" />
-          </a>
-        </Button>
       </div>
     </header>
   )
@@ -533,7 +527,10 @@ function BucketMoveMenu({
           )}
         >
           <ChevronsLeftRight className="h-3.5 w-3.5" />
-          Bucket: {userBucketLabelFromId(userBuckets, bucketId)}
+          {fullWidth ? "Move to bucket" : "Move"}
+          <span className="truncate">
+            {userBucketLabelFromId(userBuckets, bucketId)}
+          </span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-48 rounded-lg">
@@ -684,8 +681,8 @@ function DetailSideRail({
           <Button asChild className="h-9 justify-center">
             <a href={item.url} {...externalLinkProps}>
               {newEventCount > 0
-                ? `Review ${formatCount(newEventCount, "new event")}`
-                : "Review in GitHub"}
+                ? `Open in GitHub - ${formatCount(newEventCount, "new event")}`
+                : "Open in GitHub"}
               <ExternalLink className="h-4 w-4" />
             </a>
           </Button>
