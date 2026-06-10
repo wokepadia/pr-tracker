@@ -1721,48 +1721,70 @@ function InboxHeader({
 }) {
   return (
     <div className="grid gap-3 border-b border-border bg-white px-5 py-4">
-      <form
-        className="flex min-w-0 items-center gap-2"
-        onSubmit={onGithubSearchQuerySubmit}
-      >
-        <div className="relative min-w-0 flex-1">
-          <Input
-            id="github-review-query"
-            type="search"
-            value={githubSearchQuery}
-            onChange={(event) => onGithubSearchQueryChange(event.target.value)}
-            placeholder="is:open user-review-requested:@me"
-            className="h-8 rounded-lg bg-background pr-3 pl-8 font-mono text-[13px]"
-            aria-label="GitHub review search query"
-          />
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        </div>
-        <Button
-          type="submit"
-          size="sm"
-          variant="outline"
-          disabled={isGithubSearchPending}
-          className="h-8"
-        >
-          Apply
-        </Button>
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          disabled={githubSearchQuery.trim().length === 0 || isGithubSearchPending}
-          onClick={onGithubSearchQueryReset}
-          className="h-8 w-8"
-          aria-label="Reset GitHub review query"
-        >
-          <RotateCcw className="h-3.5 w-3.5" />
-        </Button>
-      </form>
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight">Review Inbox</h1>
             <span className="text-xs text-muted-foreground">· {syncLabel}</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 rounded-md px-2 text-xs"
+                >
+                  <Search className="h-3.5 w-3.5" />
+                  Sync query
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-[420px] rounded-lg p-3">
+                <DropdownMenuLabel className="px-0 pt-0">
+                  GitHub review search
+                </DropdownMenuLabel>
+                <form
+                  className="mt-2 flex min-w-0 items-center gap-2"
+                  onSubmit={onGithubSearchQuerySubmit}
+                >
+                  <div className="relative min-w-0 flex-1">
+                    <Input
+                      id="github-review-query"
+                      type="search"
+                      value={githubSearchQuery}
+                      onChange={(event) =>
+                        onGithubSearchQueryChange(event.target.value)
+                      }
+                      placeholder="is:open user-review-requested:@me"
+                      className="h-8 rounded-lg bg-background pr-3 pl-8 font-mono text-[13px]"
+                      aria-label="GitHub review search query"
+                    />
+                    <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  </div>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    variant="outline"
+                    disabled={isGithubSearchPending}
+                    className="h-8"
+                  >
+                    Apply
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    disabled={
+                      githubSearchQuery.trim().length === 0 || isGithubSearchPending
+                    }
+                    onClick={onGithubSearchQueryReset}
+                    className="h-8 w-8"
+                    aria-label="Reset GitHub review query"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </Button>
+                </form>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
             {activeCount} active PRs
