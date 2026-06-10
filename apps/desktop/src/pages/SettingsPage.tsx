@@ -202,11 +202,15 @@ function AttentionTimingCard() {
   })
   const [elevatedAfterHours, setElevatedAfterHours] = useState("")
   const [overdueAfterHours, setOverdueAfterHours] = useState("")
+  const [hasBlurredInput, setHasBlurredInput] = useState(false)
+  const [showSavedNotice, setShowSavedNotice] = useState(false)
   const saveMutation = useMutation({
     mutationFn: saveAttentionSettings,
     onSuccess: async (saved) => {
       setElevatedAfterHours(String(saved.elevatedAfterHours))
       setOverdueAfterHours(String(saved.overdueAfterHours))
+      setHasBlurredInput(false)
+      setShowSavedNotice(true)
       queryClient.setQueryData(["attention-settings"], saved)
       await queryClient.invalidateQueries({ queryKey: ["reviewer-inbox"] })
       await queryClient.invalidateQueries({ queryKey: ["pull-request"] })
@@ -218,6 +222,12 @@ function AttentionTimingCard() {
     setElevatedAfterHours(String(settingsQuery.data.elevatedAfterHours))
     setOverdueAfterHours(String(settingsQuery.data.overdueAfterHours))
   }, [settingsQuery.data])
+
+  useEffect(() => {
+    if (!showSavedNotice) return
+    const timer = setTimeout(() => setShowSavedNotice(false), 2500)
+    return () => clearTimeout(timer)
+  }, [showSavedNotice])
 
   const parsedElevated = Number.parseInt(elevatedAfterHours, 10)
   const parsedOverdue = Number.parseInt(overdueAfterHours, 10)
@@ -255,6 +265,7 @@ function AttentionTimingCard() {
             className="h-9 w-40 rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
             inputMode="numeric"
             value={elevatedAfterHours}
+            onBlur={() => setHasBlurredInput(true)}
             onChange={(event) => setElevatedAfterHours(event.target.value)}
           />
         </label>
@@ -264,6 +275,7 @@ function AttentionTimingCard() {
             className="h-9 w-40 rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
             inputMode="numeric"
             value={overdueAfterHours}
+            onBlur={() => setHasBlurredInput(true)}
             onChange={(event) => setOverdueAfterHours(event.target.value)}
           />
         </label>
@@ -285,12 +297,21 @@ function AttentionTimingCard() {
           )}
           Save
         </Button>
+        {showSavedNotice ? (
+          <span
+            className="inline-flex h-9 items-center gap-1 text-sm text-emerald-700"
+            role="status"
+          >
+            <Check className="h-4 w-4" />
+            Saved
+          </span>
+        ) : null}
       </div>
 
-      {!isValid ? (
+      {hasBlurredInput && !isValid ? (
         <div className="text-sm text-destructive">
-          Both values must be at least 1 hour, and overdue must not be lower
-          than elevated.
+          Use whole hours: elevated must be at least 1, and overdue must be
+          greater than or equal to elevated.
         </div>
       ) : null}
 
