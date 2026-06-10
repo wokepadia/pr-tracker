@@ -877,7 +877,14 @@ export function InboxPage() {
         onGithubSearchQuerySubmit={applyGithubSearchQuery}
         onSearchQueryChange={setSearchQuery}
       />
-      <div className="min-h-0 flex-1 overflow-y-auto pt-2 pb-7">
+      <div
+        className={cn(
+          "min-h-0 flex-1",
+          groupMode === "action" && activeActionTabId !== "new_activity"
+            ? "overflow-hidden"
+            : "overflow-y-auto pt-2 pb-7"
+        )}
+      >
         {groupMode === "action" ? (
           activeActionTabId !== "new_activity" ? (
             <KanbanBoard
@@ -987,9 +994,10 @@ export function InboxPage() {
   return (
     <TooltipProvider delayDuration={200}>
       <div
-        className="grid min-h-[calc(100vh-48px)] overflow-x-auto"
+        className="grid h-full overflow-x-auto"
         style={{
           gridTemplateColumns: `${REVIEW_SIDEBAR_WIDTH}px minmax(${reviewWorkspaceMinWidth}px, 1fr)`,
+          gridTemplateRows: "minmax(0, 1fr)",
         }}
       >
       <InboxSidebar
@@ -1020,7 +1028,7 @@ export function InboxPage() {
             orientation="horizontal"
             defaultLayout={{ reviewQueue: 68, quickPeek: 32 }}
             resizeTargetMinimumSize={{ fine: 12, coarse: 36 }}
-            className="h-full min-h-[calc(100vh-48px)]"
+            className="h-full"
             style={{ minWidth: REVIEW_WORKSPACE_MIN_WIDTH }}
           >
             <ResizablePanel
@@ -1073,7 +1081,7 @@ export function InboxPage() {
           </ResizablePanelGroup>
         ) : (
           <div
-            className="h-full min-h-[calc(100vh-48px)]"
+            className="h-full"
             style={{ minWidth: REVIEW_QUEUE_MIN_WIDTH }}
           >
             {reviewQueuePanel}
@@ -1115,7 +1123,7 @@ function InboxLoadingScreen() {
   const slowRequest = elapsedSeconds >= 8
 
   return (
-    <div className="grid min-h-[calc(100vh-48px)] place-items-center bg-muted/20 px-6 py-10">
+    <div className="grid h-full place-items-center bg-muted/20 px-6 py-10">
       <section
         className="w-full max-w-[620px] overflow-hidden rounded-lg border border-border bg-card shadow-sm"
         aria-live="polite"
@@ -1279,7 +1287,7 @@ function InboxSidebar({
   )
 
   return (
-    <aside className="flex flex-col border-b border-border bg-card px-3 py-3 sm:border-r sm:border-b-0 sm:py-4">
+    <aside className="flex min-h-0 flex-col overflow-y-auto border-b border-border bg-card px-3 py-3 sm:border-r sm:border-b-0 sm:py-4">
       <div className="flex items-center gap-2 px-2 pt-1 pb-2 sm:pb-4">
         <AppLogo className="text-xs font-medium text-foreground" />
       </div>
@@ -1389,7 +1397,7 @@ function InboxStatusPanel({
   onRetry?: () => void
 }) {
   return (
-    <div className="grid min-h-[760px] place-items-center bg-background px-6">
+    <div className="grid h-full place-items-center bg-background px-6">
       <div className="max-w-sm rounded-lg border border-border bg-card p-6 text-center">
         <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-muted/40 text-foreground">
           <Inbox className="h-5 w-5" />
