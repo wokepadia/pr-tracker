@@ -14,6 +14,7 @@ import {
   getGithubSettingsStatus,
   getOnboardingState,
 } from "@/api"
+import { AppLogo } from "@/components/AppLogo"
 import { Button } from "@/components/ui/button"
 import { shouldRedirectToOnboarding } from "./onboarding-gate"
 
@@ -58,10 +59,15 @@ export function AppFrame() {
   return (
     <div className="grid h-screen grid-rows-[48px_minmax(0,1fr)] overflow-hidden bg-background text-foreground">
       <header className="z-20 flex h-[48px] items-center border-b border-border bg-white px-5 text-xs text-muted-foreground">
-        <div className="mr-auto" />
+        <Link to="/" className="mr-auto inline-flex items-center gap-2 font-medium text-foreground">
+          <AppLogo />
+        </Link>
+        <div className="ml-auto hidden text-right md:block">
+          tracker, not a review surface · review happens in GitHub
+        </div>
         <Link
           to="/settings"
-          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-muted"
+          className="ml-4 inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-muted"
         >
           <Settings className="h-3.5 w-3.5" />
           Settings
