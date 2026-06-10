@@ -317,6 +317,9 @@ export function InboxPage() {
   const [hasHydratedBoardState, setHasHydratedBoardState] = useState(false)
   const [failedCaughtUpItemId, setFailedCaughtUpItemId] = useState<string>()
   const [groupMode, setGroupMode] = useState<QueueGroupMode>("action")
+  const [preferredGroupMode, setPreferredGroupMode] = useState<
+    "action" | "repository"
+  >("action")
   const [searchQuery, setSearchQuery] = useState("")
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null)
   const [bucketColumnWidths, setBucketColumnWidths] = useState<
@@ -768,9 +771,19 @@ export function InboxPage() {
   }
 
   function focusHome() {
-    setGroupMode("action")
+    setGroupMode(preferredGroupMode)
     setActiveActionTabId("home")
     setSelectedId("")
+  }
+
+  function changeGroupMode(mode: QueueGroupMode) {
+    setGroupMode(mode)
+    if (mode === "action" || mode === "repository") {
+      setPreferredGroupMode(mode)
+    }
+    if (mode === "action" && activeActionTabId === "new_activity") {
+      setActiveActionTabId("home")
+    }
   }
 
   function focusNewActivity() {
@@ -862,16 +875,46 @@ export function InboxPage() {
   const reviewWorkspaceMinWidth = selectedItem
     ? REVIEW_WORKSPACE_MIN_WIDTH
     : REVIEW_QUEUE_MIN_WIDTH
+  const headerView =
+    groupMode === "pinned"
+      ? {
+          title: "Pinned",
+          countLabel: formatCount(searchedPinnedItems.length, "pinned PR"),
+        }
+      : groupMode === "snoozed"
+        ? {
+            title: "Snoozed",
+            countLabel: formatCount(searchedSnoozedItems.length, "snoozed PR"),
+          }
+        : groupMode === "muted"
+          ? {
+              title: "Muted",
+              countLabel: formatCount(searchedMutedItems.length, "muted PR"),
+            }
+          : groupMode === "action" && activeActionTabId === "new_activity"
+            ? {
+                title: "New activity",
+                countLabel: formatCount(
+                  searchedNewActivityItems.length,
+                  "PR with new activity",
+                  "PRs with new activity"
+                ),
+              }
+            : {
+                title: "Review Inbox",
+                countLabel: formatCount(searchedActiveItems.length, "active PR"),
+              }
   const reviewQueuePanel = (
     <div className="flex h-full min-w-0 flex-col border-b border-border">
       <InboxHeader
         groupMode={groupMode}
-        activeCount={searchedActiveItems.length}
+        title={headerView.title}
+        countLabel={headerView.countLabel}
         searchQuery={searchQuery}
         syncLabel={formatSyncLabel(inboxQuery.dataUpdatedAt)}
         githubSearchQuery={githubSearchQueryDraft}
         isGithubSearchPending={inboxQuery.isFetching}
-        onGroupModeChange={setGroupMode}
+        onGroupModeChange={changeGroupMode}
         onGithubSearchQueryChange={setGithubSearchQueryDraft}
         onGithubSearchQueryReset={resetGithubSearchQuery}
         onGithubSearchQuerySubmit={applyGithubSearchQuery}
@@ -1704,7 +1747,8 @@ function BucketManagerDialog({
 
 function InboxHeader({
   groupMode,
-  activeCount,
+  title,
+  countLabel,
   searchQuery,
   syncLabel,
   githubSearchQuery,
@@ -1716,7 +1760,8 @@ function InboxHeader({
   onSearchQueryChange,
 }: {
   groupMode: QueueGroupMode
-  activeCount: number
+  title: string
+  countLabel: string
   searchQuery: string
   syncLabel: string
   githubSearchQuery: string
@@ -1769,12 +1814,10 @@ function InboxHeader({
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight">Review Inbox</h1>
+            <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
             <span className="text-xs text-muted-foreground">· {syncLabel}</span>
           </div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            {activeCount} active PRs
-          </div>
+          <div className="mt-1 text-xs text-muted-foreground">{countLabel}</div>
         </div>
         <div className="relative min-w-0 flex-[1_1_100%] lg:ml-auto lg:min-w-[220px] lg:max-w-[360px] lg:flex-1">
           <Input
