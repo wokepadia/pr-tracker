@@ -453,9 +453,7 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
           <span
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-medium",
-              item.waitingOn === "you"
-                ? detailToneClasses.hot
-                : "border-border bg-muted/30 text-muted-foreground"
+              waitingChipClasses(item)
             )}
           >
             {detailQueueLabel(item)} · {item.waitingAge}
@@ -755,6 +753,25 @@ function DetailSideRail({
         </div>
       </RailCard>
 
+      <RailCard title="Why this needs your attention">
+        <p className="text-sm leading-5 text-foreground">{item.reason}</p>
+        {item.evidence.length > 0 ? (
+          <ul className="mt-3 space-y-2 border-t border-border pt-3">
+            {item.evidence.map((line) => (
+              <li key={line.id} className="flex gap-2 text-xs leading-5">
+                <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+                <span>
+                  <span className="text-foreground">{line.label}</span>
+                  {line.occurredAt ? (
+                    <span className="text-muted-foreground"> · {line.occurredAt}</span>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </RailCard>
+
       <RailCard title="Where it stands">
         <RailKeyValue
           label="your review"
@@ -836,6 +853,19 @@ function detailQueueLabel(item: ReviewQueueItemView): string {
   if (item.laneId === "caught_up") return "Caught up"
   if (item.laneId === "stale") return "Stale"
   return "Watching"
+}
+
+function waitingChipClasses(item: ReviewQueueItemView): string {
+  if (item.waitingOn === "none") {
+    return "border-border bg-muted/30 text-muted-foreground"
+  }
+  if (item.waitingUrgency === "overdue") {
+    return "border-rose-200 bg-rose-50 text-rose-800"
+  }
+  if (item.waitingOn === "you" || item.waitingUrgency === "elevated") {
+    return detailToneClasses.hot
+  }
+  return "border-border bg-muted/30 text-muted-foreground"
 }
 
 function detailToneForItem(item: ReviewQueueItemView): DetailTone {

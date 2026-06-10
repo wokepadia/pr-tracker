@@ -2356,7 +2356,8 @@ function QueueCard({
           <span
             className={cn(
               "shrink-0 text-xs text-muted-foreground",
-              item.waitingOn === "you" && "font-semibold text-foreground"
+              item.waitingOn === "you" && "font-semibold text-foreground",
+              waitingAgeClass(item)
             )}
           >
             {item.waitingAge}
@@ -2627,7 +2628,8 @@ function QueueRow({
         <span className="whitespace-nowrap text-xs text-muted-foreground">
           <span
             className={cn(
-              item.waitingOn === "you" && "font-semibold text-foreground"
+              item.waitingOn === "you" && "font-semibold text-foreground",
+              waitingAgeClass(item)
             )}
           >
             {item.waitingAge}
@@ -2862,7 +2864,8 @@ function QuickPeekPanel({
           </span>
           <span className="text-muted-foreground/40">·</span>
           <span className={cn(item.waitingOn === "you" && "text-foreground")}>
-            {queueTimingLabel(item)} {item.waitingAge}
+            {queueTimingLabel(item)}{" "}
+            <span className={waitingAgeClass(item)}>{item.waitingAge}</span>
           </span>
         </div>
       </div>
@@ -2953,10 +2956,28 @@ function QuickPeekPanel({
 
         <section>
           <div className="text-xs text-muted-foreground">
-            Queue reason
+            Why this is here
           </div>
-          <div className="mt-3 rounded-md border border-border bg-muted/30 p-3 text-sm leading-5 text-foreground">
-            {item.reason}
+          <div className="mt-3 rounded-md border border-border bg-muted/30 p-3">
+            <p className="text-sm leading-5 text-foreground">{item.reason}</p>
+            {item.evidence.length > 0 ? (
+              <ul className="mt-2.5 space-y-1.5 border-t border-border pt-2.5">
+                {item.evidence.map((line) => (
+                  <li key={line.id} className="flex gap-2 text-xs leading-5">
+                    <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+                    <span>
+                      <span className="text-foreground">{line.label}</span>
+                      {line.occurredAt ? (
+                        <span className="text-muted-foreground">
+                          {" "}
+                          · {line.occurredAt}
+                        </span>
+                      ) : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
         </section>
 
@@ -3080,6 +3101,12 @@ function queuePillTooltip(item: ReviewQueueItemView): string {
   if (item.laneId === "caught_up") return "You are caught up on this PR"
   if (item.laneId === "stale") return "No recent activity on this PR"
   return "You are watching this PR"
+}
+
+function waitingAgeClass(item: ReviewQueueItemView): string | undefined {
+  if (item.waitingUrgency === "overdue") return "text-rose-600"
+  if (item.waitingUrgency === "elevated") return "text-amber-600"
+  return undefined
 }
 
 function queueTimingLabel(item: ReviewQueueItemView): string {
