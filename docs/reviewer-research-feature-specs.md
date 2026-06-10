@@ -137,6 +137,18 @@ model unless noted), and status relative to current V1 plans
 ([core-workflow-plan.md](core-workflow-plan.md),
 [reviewer-ui-v1-spec.md](reviewer-ui-v1-spec.md)).
 
+Implementation status as of 2026-06-11: F1, F2, F3, F4, F5, F6,
+F8, and F9 are implemented (turn ownership and evidence in the
+classification engine; per-turn wait timers with urgency tints;
+since-your-last-review deltas with compare links; stale-approval
+warnings; the thread resolution ledger backed by a GraphQL thread
+fetch; size chips; two-tone obligation emphasis). F7 was already
+covered by the description-first detail layout. F10 (CI chips)
+remains deferred post-V1 per existing scope. Known deferred
+details: urgency thresholds are constants rather than settings,
+and the thread fetch reads the first 100 threads and 100 comments
+per thread without pagination.
+
 ### F1. Turn-based attention classification
 
 The research strongly validates our existing lane model and
