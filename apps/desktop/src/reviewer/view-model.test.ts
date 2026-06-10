@@ -470,6 +470,50 @@ describe("per-turn wait timers", () => {
     })
   })
 
+  it("counts completed changes-requested rounds", () => {
+    const item = classifiedItem("pr_rounds", "updated_since_review")
+    item.pullRequest.reviews = [
+      {
+        id: "r1",
+        reviewerId: "viewer",
+        decision: "changes_requested",
+        submittedAt: "2026-05-28T10:00:00.000Z",
+      },
+      {
+        id: "r2",
+        reviewerId: "viewer",
+        decision: "changes_requested",
+        submittedAt: "2026-05-30T10:00:00.000Z",
+      },
+      {
+        id: "r3",
+        reviewerId: "viewer",
+        decision: "changes_requested",
+        submittedAt: "2026-06-02T10:00:00.000Z",
+      },
+    ]
+    item.pullRequest.activity = [
+      {
+        id: "c1",
+        type: "commit",
+        actorId: "maya",
+        occurredAt: "2026-05-29T10:00:00.000Z",
+        title: "Maya pushed 1 commit",
+      },
+      {
+        id: "c2",
+        type: "commit",
+        actorId: "maya",
+        occurredAt: "2026-05-31T10:00:00.000Z",
+        title: "Maya pushed 1 commit",
+      },
+    ]
+    const view = toReviewQueueItemView(item, sampleActorById(), "viewer")
+
+    // The third changes-requested review has no push after it yet.
+    expect(view.reviewRounds).toBe(2)
+  })
+
   it("maps classification evidence into display lines", () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2026-06-02T12:00:00.000Z"))

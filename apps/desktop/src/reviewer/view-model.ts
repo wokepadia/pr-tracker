@@ -92,6 +92,8 @@ export interface ReviewQueueItemView {
   userLastReviewAt?: string
   sinceLastReview?: SinceLastReviewView
   approvalStale: boolean
+  /** Completed changes-requested → push cycles; high counts mean stuck. */
+  reviewRounds: number
   otherReviewers: ReviewerState[]
   unseenEventCount: number
   newCommitCount: number
@@ -215,6 +217,7 @@ export function toReviewQueueItemView(
       : undefined,
     approvalStale:
       latestViewerReview?.decision === "approved" && reviewedHeadMoved,
+    reviewRounds: countReviewRounds(viewerReviews, pullRequest.activity),
     otherReviewers: buildReviewerStates(pullRequest, actorById, viewerId),
     unseenEventCount: item.unseenActivityCount,
     newCommitCount: newActivity.filter((event) => event.type === "commit").length,
@@ -319,6 +322,21 @@ function getWaitingUrgency(
   if (waitedMs >= overdueWaitMs) return "overdue"
   if (waitedMs >= elevatedWaitMs) return "elevated"
   return "none"
+}
+
+function countReviewRounds(
+  viewerReviews: ReviewDecisionEvent[],
+  activity: PullRequestActivity[]
+): number {
+  const commitTimes = activity
+    .filter((event) => event.type === "commit")
+    .map((event) => Date.parse(event.occurredAt))
+
+  return viewerReviews.filter(
+    (review) =>
+      review.decision === "changes_requested" &&
+      commitTimes.some((time) => time > Date.parse(review.submittedAt))
+  ).length
 }
 
 function buildSinceLastReview(

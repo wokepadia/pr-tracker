@@ -226,10 +226,50 @@ describe("turn ownership and evidence", () => {
     expect(item.evidence).toEqual([
       {
         id: "open_threads",
-        label: "2 unresolved review threads include you.",
+        label: "2 unresolved review threads await your reply.",
         occurredAt: "2026-05-30T10:05:00.000Z"
       }
     ]);
+  });
+
+  it("does not demand thread attention when the viewer replied last everywhere", () => {
+    const pullRequest: PullRequestItem = {
+      ...samplePullRequests[2]!,
+      reviews: [],
+      threads: [
+        {
+          id: "t_viewer_last",
+          isResolved: false,
+          participantIds: ["viewer", "sam"],
+          lastActorId: "viewer",
+          lastActivityAt: "2026-05-30T10:05:00.000Z"
+        }
+      ]
+    };
+
+    const item = classifyPullRequest(pullRequest, baseViewerContext);
+
+    expect(item.workflowState).not.toBe("needs_thread_attention");
+    expect(item.turn.owner).not.toBe("viewer");
+  });
+
+  it("keeps threads with unknown last actors in the viewer's court", () => {
+    const pullRequest: PullRequestItem = {
+      ...samplePullRequests[2]!,
+      reviews: [],
+      threads: [
+        {
+          id: "t_unknown_last",
+          isResolved: false,
+          participantIds: ["viewer", "sam"],
+          lastActivityAt: "2026-05-30T10:05:00.000Z"
+        }
+      ]
+    };
+
+    const item = classifyPullRequest(pullRequest, baseViewerContext);
+
+    expect(item.workflowState).toBe("needs_thread_attention");
   });
 
   it("marks approval as releasing the turn at the approval time", () => {

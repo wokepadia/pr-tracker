@@ -237,6 +237,7 @@ function makeQueueItem(
     lastSeenAt: "3h ago",
     userLastReviewDecision: "pending",
     approvalStale: false,
+    reviewRounds: 0,
     otherReviewers: [],
     unseenEventCount: 1,
     newCommitCount: 0,

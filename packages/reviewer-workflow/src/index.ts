@@ -139,6 +139,12 @@ export function classifyPullRequest(
   const openViewerThreads = pullRequest.threads.filter(
     (thread) => !thread.isResolved && thread.participantIds.includes(viewer.viewerId)
   );
+  // A thread only puts the ball in the viewer's court when someone else
+  // acted last. Unknown last actors stay included so missing data never
+  // hides a thread that may need attention.
+  const threadsAwaitingViewer = openViewerThreads.filter(
+    (thread) => thread.lastActorId !== viewer.viewerId
+  );
 
   if (latestViewerReview?.decision === "changes_requested") {
     if (reviewedDifferentHead) {
@@ -231,21 +237,21 @@ export function classifyPullRequest(
     );
   }
 
-  if (openViewerThreads.length > 0) {
+  if (threadsAwaitingViewer.length > 0) {
     const latestThreadActivityAt = maxIsoDate(
-      openViewerThreads.map((thread) => thread.lastActivityAt)
+      threadsAwaitingViewer.map((thread) => thread.lastActivityAt)
     );
     return make(
       "needs_thread_attention",
-      "An unresolved review thread includes you.",
+      "An unresolved review thread awaits your reply.",
       { owner: "viewer", since: latestThreadActivityAt },
       [
         {
           id: "open_threads",
           label:
-            openViewerThreads.length === 1
-              ? "1 unresolved review thread includes you."
-              : `${openViewerThreads.length} unresolved review threads include you.`,
+            threadsAwaitingViewer.length === 1
+              ? "1 unresolved review thread awaits your reply."
+              : `${threadsAwaitingViewer.length} unresolved review threads await your reply.`,
           occurredAt: latestThreadActivityAt
         }
       ]
