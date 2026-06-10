@@ -388,6 +388,88 @@ describe("per-turn wait timers", () => {
     expect(view.waitingUrgency).toBe("none")
   })
 
+  it("derives the since-last-review delta with a compare link", () => {
+    const view = buildInboxView(buildSampleInbox())
+
+    const updatedAfterApproval = view.items.find((item) => item.id === "pr_2")
+
+    expect(updatedAfterApproval?.approvalStale).toBe(true)
+    expect(updatedAfterApproval?.sinceLastReview).toMatchObject({
+      decision: "approved",
+      replyCount: 0,
+      threadsResolvedCount: 0,
+      compareUrl: "https://github.com/acme/web/compare/f2..f3",
+    })
+    expect(updatedAfterApproval?.sinceLastReview?.commits).toHaveLength(1)
+    expect(updatedAfterApproval?.sinceLastReview?.commits[0]).toMatchObject({
+      title: "Ari pushed 1 commit",
+    })
+
+    const requestedReview = view.items.find((item) => item.id === "pr_1")
+    expect(requestedReview?.sinceLastReview).toBeUndefined()
+    expect(requestedReview?.approvalStale).toBe(false)
+  })
+
+  it("omits the delta when nothing happened since the review", () => {
+    const item = classifiedItem("pr_no_delta", "waiting_on_author")
+    item.pullRequest.reviews = [
+      {
+        id: "r_current",
+        reviewerId: "viewer",
+        decision: "changes_requested",
+        submittedAt: "2026-06-02T10:00:00.000Z",
+        commitSha: "c3",
+      },
+    ]
+    const view = toReviewQueueItemView(item, sampleActorById(), "viewer")
+
+    expect(view.sinceLastReview).toBeUndefined()
+    expect(view.approvalStale).toBe(false)
+  })
+
+  it("counts only other participants' replies since the review", () => {
+    const item = classifiedItem("pr_replies", "updated_since_review")
+    item.pullRequest.reviews = [
+      {
+        id: "r_cr",
+        reviewerId: "viewer",
+        decision: "changes_requested",
+        submittedAt: "2026-06-01T10:00:00.000Z",
+        commitSha: "c3",
+      },
+    ]
+    item.pullRequest.activity = [
+      {
+        id: "own-reply",
+        type: "comment",
+        actorId: "viewer",
+        occurredAt: "2026-06-01T11:00:00.000Z",
+        title: "You replied",
+      },
+      {
+        id: "author-reply",
+        type: "comment",
+        actorId: "maya",
+        occurredAt: "2026-06-01T12:00:00.000Z",
+        title: "Maya replied",
+      },
+      {
+        id: "earlier-comment",
+        type: "comment",
+        actorId: "maya",
+        occurredAt: "2026-05-31T12:00:00.000Z",
+        title: "Maya commented before the review",
+      },
+    ]
+    const view = toReviewQueueItemView(item, sampleActorById(), "viewer")
+
+    expect(view.sinceLastReview).toMatchObject({
+      decision: "changes_requested",
+      replyCount: 1,
+      compareUrl: undefined,
+    })
+  })
+
   it("maps classification evidence into display lines", () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2026-06-02T12:00:00.000Z"))

@@ -3,6 +3,7 @@ import type {
   PullRequestActivity,
   PullRequestItem,
   ReviewDecision,
+  ReviewDecisionEvent,
 } from "@pr-tracker/core"
 import type {
   ClassificationEvidence,
@@ -22,6 +23,17 @@ export type ReviewQueueBucketId = ReviewLaneId | "approved" | "watching"
 export type WaitingOn = "you" | "author" | "none"
 
 export type WaitingUrgency = "none" | "elevated" | "overdue"
+
+export interface SinceLastReviewView {
+  decision: ReviewDecision
+  reviewedAt: string
+  /** Commit activity observed after the review; may be empty when commit
+   * events were not ingested even though the head moved. */
+  commits: Array<{ id: string; title: string; occurredAt: string }>
+  replyCount: number
+  threadsResolvedCount: number
+  compareUrl?: string
+}
 
 export interface EvidenceLineView {
   id: string
@@ -78,6 +90,8 @@ export interface ReviewQueueItemView {
   lastSeenAt: string
   userLastReviewDecision: ReviewDecision | "pending"
   userLastReviewAt?: string
+  sinceLastReview?: SinceLastReviewView
+  approvalStale: boolean
   otherReviewers: ReviewerState[]
   unseenEventCount: number
   newCommitCount: number
@@ -166,6 +180,10 @@ export function toReviewQueueItemView(
     latestViewerReview?.submittedAt ??
     pullRequest.updatedAt
   const waitingSinceAt = item.turn.since ?? lastMeaningfulAt
+  const reviewedHeadMoved = Boolean(
+    latestViewerReview?.commitSha &&
+      latestViewerReview.commitSha !== pullRequest.latestCommitSha
+  )
 
   return {
     id: pullRequest.id,
@@ -192,6 +210,11 @@ export function toReviewQueueItemView(
     userLastReviewAt: latestViewerReview
       ? formatRelativeTime(latestViewerReview.submittedAt)
       : undefined,
+    sinceLastReview: latestViewerReview
+      ? buildSinceLastReview(pullRequest, latestViewerReview, reviewedHeadMoved)
+      : undefined,
+    approvalStale:
+      latestViewerReview?.decision === "approved" && reviewedHeadMoved,
     otherReviewers: buildReviewerStates(pullRequest, actorById, viewerId),
     unseenEventCount: item.unseenActivityCount,
     newCommitCount: newActivity.filter((event) => event.type === "commit").length,
@@ -296,6 +319,68 @@ function getWaitingUrgency(
   if (waitedMs >= overdueWaitMs) return "overdue"
   if (waitedMs >= elevatedWaitMs) return "elevated"
   return "none"
+}
+
+function buildSinceLastReview(
+  pullRequest: PullRequestItem,
+  review: ReviewDecisionEvent,
+  reviewedHeadMoved: boolean
+): SinceLastReviewView | undefined {
+  const reviewTime = Date.parse(review.submittedAt)
+  const activitySinceReview = pullRequest.activity.filter(
+    (event) => Date.parse(event.occurredAt) > reviewTime
+  )
+  const commits = activitySinceReview
+    .filter((event) => event.type === "commit")
+    .sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt))
+    .map((event) => ({
+      id: event.id,
+      title: event.title,
+      occurredAt: formatRelativeTime(event.occurredAt),
+    }))
+  const replyCount = activitySinceReview.filter(
+    (event) =>
+      ["comment", "review"].includes(event.type) &&
+      event.actorId !== review.reviewerId
+  ).length
+  const threadsResolvedCount = activitySinceReview.filter(
+    (event) => event.type === "thread_resolved"
+  ).length
+
+  if (
+    !reviewedHeadMoved &&
+    commits.length === 0 &&
+    replyCount === 0 &&
+    threadsResolvedCount === 0
+  ) {
+    return undefined
+  }
+
+  return {
+    decision: review.decision,
+    reviewedAt: formatRelativeTime(review.submittedAt),
+    commits,
+    replyCount,
+    threadsResolvedCount,
+    compareUrl:
+      reviewedHeadMoved && review.commitSha
+        ? buildCompareUrl(
+            pullRequest.url,
+            review.commitSha,
+            pullRequest.latestCommitSha
+          )
+        : undefined,
+  }
+}
+
+function buildCompareUrl(
+  pullRequestUrl: string,
+  fromSha: string,
+  toSha: string
+): string | undefined {
+  const repositoryUrl = pullRequestUrl.replace(/\/pull\/\d+.*$/, "")
+  if (repositoryUrl === pullRequestUrl) return undefined
+  return `${repositoryUrl}/compare/${fromSha}..${toSha}`
 }
 
 function toEvidenceLineView(
