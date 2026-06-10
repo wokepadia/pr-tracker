@@ -96,15 +96,7 @@ export function BoardItemNotes({
         <div className="mt-3 rounded-md border border-border bg-muted/20 p-3">
           <MarkdownContent source={value} className="text-sm leading-5" />
         </div>
-      ) : (
-        <button
-          type="button"
-          onClick={startEditing}
-          className="mt-3 flex min-h-[72px] w-full cursor-pointer items-center justify-center rounded-md border border-dashed border-border bg-muted/20 px-3 text-sm text-muted-foreground outline-none transition-colors hover:border-foreground/25 hover:bg-muted/35 hover:text-foreground focus-visible:border-foreground/35 focus-visible:ring-2 focus-visible:ring-foreground/10"
-        >
-          Add note
-        </button>
-      )}
+      ) : null}
     </section>
   )
 }

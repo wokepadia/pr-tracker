@@ -2817,7 +2817,7 @@ function QuickPeekPanel({
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <PanelRight className="h-3.5 w-3.5" />
-            Sneak peek
+            {item.repository} / #{item.number}
           </div>
           <div className="flex items-center gap-1">
             <Tooltip>
@@ -2831,13 +2831,13 @@ function QuickPeekPanel({
                   <Link
                     to="/pull-requests/$pullRequestId"
                     params={{ pullRequestId: item.id }}
-                    aria-label={`Open PR detail for ${item.title}`}
+                    aria-label={`Open full view for ${item.title}`}
                   >
                     <Maximize2 className="h-4 w-4" />
                   </Link>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Open PR detail</TooltipContent>
+              <TooltipContent>Open full view</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -2874,10 +2874,6 @@ function QuickPeekPanel({
           {item.title}
         </h2>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span>
-            {item.repository} / #{item.number}
-          </span>
-          <span className="text-muted-foreground/40">·</span>
           <span>{item.authorLogin}</span>
           <span className="text-muted-foreground/40">·</span>
           <span className={cn(item.waitingOn === "you" && "text-foreground")}>
@@ -2927,46 +2923,46 @@ function QuickPeekPanel({
           </ul>
         </section>
 
-        <Separator className="my-4 bg-border" />
+        {item.totalThreadCount > 0 ? (
+          <>
+            <Separator className="my-4 bg-border" />
 
-        <section>
-          <div className="text-xs text-muted-foreground">
-            Open threads · {item.unresolvedThreadCount} of{" "}
-            {item.totalThreadCount} unresolved
-          </div>
-          <div className="mt-3 space-y-2">
-            {item.reviewThreads.length > 0 ? item.reviewThreads.map((thread) => (
-              <div
-                key={thread.id}
-                className="grid grid-cols-[30px_1fr] gap-3 rounded-md border border-border bg-muted/30 p-3"
-              >
-                <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-border bg-muted/40 text-xs text-muted-foreground">
-                  {thread.author.slice(0, 2).toUpperCase()}
-                </span>
-                <div className="min-w-0">
-                  <div className="line-clamp-2 text-sm leading-5 text-foreground">
-                    {thread.excerpt}
-                  </div>
+            <section>
+              <div className="text-xs text-muted-foreground">
+                Open threads · {item.unresolvedThreadCount} of{" "}
+                {item.totalThreadCount} unresolved
+              </div>
+              <div className="mt-3 space-y-2">
+                {item.reviewThreads.map((thread) => (
                   <div
-                    className={cn(
-                      "mt-1.5 text-xs",
-                      thread.status === "unresolved"
-                        ? "text-foreground"
-                        : "text-muted-foreground/70"
-                    )}
+                    key={thread.id}
+                    className="grid grid-cols-[30px_1fr] gap-3 rounded-md border border-border bg-muted/30 p-3"
                   >
-                    {thread.status}
-                    {thread.authorReplied ? " · author replied" : ""}
+                    <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-border bg-muted/40 text-xs text-muted-foreground">
+                      {thread.author.slice(0, 2).toUpperCase()}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="line-clamp-2 text-sm leading-5 text-foreground">
+                        {thread.excerpt}
+                      </div>
+                      <div
+                        className={cn(
+                          "mt-1.5 text-xs",
+                          thread.status === "unresolved"
+                            ? "text-foreground"
+                            : "text-muted-foreground/70"
+                        )}
+                      >
+                        {thread.status}
+                        {thread.authorReplied ? " · author replied" : ""}
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
-            )) : (
-              <div className="rounded-md border border-border bg-muted/30 p-3 text-sm leading-5 text-muted-foreground">
-                No open review threads.
-              </div>
-            )}
-          </div>
-        </section>
+            </section>
+          </>
+        ) : null}
 
         <Separator className="my-4 bg-border" />
 
@@ -3077,16 +3073,6 @@ function QuickPeekPanel({
             : item.unseenEventCount === 0
               ? "All caught up"
               : "Mark caught up"}
-        </Button>
-        <Button
-          asChild
-          variant="ghost"
-          className="col-span-2 h-9"
-        >
-          <Link to="/pull-requests/$pullRequestId" params={{ pullRequestId: item.id }}>
-            <GitPullRequest className="h-4 w-4" />
-            Open PR detail
-          </Link>
         </Button>
       </div>
     </aside>
