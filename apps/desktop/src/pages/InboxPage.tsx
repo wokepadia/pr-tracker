@@ -3134,7 +3134,9 @@ function buildRepositoryGroups(
 function toneForItem(item: ReviewQueueItemView): LaneDefinition["tone"] {
   if (item.laneId === "updated_since_review") return "changed"
   if (item.waitingOn === "you") return "hot"
-  if (item.waitingOn === "author") return "waiting"
+  if (item.waitingOn === "author" && item.laneId === "waiting_on_author") {
+    return "waiting"
+  }
   if (item.laneId === "approved") return "success"
   return "quiet"
 }

@@ -5,7 +5,11 @@ import {
   canMarkReviewItemCaughtUp,
   toReviewQueueItemView,
 } from "./view-model"
-import type { ReviewerInbox, WorkflowState } from "@pr-tracker/reviewer-workflow"
+import type {
+  ClassifiedPullRequest,
+  ReviewerInbox,
+  WorkflowState,
+} from "@pr-tracker/reviewer-workflow"
 
 afterEach(() => {
   vi.useRealTimers()
@@ -113,6 +117,8 @@ describe("reviewer view model", () => {
       {
         workflowState: "needs_review",
         reason: "You are requested as a reviewer.",
+        turn: { owner: "viewer" as const },
+        evidence: [],
         unseenActivityCount: 0,
         pullRequest: {
           id: "pr_avatar",
@@ -166,6 +172,8 @@ describe("reviewer view model", () => {
       {
         workflowState: "needs_review",
         reason: "You are requested as a reviewer.",
+        turn: { owner: "viewer" as const },
+        evidence: [],
         lastSeenAt: "2026-06-01T08:00:00.000Z",
         unseenActivityCount: 2,
         pullRequest: {
@@ -217,6 +225,8 @@ describe("reviewer view model", () => {
       {
         workflowState: "needs_review",
         reason: "You are requested as a reviewer.",
+        turn: { owner: "viewer" as const },
+        evidence: [],
         lastSeenAt: "2026-06-01T08:00:00.000Z",
         unseenActivityCount: 1,
         pullRequest: {
@@ -268,6 +278,8 @@ describe("reviewer view model", () => {
       {
         workflowState: "needs_review",
         reason: "You are requested as a reviewer.",
+        turn: { owner: "viewer" as const },
+        evidence: [],
         lastSeenAt: "2026-06-01T08:00:00.000Z",
         unseenActivityCount: 0,
         pullRequest: {
@@ -316,10 +328,119 @@ describe("reviewer view model", () => {
   })
 })
 
-function classifiedItem(id: string, workflowState: WorkflowState) {
+describe("per-turn wait timers", () => {
+  it("anchors the waiting age to the turn hand-off", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-06-02T12:00:00.000Z"))
+
+    const item = classifiedItem("pr_turn", "needs_review")
+    item.turn = {
+      owner: "viewer" as const,
+      since: "2026-06-02T09:00:00.000Z",
+    }
+    const view = toReviewQueueItemView(item, sampleActorById(), "viewer")
+
+    expect(view.waitingOn).toBe("you")
+    expect(view.waitingAge).toBe("3h")
+    expect(view.waitingUrgency).toBe("none")
+  })
+
+  it("escalates urgency after one and three days on the same turn", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-06-02T12:00:00.000Z"))
+
+    const elevated = classifiedItem("pr_elevated", "needs_review")
+    elevated.turn = {
+      owner: "viewer" as const,
+      since: "2026-06-01T10:00:00.000Z",
+    }
+    const overdue = classifiedItem("pr_overdue", "waiting_on_author")
+    overdue.turn = {
+      owner: "author" as const,
+      since: "2026-05-29T10:00:00.000Z",
+    }
+
+    const elevatedView = toReviewQueueItemView(
+      elevated,
+      sampleActorById(),
+      "viewer"
+    )
+    const overdueView = toReviewQueueItemView(
+      overdue,
+      sampleActorById(),
+      "viewer"
+    )
+
+    expect(elevatedView.waitingUrgency).toBe("elevated")
+    expect(overdueView.waitingOn).toBe("author")
+    expect(overdueView.waitingUrgency).toBe("overdue")
+  })
+
+  it("never marks unowned turns as urgent", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-06-02T12:00:00.000Z"))
+
+    const item = classifiedItem("pr_quiet", "approved")
+    item.turn = { owner: "none" as const, since: "2026-05-20T10:00:00.000Z" }
+    const view = toReviewQueueItemView(item, sampleActorById(), "viewer")
+
+    expect(view.waitingOn).toBe("none")
+    expect(view.waitingUrgency).toBe("none")
+  })
+
+  it("maps classification evidence into display lines", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-06-02T12:00:00.000Z"))
+
+    const item = classifiedItem("pr_evidence", "updated_since_review")
+    item.evidence = [
+      {
+        id: "your_review",
+        label: "You requested changes.",
+        occurredAt: "2026-06-01T12:00:00.000Z",
+        actorId: "viewer",
+      },
+      {
+        id: "no_push",
+        label: "The author has not pushed since your review.",
+        actorId: "maya",
+      },
+    ]
+    const view = toReviewQueueItemView(item, sampleActorById(), "viewer")
+
+    expect(view.evidence).toEqual([
+      {
+        id: "your_review",
+        label: "You requested changes.",
+        occurredAt: "24h ago",
+        actorLogin: "you",
+      },
+      {
+        id: "no_push",
+        label: "The author has not pushed since your review.",
+        occurredAt: undefined,
+        actorLogin: "maya",
+      },
+    ])
+  })
+})
+
+function sampleActorById() {
+  return new Map([
+    ["viewer", { id: "viewer", login: "you" }],
+    ["maya", { id: "maya", login: "maya" }],
+  ])
+}
+
+function classifiedItem(
+  id: string,
+  workflowState: WorkflowState
+): ClassifiedPullRequest {
   return {
     workflowState,
     reason: `${workflowState} reason`,
+    turn: { owner: "none" },
+    evidence: [],
     lastSeenAt: "2026-06-01T08:00:00.000Z",
     unseenActivityCount: 0,
     pullRequest: {

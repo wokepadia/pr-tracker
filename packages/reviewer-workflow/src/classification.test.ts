@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { samplePullRequests } from "@pr-tracker/core";
+import type { PullRequestItem } from "@pr-tracker/core";
 import { buildSampleInbox, classifyPullRequest } from "./index";
+
+const baseViewerContext = {
+  viewerId: "viewer",
+  now: "2026-06-01T12:00:00.000Z",
+  staleAfterDays: 7,
+  lastSeenAtByPullRequestId: {}
+};
 
 describe("reviewer workflow classification", () => {
   it("places directly requested pull requests in needs_review", () => {
@@ -82,5 +90,193 @@ describe("reviewer workflow classification", () => {
     );
 
     expect(item.workflowState).toBe("approved");
+  });
+});
+
+describe("turn ownership and evidence", () => {
+  it("anchors a review request to the requesting event", () => {
+    const item = classifyPullRequest(samplePullRequests[0]!, baseViewerContext);
+
+    expect(item.turn).toEqual({
+      owner: "viewer",
+      since: "2026-06-01T11:30:00.000Z"
+    });
+    expect(item.evidence).toEqual([
+      {
+        id: "requested",
+        label: "Your review was requested.",
+        occurredAt: "2026-06-01T11:30:00.000Z",
+        actorId: "maya"
+      }
+    ]);
+  });
+
+  it("leaves the turn anchor empty when no request event was ingested", () => {
+    const item = classifyPullRequest(
+      { ...samplePullRequests[0]!, activity: [] },
+      baseViewerContext
+    );
+
+    expect(item.turn).toEqual({ owner: "viewer", since: undefined });
+    expect(item.evidence[0]).toMatchObject({
+      id: "requested",
+      occurredAt: undefined
+    });
+  });
+
+  it("passes the turn back to the viewer when the author pushes after a review", () => {
+    const item = classifyPullRequest(samplePullRequests[1]!, baseViewerContext);
+
+    expect(item.workflowState).toBe("updated_since_review");
+    expect(item.turn).toEqual({
+      owner: "viewer",
+      since: "2026-06-01T09:12:00.000Z"
+    });
+    expect(item.evidence).toEqual([
+      {
+        id: "your_review",
+        label: "You approved this pull request.",
+        occurredAt: "2026-05-31T15:15:00.000Z",
+        actorId: "viewer"
+      },
+      {
+        id: "pushed_after_review",
+        label: "The author pushed 1 commit after your review.",
+        occurredAt: "2026-06-01T09:12:00.000Z",
+        actorId: "ari"
+      }
+    ]);
+  });
+
+  it("hands the turn to the author after the viewer requests changes", () => {
+    const item = classifyPullRequest(samplePullRequests[2]!, baseViewerContext);
+
+    expect(item.workflowState).toBe("waiting_on_author");
+    expect(item.turn).toEqual({
+      owner: "author",
+      since: "2026-05-30T10:05:00.000Z"
+    });
+    expect(item.evidence.map((entry) => entry.id)).toEqual([
+      "your_review",
+      "no_push"
+    ]);
+  });
+
+  it("reports pushed commits even when commit events are missing", () => {
+    const item = classifyPullRequest(
+      { ...samplePullRequests[1]!, activity: [] },
+      baseViewerContext
+    );
+
+    expect(item.workflowState).toBe("updated_since_review");
+    expect(item.turn).toEqual({ owner: "viewer", since: undefined });
+    expect(item.evidence[1]).toMatchObject({
+      id: "pushed_after_review",
+      label: "New commits were pushed after your review.",
+      occurredAt: undefined,
+      actorId: "ari"
+    });
+  });
+
+  it("releases the turn once the viewer catches up on pushed changes", () => {
+    const item = classifyPullRequest(samplePullRequests[1]!, {
+      ...baseViewerContext,
+      lastSeenAtByPullRequestId: { pr_2: "2026-06-01T12:00:00.000Z" }
+    });
+
+    expect(item.workflowState).toBe("caught_up");
+    expect(item.turn).toEqual({
+      owner: "none",
+      since: "2026-06-01T12:00:00.000Z"
+    });
+    expect(item.evidence.map((entry) => entry.id)).toEqual([
+      "your_review",
+      "pushed_after_review",
+      "caught_up"
+    ]);
+  });
+
+  it("anchors unresolved thread attention to the latest thread activity", () => {
+    const pullRequest: PullRequestItem = {
+      ...samplePullRequests[2]!,
+      reviews: [],
+      threads: [
+        {
+          id: "t_old",
+          isResolved: false,
+          participantIds: ["viewer", "sam"],
+          lastActivityAt: "2026-05-29T09:00:00.000Z"
+        },
+        {
+          id: "t_new",
+          isResolved: false,
+          participantIds: ["viewer", "sam"],
+          lastActivityAt: "2026-05-30T10:05:00.000Z"
+        }
+      ]
+    };
+
+    const item = classifyPullRequest(pullRequest, baseViewerContext);
+
+    expect(item.workflowState).toBe("needs_thread_attention");
+    expect(item.turn).toEqual({
+      owner: "viewer",
+      since: "2026-05-30T10:05:00.000Z"
+    });
+    expect(item.evidence).toEqual([
+      {
+        id: "open_threads",
+        label: "2 unresolved review threads include you.",
+        occurredAt: "2026-05-30T10:05:00.000Z"
+      }
+    ]);
+  });
+
+  it("marks approval as releasing the turn at the approval time", () => {
+    const item = classifyPullRequest(
+      {
+        ...samplePullRequests[1]!,
+        latestCommitSha: "f2",
+        activity: []
+      },
+      baseViewerContext
+    );
+
+    expect(item.workflowState).toBe("approved");
+    expect(item.turn).toEqual({
+      owner: "none",
+      since: "2026-05-31T15:15:00.000Z"
+    });
+  });
+
+  it("treats drafts as the author's turn", () => {
+    const item = classifyPullRequest(
+      { ...samplePullRequests[0]!, isDraft: true },
+      baseViewerContext
+    );
+
+    expect(item.workflowState).toBe("watching");
+    expect(item.turn).toEqual({
+      owner: "author",
+      since: samplePullRequests[0]!.createdAt
+    });
+    expect(item.evidence[0]).toMatchObject({
+      id: "draft",
+      actorId: "maya"
+    });
+  });
+
+  it("assigns no turn owner to closed pull requests", () => {
+    const item = classifyPullRequest(
+      { ...samplePullRequests[0]!, state: "merged" },
+      baseViewerContext
+    );
+
+    expect(item.workflowState).toBe("inactive");
+    expect(item.turn.owner).toBe("none");
+    expect(item.evidence[0]).toMatchObject({
+      id: "closed",
+      label: "This pull request was merged."
+    });
   });
 });

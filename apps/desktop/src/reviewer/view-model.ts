@@ -5,8 +5,10 @@ import type {
   ReviewDecision,
 } from "@pr-tracker/core"
 import type {
+  ClassificationEvidence,
   ClassifiedPullRequest,
   ReviewerInbox,
+  TurnState,
   WorkflowState,
 } from "@pr-tracker/reviewer-workflow"
 
@@ -18,6 +20,15 @@ export type ReviewLaneId =
 export type ReviewQueueBucketId = ReviewLaneId | "approved" | "watching"
 
 export type WaitingOn = "you" | "author" | "none"
+
+export type WaitingUrgency = "none" | "elevated" | "overdue"
+
+export interface EvidenceLineView {
+  id: string
+  label: string
+  occurredAt?: string
+  actorLogin?: string
+}
 
 export interface ReviewerState {
   login: string
@@ -58,8 +69,10 @@ export interface ReviewQueueItemView {
   workflowState: WorkflowState
   laneId: ReviewLaneId | "approved" | "caught_up" | "watching" | "stale"
   reason: string
+  evidence: EvidenceLineView[]
   waitingOn: WaitingOn
   waitingAge: string
+  waitingUrgency: WaitingUrgency
   updatedAt: string
   openedAt: string
   lastSeenAt: string
@@ -147,11 +160,12 @@ export function toReviewQueueItemView(
   const latestViewerReview = viewerReviews[0]
   const authorLogin = actorLogin(actorById, pullRequest.authorId)
   const authorAvatarUrl = actorById.get(pullRequest.authorId)?.avatarUrl
-  const waitingOn = getWaitingOn(item.workflowState)
+  const waitingOn = getWaitingOn(item.turn)
   const lastMeaningfulAt =
     latestNewActivity?.occurredAt ??
     latestViewerReview?.submittedAt ??
     pullRequest.updatedAt
+  const waitingSinceAt = item.turn.since ?? lastMeaningfulAt
 
   return {
     id: pullRequest.id,
@@ -165,8 +179,12 @@ export function toReviewQueueItemView(
     workflowState: item.workflowState,
     laneId: getLaneId(item.workflowState),
     reason: item.reason,
+    evidence: item.evidence.map((entry) =>
+      toEvidenceLineView(entry, actorById)
+    ),
     waitingOn,
-    waitingAge: formatDurationSince(lastMeaningfulAt),
+    waitingAge: formatDurationSince(waitingSinceAt),
+    waitingUrgency: getWaitingUrgency(waitingOn, waitingSinceAt),
     updatedAt: formatRelativeTime(pullRequest.updatedAt),
     openedAt: formatRelativeTime(pullRequest.createdAt),
     lastSeenAt: lastSeenAt ? formatRelativeTime(lastSeenAt) : "not seen yet",
@@ -256,16 +274,44 @@ function getLaneId(
   return "watching"
 }
 
-function getWaitingOn(workflowState: WorkflowState): WaitingOn {
-  if (
-    workflowState === "needs_review" ||
-    workflowState === "updated_since_review" ||
-    workflowState === "needs_thread_attention"
-  ) {
-    return "you"
-  }
-  if (workflowState === "waiting_on_author") return "author"
+function getWaitingOn(turn: TurnState): WaitingOn {
+  if (turn.owner === "viewer") return "you"
+  if (turn.owner === "author") return "author"
   return "none"
+}
+
+const elevatedWaitMs = 24 * 60 * 60 * 1000
+const overdueWaitMs = 72 * 60 * 60 * 1000
+
+function getWaitingUrgency(
+  waitingOn: WaitingOn,
+  waitingSinceAt: string | undefined
+): WaitingUrgency {
+  if (waitingOn === "none" || !waitingSinceAt) return "none"
+
+  const since = Date.parse(waitingSinceAt)
+  if (Number.isNaN(since)) return "none"
+
+  const waitedMs = Date.now() - since
+  if (waitedMs >= overdueWaitMs) return "overdue"
+  if (waitedMs >= elevatedWaitMs) return "elevated"
+  return "none"
+}
+
+function toEvidenceLineView(
+  entry: ClassificationEvidence,
+  actorById: Map<string, Actor>
+): EvidenceLineView {
+  return {
+    id: entry.id,
+    label: entry.label,
+    occurredAt: entry.occurredAt
+      ? formatRelativeTime(entry.occurredAt)
+      : undefined,
+    actorLogin: entry.actorId
+      ? actorLogin(actorById, entry.actorId)
+      : undefined,
+  }
 }
 
 function buildReviewerStates(
