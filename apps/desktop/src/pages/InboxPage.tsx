@@ -1978,15 +1978,6 @@ function bucketIdForAvailableBucketId(
     : fallbackBucketId
 }
 
-function emptyBucketHint(lane: LaneDefinition): string {
-  if (lane.id === "inbox") return "New review requests land here."
-  if (lane.id === "reviewing") return "Drag a PR here when you start reviewing."
-  if (lane.id === "waiting") return "Move PRs here while the author responds."
-  if (lane.id === "later") return "Defer lower-priority PRs here."
-  if (lane.id === "done") return "Move caught-up PRs here."
-  return `No PRs in ${lane.label}.`
-}
-
 function KanbanBoard({
   laneItems,
   selectedId,
@@ -2207,7 +2198,7 @@ function KanbanColumn({
             ))
           ) : (
             <div className="grid min-h-[140px] place-items-center rounded-md border border-dashed border-border bg-card/50 px-4 text-center text-xs leading-5 text-muted-foreground">
-              {emptyBucketHint(lane)}
+              No PRs.
             </div>
           )}
         </div>
