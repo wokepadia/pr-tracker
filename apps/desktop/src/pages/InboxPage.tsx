@@ -103,6 +103,7 @@ import {
 } from "@/api"
 import { useGithubSync } from "@/app/use-github-sync"
 import { formatCount } from "@/lib/copy"
+import { describeGithubSyncError } from "@/lib/sync-error"
 import { cn, externalLinkProps } from "@/lib/utils"
 import {
   buildInboxView,
@@ -863,13 +864,21 @@ export function InboxPage() {
   // lands. Every later visit renders local data immediately.
   if (inboxView.items.length === 0 && !githubSync.lastSyncedAt) {
     if (githubSync.syncError) {
+      const syncErrorView = describeGithubSyncError(githubSync.syncError)
       return (
         <InboxStatusPanel
           title="Could not sync with GitHub"
-          detail={formatUnknownError(githubSync.syncError)}
+          detail={syncErrorView.message}
           retryLabel={githubSync.isSyncing ? "Retrying" : "Retry"}
           retryDisabled={githubSync.isSyncing}
           onRetry={githubSync.syncNow}
+          secondaryAction={
+            syncErrorView.showSettingsLink ? (
+              <Button asChild className="mt-2 rounded-md" variant="ghost">
+                <Link to="/settings">Open settings</Link>
+              </Button>
+            ) : undefined
+          }
         />
       )
     }
@@ -930,6 +939,14 @@ export function InboxPage() {
         onGithubSearchQuerySubmit={applyGithubSearchQuery}
         onSearchQueryChange={setSearchQuery}
       />
+      {githubSync.syncError ? (
+        <SyncErrorBanner
+          error={githubSync.syncError}
+          lastSyncedAt={githubSync.lastSyncedAt}
+          isSyncing={githubSync.isSyncing}
+          onRetry={githubSync.syncNow}
+        />
+      ) : null}
       <div
         className={cn(
           "min-h-0 flex-1",
@@ -1326,12 +1343,14 @@ function InboxStatusPanel({
   retryLabel,
   retryDisabled = false,
   onRetry,
+  secondaryAction,
 }: {
   title: string
   detail?: string
   retryLabel?: string
   retryDisabled?: boolean
   onRetry?: () => void
+  secondaryAction?: ReactNode
 }) {
   return (
     <div className="grid h-full place-items-center bg-background px-6">
@@ -1357,6 +1376,60 @@ function InboxStatusPanel({
             {retryLabel ?? "Retry"}
           </Button>
         ) : null}
+        {secondaryAction}
+      </div>
+    </div>
+  )
+}
+
+function SyncErrorBanner({
+  error,
+  lastSyncedAt,
+  isSyncing,
+  onRetry,
+}: {
+  error: unknown
+  lastSyncedAt?: string
+  isSyncing: boolean
+  onRetry: () => void
+}) {
+  const errorView = describeGithubSyncError(error)
+  const localDataNote = lastSyncedAt
+    ? `Showing local data (${formatSyncStatusLabel({
+        isSyncing: false,
+        lastSyncedAt,
+        tokenConfigured: true,
+      })}).`
+    : "Showing local data."
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-amber-200 bg-amber-50 px-5 py-2 text-sm text-amber-900">
+      <div className="flex min-w-0 items-start gap-2">
+        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>
+          {errorView.message} {localDataNote}
+        </span>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {errorView.showSettingsLink ? (
+          <Button
+            asChild
+            className="h-7 rounded-md px-2 text-xs text-amber-900 hover:bg-amber-100"
+            variant="ghost"
+          >
+            <Link to="/settings">Open settings</Link>
+          </Button>
+        ) : null}
+        <Button
+          className="h-7 rounded-md border-amber-300 bg-white px-2 text-xs text-amber-900 hover:bg-amber-100"
+          disabled={isSyncing}
+          type="button"
+          variant="outline"
+          onClick={onRetry}
+        >
+          <RotateCcw className={cn("h-3.5 w-3.5", isSyncing && "animate-spin")} />
+          Retry sync
+        </Button>
       </div>
     </div>
   )
