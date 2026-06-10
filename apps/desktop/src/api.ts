@@ -34,6 +34,19 @@ export interface SqliteBackupResult {
   path?: string
 }
 
+export interface SyncGithubDataInput {
+  githubSearchQuery?: string
+  force?: boolean
+}
+
+export interface SyncGithubDataResult {
+  status: "synced" | "no-credentials"
+}
+
+export interface SyncStatus {
+  lastSyncedAt?: string
+}
+
 export interface SaveGithubSettingsInput {
   token?: string
   repositories: string
@@ -89,6 +102,16 @@ export async function getBoardState(): Promise<BoardState> {
 
 export async function saveBoardState(state: BoardState): Promise<BoardState> {
   return (await getDesktopApi()).saveDesktopBoardState(state)
+}
+
+export async function syncGithubData(
+  input?: SyncGithubDataInput
+): Promise<SyncGithubDataResult> {
+  return (await getDesktopApi()).syncDesktopGithubData(input)
+}
+
+export async function getSyncStatus(): Promise<SyncStatus> {
+  return (await getDesktopApi()).getDesktopSyncStatus()
 }
 
 export async function getGithubSettingsStatus(): Promise<GithubSettingsStatus> {

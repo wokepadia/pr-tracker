@@ -37,6 +37,8 @@ import type {
   PullRequestDetailResponse,
   SaveGithubSettingsInput,
   SqliteBackupResult,
+  SyncGithubDataResult,
+  SyncStatus,
 } from "@/api"
 import { defaultAttentionThresholds } from "@/reviewer/view-model"
 import { logRendererError } from "@/lib/error-logging"
@@ -218,6 +220,41 @@ export async function getDesktopBoardState(): Promise<BoardState> {
   const db = await getDatabase()
   await syncBeforeReadWithTimeout(db, undefined, 6_000)
   return loadBoardState(db)
+}
+
+export async function syncDesktopGithubData(input?: {
+  githubSearchQuery?: string
+  force?: boolean
+}): Promise<SyncGithubDataResult> {
+  const db = await getDatabase()
+  if (input?.force) {
+    lastSuccessfulSyncFingerprint = undefined
+    lastSuccessfulSyncScope = undefined
+  }
+
+  const credentials = await loadLocalGithubCredentials(db)
+  if (!credentials) {
+    if (await isLocalDatabaseEmpty(db)) {
+      await seedLocalSampleData(db)
+    }
+    return { status: "no-credentials" }
+  }
+
+  await syncBeforeRead(db, { githubSearchQuery: input?.githubSearchQuery })
+  return { status: "synced" }
+}
+
+export async function getDesktopSyncStatus(): Promise<SyncStatus> {
+  const db = await getDatabase()
+  const rows = await db.select<Array<{ finished_at: string | null }>>(
+    `
+      select finished_at from sync_runs
+      where status = 'succeeded' and finished_at is not null
+      order by finished_at desc
+      limit 1
+    `
+  )
+  return { lastSyncedAt: rows[0]?.finished_at ?? undefined }
 }
 
 export async function saveDesktopBoardState(
