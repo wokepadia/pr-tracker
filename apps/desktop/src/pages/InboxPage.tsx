@@ -69,6 +69,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ActivityEventLine } from "@/components/ActivityEventLine"
+import { AuthorAvatar } from "@/components/AuthorAvatar"
 import { BoardItemNotes } from "@/components/BoardItemNotes"
 import {
   DropdownMenu,
@@ -2727,39 +2728,6 @@ function FactChip({
   )
 }
 
-function AuthorAvatar({
-  login,
-  avatarUrl,
-  className,
-}: {
-  login: string
-  avatarUrl?: string
-  className?: string
-}) {
-  const initials = login.slice(0, 2).toUpperCase()
-
-  return (
-    <span
-      className={cn(
-        "flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-white text-xs text-muted-foreground",
-        className
-      )}
-    >
-      {avatarUrl ? (
-        <img
-          src={avatarUrl}
-          alt={`${login} avatar`}
-          className="h-full w-full object-cover"
-          loading="lazy"
-          referrerPolicy="no-referrer"
-        />
-      ) : (
-        initials
-      )}
-    </span>
-  )
-}
-
 function QuickPeekPanel({
   item,
   bucketId,
@@ -2884,7 +2852,14 @@ function QuickPeekPanel({
           {item.title}
         </h2>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span>{item.authorLogin}</span>
+          <span className="flex items-center gap-1.5">
+            <AuthorAvatar
+              login={item.authorLogin}
+              avatarUrl={item.authorAvatarUrl}
+              className="h-4 w-4 text-[8px]"
+            />
+            {item.authorLogin}
+          </span>
           <span className="text-muted-foreground/40">·</span>
           <span className={cn(item.waitingOn === "you" && "text-foreground")}>
             {queueTimingLabel(item)} {item.waitingAge}

@@ -23,6 +23,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ActivityEventLine } from "@/components/ActivityEventLine"
+import { AuthorAvatar } from "@/components/AuthorAvatar"
 import { BoardItemNotes } from "@/components/BoardItemNotes"
 import { MarkdownContent } from "@/components/MarkdownContent"
 import {
@@ -428,12 +429,22 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
       </Button>
 
       <div className="min-w-0">
-        <div className="text-xs text-muted-foreground">
-          {item.repository} / #{item.number}
-          <span className="mx-2 text-muted-foreground/40">·</span>
-          opened by {item.authorLogin}
-          <span className="mx-2 text-muted-foreground/40">·</span>
-          {item.openedAt}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <span>
+            {item.repository} / #{item.number}
+          </span>
+          <span className="text-muted-foreground/40">·</span>
+          <span className="flex items-center gap-1.5">
+            opened by
+            <AuthorAvatar
+              login={item.authorLogin}
+              avatarUrl={item.authorAvatarUrl}
+              className="h-4 w-4 text-[8px]"
+            />
+            {item.authorLogin}
+          </span>
+          <span className="text-muted-foreground/40">·</span>
+          <span>{item.openedAt}</span>
         </div>
         <h1 className="mt-2 text-3xl font-semibold leading-9 tracking-tight text-foreground">
           {item.title}
@@ -752,7 +763,16 @@ function DetailSideRail({
         {item.otherReviewers.map((reviewer) => (
           <RailKeyValue
             key={reviewer.login}
-            label={reviewer.login}
+            label={
+              <span className="flex items-center gap-1.5">
+                <AuthorAvatar
+                  login={reviewer.login}
+                  avatarUrl={reviewer.avatarUrl}
+                  className="h-4 w-4 text-[8px]"
+                />
+                {reviewer.login}
+              </span>
+            }
             value={
               reviewer.decision === "pending"
                 ? "pending"
@@ -786,7 +806,7 @@ function RailCard({
   )
 }
 
-function RailKeyValue({ label, value }: { label: string; value: string }) {
+function RailKeyValue({ label, value }: { label: ReactNode; value: string }) {
   return (
     <>
       <div className="flex items-center justify-between gap-4 py-2 text-xs">
