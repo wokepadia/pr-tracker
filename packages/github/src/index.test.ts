@@ -145,6 +145,79 @@ describe("GitHub token pull request source", () => {
     );
   });
 
+  it("paginates review threads across GraphQL pages", async () => {
+    const cursors: Array<unknown> = [];
+    const source = createGithubTokenPullRequestSource({
+      token: "token",
+      repositories: ["acme/web"],
+      request: async <T = unknown>(
+        route: string,
+        parameters?: Record<string, unknown>
+      ) => {
+        if (route === "GET /repos/{owner}/{repo}/pulls") {
+          return {
+            data: [
+              {
+                id: 1,
+                number: 42,
+                title: "Ship reviewer inbox",
+                state: "open",
+                updated_at: "2026-06-01T09:00:00.000Z",
+                user: { login: "author" }
+              }
+            ] as T
+          };
+        }
+
+        if (route === "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews") {
+          return { data: [] as T };
+        }
+
+        if (route === "POST /graphql") {
+          const variables = parameters?.variables as { cursor?: string | null };
+          cursors.push(variables.cursor);
+          const isFirstPage = !variables.cursor;
+          return {
+            data: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    reviewThreads: {
+                      pageInfo: isFirstPage
+                        ? { hasNextPage: true, endCursor: "cursor-1" }
+                        : { hasNextPage: false, endCursor: null },
+                      nodes: [
+                        {
+                          id: isFirstPage ? "RT_page1" : "RT_page2",
+                          isResolved: false,
+                          comments: { nodes: [] }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            } as T
+          };
+        }
+
+        throw new Error(`Unexpected route: ${route}`);
+      }
+    });
+
+    if (!source.listOpenPullRequests) {
+      throw new Error("Expected token source to support listOpenPullRequests.");
+    }
+
+    const snapshots = await source.listOpenPullRequests();
+
+    expect(cursors).toEqual([null, "cursor-1"]);
+    expect(snapshots[0]?.review_threads?.map((thread) => thread.id)).toEqual([
+      "RT_page1",
+      "RT_page2"
+    ]);
+  });
+
   it("keeps review threads undefined when the GraphQL fetch fails", async () => {
     const source = createGithubTokenPullRequestSource({
       token: "token",

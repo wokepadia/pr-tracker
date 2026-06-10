@@ -582,20 +582,24 @@ function isGithubNotFoundError(error: unknown): boolean {
 }
 
 const reviewThreadsGraphqlQuery = `
-  query ReviewThreads($owner: String!, $name: String!, $number: Int!) {
+  query ReviewThreads($owner: String!, $name: String!, $number: Int!, $cursor: String) {
     repository(owner: $owner, name: $name) {
       pullRequest(number: $number) {
         additions
         deletions
         changedFiles
-        reviewThreads(first: 100) {
+        reviewThreads(first: 50, after: $cursor) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
           nodes {
             id
             isResolved
             isOutdated
             path
             line
-            comments(first: 100) {
+            comments(last: 50) {
               nodes {
                 author { login }
                 createdAt
@@ -616,6 +620,10 @@ interface GitHubReviewThreadsGraphqlResponse {
         deletions?: number;
         changedFiles?: number;
         reviewThreads?: {
+          pageInfo?: {
+            hasNextPage?: boolean;
+            endCursor?: string | null;
+          };
           nodes?: Array<{
             id?: string;
             isResolved?: boolean;
@@ -645,6 +653,10 @@ interface PullRequestGraphqlFacts {
   };
 }
 
+// Runaway guard: 40 pages of 50 covers 2000 threads, far beyond any
+// reviewable pull request.
+const maxReviewThreadPages = 40;
+
 async function fetchPullRequestGraphqlFacts(
   octokit: RequestingOctokit,
   owner: string,
@@ -652,48 +664,66 @@ async function fetchPullRequestGraphqlFacts(
   pullNumber: number
 ): Promise<PullRequestGraphqlFacts> {
   try {
-    const response = await octokit.request<GitHubReviewThreadsGraphqlResponse>(
-      "POST /graphql",
-      {
-        query: reviewThreadsGraphqlQuery,
-        variables: { owner, name: repo, number: pullNumber }
-      }
-    );
-    const pullRequest = response.data.data?.repository?.pullRequest;
-    if (!pullRequest) {
-      return {};
-    }
+    const reviewThreads: GitHubReviewThreadSnapshot[] = [];
+    let size: PullRequestGraphqlFacts["size"];
+    let cursor: string | null = null;
 
-    const nodes = pullRequest.reviewThreads?.nodes ?? [];
-    return {
-      size: {
+    for (let page = 0; page < maxReviewThreadPages; page += 1) {
+      const response: { data: GitHubReviewThreadsGraphqlResponse } =
+        await octokit.request<GitHubReviewThreadsGraphqlResponse>(
+          "POST /graphql",
+          {
+            query: reviewThreadsGraphqlQuery,
+            variables: { owner, name: repo, number: pullNumber, cursor }
+          }
+        );
+      const pullRequest = response.data.data?.repository?.pullRequest;
+      if (!pullRequest) {
+        return {};
+      }
+
+      size ??= {
         additions: pullRequest.additions,
         deletions: pullRequest.deletions,
         changed_files: pullRequest.changedFiles
-      },
-      reviewThreads: nodes
-        .filter((node): node is NonNullable<typeof node> => Boolean(node?.id))
-        .map((node) => ({
-          id: node.id as string,
-          is_resolved: node.isResolved ?? false,
-          is_outdated: node.isOutdated ?? false,
-          path: node.path,
-          line: node.line,
-          comments: (node.comments?.nodes ?? [])
-            .filter((comment): comment is NonNullable<typeof comment> =>
-              Boolean(comment)
-            )
-            .map((comment) => ({
-              author: comment.author?.login
-                ? { login: comment.author.login }
-                : undefined,
-              created_at: comment.createdAt
-            }))
-        }))
-    };
+      };
+
+      const nodes = pullRequest.reviewThreads?.nodes ?? [];
+      reviewThreads.push(
+        ...nodes
+          .filter((node): node is NonNullable<typeof node> => Boolean(node?.id))
+          .map((node) => ({
+            id: node.id as string,
+            is_resolved: node.isResolved ?? false,
+            is_outdated: node.isOutdated ?? false,
+            path: node.path,
+            line: node.line,
+            comments: (node.comments?.nodes ?? [])
+              .filter((comment): comment is NonNullable<typeof comment> =>
+                Boolean(comment)
+              )
+              .map((comment) => ({
+                author: comment.author?.login
+                  ? { login: comment.author.login }
+                  : undefined,
+                created_at: comment.createdAt
+              }))
+          }))
+      );
+
+      const pageInfo = pullRequest.reviewThreads?.pageInfo;
+      if (!pageInfo?.hasNextPage || !pageInfo.endCursor) {
+        break;
+      }
+      cursor = pageInfo.endCursor;
+    }
+
+    return { size, reviewThreads };
   } catch {
     // GraphQL facts are an enrichment; a failed call (older GHES, token
-    // without GraphQL access) must not fail the whole sync.
+    // without GraphQL access) must not fail the whole sync. A failure on
+    // any page discards the partial thread list so ingestion never
+    // mistakes a truncated ledger for the full one.
     return {};
   }
 }
