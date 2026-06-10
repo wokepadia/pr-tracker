@@ -96,6 +96,7 @@ import {
   getBoardState,
   getReviewerInbox,
   markPullRequestSeen,
+  getAttentionSettings,
   saveBoardState,
 } from "@/api"
 import { formatCount } from "@/lib/copy"
@@ -103,6 +104,7 @@ import { cn, externalLinkProps } from "@/lib/utils"
 import {
   buildInboxView,
   canMarkReviewItemCaughtUp,
+  defaultAttentionThresholds,
   type ReviewQueueItemView,
   type SinceLastReviewView,
   type SizeChipView,
@@ -304,6 +306,10 @@ export function InboxPage() {
     queryFn: () =>
       getReviewerInbox({ githubSearchQuery: appliedGithubSearchQuery }),
   })
+  const attentionSettingsQuery = useQuery({
+    queryKey: ["attention-settings"],
+    queryFn: getAttentionSettings,
+  })
   const boardStateQuery = useQuery({
     queryKey: ["board-state"],
     queryFn: getBoardState,
@@ -341,8 +347,14 @@ export function InboxPage() {
     Record<UserBucketId, number>
   >({})
   const inboxView = useMemo(
-    () => (inboxQuery.data ? buildInboxView(inboxQuery.data) : undefined),
-    [inboxQuery.data]
+    () =>
+      inboxQuery.data
+        ? buildInboxView(
+            inboxQuery.data,
+            attentionSettingsQuery.data ?? defaultAttentionThresholds
+          )
+        : undefined,
+    [inboxQuery.data, attentionSettingsQuery.data]
   )
   const bucketLanes = useMemo(
     () => userBuckets.map((bucket, index) => bucketToLaneDefinition(bucket, index)),

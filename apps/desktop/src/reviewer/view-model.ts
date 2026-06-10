@@ -24,6 +24,16 @@ export type WaitingOn = "you" | "author" | "none"
 
 export type WaitingUrgency = "none" | "elevated" | "overdue"
 
+export interface AttentionThresholds {
+  elevatedAfterHours: number
+  overdueAfterHours: number
+}
+
+export const defaultAttentionThresholds: AttentionThresholds = {
+  elevatedAfterHours: 24,
+  overdueAfterHours: 72,
+}
+
 export type SizeBucket = "S" | "M" | "L" | "XL"
 
 export interface SizeChipView {
@@ -136,10 +146,13 @@ export function canMarkReviewItemCaughtUp(
   return Boolean(item && item.unseenEventCount > 0 && !isSaving)
 }
 
-export function buildInboxView(inbox: ReviewerInbox): ReviewerInboxView {
+export function buildInboxView(
+  inbox: ReviewerInbox,
+  thresholds: AttentionThresholds = defaultAttentionThresholds
+): ReviewerInboxView {
   const actorById = new Map(inbox.actors.map((actor) => [actor.id, actor]))
   const items = inbox.items.map((item) =>
-    toReviewQueueItemView(item, actorById, inbox.viewer.id)
+    toReviewQueueItemView(item, actorById, inbox.viewer.id, thresholds)
   )
 
   return {
@@ -175,7 +188,8 @@ export function buildInboxView(inbox: ReviewerInbox): ReviewerInboxView {
 export function toReviewQueueItemView(
   item: ClassifiedPullRequest,
   actorById: Map<string, Actor>,
-  viewerId: string
+  viewerId: string,
+  thresholds: AttentionThresholds = defaultAttentionThresholds
 ): ReviewQueueItemView {
   const pullRequest = item.pullRequest
   const lastSeenAt = item.lastSeenAt
@@ -217,7 +231,7 @@ export function toReviewQueueItemView(
     ),
     waitingOn,
     waitingAge: formatDurationSince(waitingSinceAt),
-    waitingUrgency: getWaitingUrgency(waitingOn, waitingSinceAt),
+    waitingUrgency: getWaitingUrgency(waitingOn, waitingSinceAt, thresholds),
     updatedAt: formatRelativeTime(pullRequest.updatedAt),
     openedAt: formatRelativeTime(pullRequest.createdAt),
     lastSeenAt: lastSeenAt ? formatRelativeTime(lastSeenAt) : "not seen yet",
@@ -333,12 +347,12 @@ function getWaitingOn(turn: TurnState): WaitingOn {
   return "none"
 }
 
-const elevatedWaitMs = 24 * 60 * 60 * 1000
-const overdueWaitMs = 72 * 60 * 60 * 1000
+const hourMs = 60 * 60 * 1000
 
 function getWaitingUrgency(
   waitingOn: WaitingOn,
-  waitingSinceAt: string | undefined
+  waitingSinceAt: string | undefined,
+  thresholds: AttentionThresholds
 ): WaitingUrgency {
   if (waitingOn === "none" || !waitingSinceAt) return "none"
 
@@ -346,8 +360,8 @@ function getWaitingUrgency(
   if (Number.isNaN(since)) return "none"
 
   const waitedMs = Date.now() - since
-  if (waitedMs >= overdueWaitMs) return "overdue"
-  if (waitedMs >= elevatedWaitMs) return "elevated"
+  if (waitedMs >= thresholds.overdueAfterHours * hourMs) return "overdue"
+  if (waitedMs >= thresholds.elevatedAfterHours * hourMs) return "elevated"
   return "none"
 }
 

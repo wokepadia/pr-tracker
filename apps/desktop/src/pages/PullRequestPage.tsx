@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Separator } from "@/components/ui/separator"
 import {
+  getAttentionSettings,
   getBoardState,
   getPullRequest,
   markPullRequestSeen,
@@ -49,6 +50,7 @@ import { formatCount } from "@/lib/copy"
 import { cn, externalLinkProps } from "@/lib/utils"
 import {
   canMarkReviewItemCaughtUp,
+  defaultAttentionThresholds,
   toReviewQueueItemView,
   type ActivityEventView,
   type ReviewQueueItemView,
@@ -127,6 +129,10 @@ export function PullRequestPage() {
     queryKey: ["board-state"],
     queryFn: getBoardState,
   })
+  const attentionSettingsQuery = useQuery({
+    queryKey: ["attention-settings"],
+    queryFn: getAttentionSettings,
+  })
   const saveBoardStateMutation = useMutation({
     mutationFn: saveBoardState,
   })
@@ -144,7 +150,8 @@ export function PullRequestPage() {
     ? toReviewQueueItemView(
         detail.item,
         new Map(detail.actors.map((actor) => [actor.id, actor])),
-        detail.viewer.id
+        detail.viewer.id,
+        attentionSettingsQuery.data ?? defaultAttentionThresholds
       )
     : undefined
 

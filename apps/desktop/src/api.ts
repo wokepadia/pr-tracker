@@ -18,6 +18,11 @@ export interface GithubSettingsStatus {
   storage: "macos-keychain" | "stronghold"
 }
 
+export interface AttentionSettings {
+  elevatedAfterHours: number
+  overdueAfterHours: number
+}
+
 export interface OnboardingState {
   completedAt?: string
   introSkippedAt?: string
@@ -98,6 +103,16 @@ export async function saveGithubSettings(
 
 export async function createSqliteBackup(): Promise<SqliteBackupResult> {
   return (await getDesktopApi()).createDesktopSqliteBackup()
+}
+
+export async function getAttentionSettings(): Promise<AttentionSettings> {
+  return (await getDesktopApi()).getDesktopAttentionSettings()
+}
+
+export async function saveAttentionSettings(
+  input: AttentionSettings
+): Promise<AttentionSettings> {
+  return (await getDesktopApi()).saveDesktopAttentionSettings(input)
 }
 
 export async function getOnboardingState(): Promise<OnboardingState> {

@@ -30,6 +30,7 @@ import {
   join,
 } from "@tauri-apps/api/path"
 import type {
+  AttentionSettings,
   BoardState,
   GithubSettingsStatus,
   OnboardingState,
@@ -37,6 +38,7 @@ import type {
   SaveGithubSettingsInput,
   SqliteBackupResult,
 } from "@/api"
+import { defaultAttentionThresholds } from "@/reviewer/view-model"
 import { logRendererError } from "@/lib/error-logging"
 import { localDesktopSchemaSql } from "../../../../packages/db/src/local-schema"
 import { createQueuedTransaction } from "./sqlite-transaction"
@@ -46,6 +48,7 @@ const defaultLocalProfileId = "local"
 const defaultLocalBoardId = "default-board"
 const githubSettingsKey = "github-settings"
 const onboardingSettingsKey = "onboarding"
+const attentionSettingsKey = "attention_thresholds"
 const strongholdPasswordSettingsKey = "stronghold-unlock-secret"
 const githubTokenStoreKey = "github-token"
 const strongholdClientName = "review-ninja"
@@ -423,6 +426,50 @@ export async function createDesktopSqliteBackup(): Promise<SqliteBackupResult> {
   await db.execute(`vacuum main into ${sqliteStringLiteral(path)}`)
 
   return { filename, path }
+}
+
+export async function getDesktopAttentionSettings(): Promise<AttentionSettings> {
+  const db = await getDatabase()
+  const raw = await readAppSetting(db, attentionSettingsKey)
+  if (!raw) return { ...defaultAttentionThresholds }
+
+  try {
+    return normalizeAttentionSettings(JSON.parse(raw))
+  } catch {
+    return { ...defaultAttentionThresholds }
+  }
+}
+
+export async function saveDesktopAttentionSettings(
+  input: AttentionSettings
+): Promise<AttentionSettings> {
+  const db = await getDatabase()
+  const settings = normalizeAttentionSettings(input)
+  await writeAppSetting(db, attentionSettingsKey, settings)
+  return settings
+}
+
+function normalizeAttentionSettings(value: unknown): AttentionSettings {
+  const parsed = (value ?? {}) as Partial<AttentionSettings>
+  const elevatedAfterHours = normalizeThresholdHours(
+    parsed.elevatedAfterHours,
+    defaultAttentionThresholds.elevatedAfterHours
+  )
+  const overdueAfterHours = Math.max(
+    normalizeThresholdHours(
+      parsed.overdueAfterHours,
+      defaultAttentionThresholds.overdueAfterHours
+    ),
+    elevatedAfterHours
+  )
+  return { elevatedAfterHours, overdueAfterHours }
+}
+
+function normalizeThresholdHours(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 1) {
+    return fallback
+  }
+  return Math.round(value)
 }
 
 export async function getDesktopOnboardingState(): Promise<OnboardingState> {

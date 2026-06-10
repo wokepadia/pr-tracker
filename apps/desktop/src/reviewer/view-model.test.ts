@@ -376,6 +376,29 @@ describe("per-turn wait timers", () => {
     expect(overdueView.waitingUrgency).toBe("overdue")
   })
 
+  it("applies custom attention thresholds", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-06-02T12:00:00.000Z"))
+
+    const item = classifiedItem("pr_custom_thresholds", "needs_review")
+    item.turn = {
+      owner: "viewer" as const,
+      since: "2026-06-02T07:00:00.000Z",
+    }
+
+    const strictView = toReviewQueueItemView(item, sampleActorById(), "viewer", {
+      elevatedAfterHours: 4,
+      overdueAfterHours: 4,
+    })
+    const lenientView = toReviewQueueItemView(item, sampleActorById(), "viewer", {
+      elevatedAfterHours: 8,
+      overdueAfterHours: 12,
+    })
+
+    expect(strictView.waitingUrgency).toBe("overdue")
+    expect(lenientView.waitingUrgency).toBe("none")
+  })
+
   it("never marks unowned turns as urgent", () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2026-06-02T12:00:00.000Z"))
