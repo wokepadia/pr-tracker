@@ -63,6 +63,12 @@ export interface GitHubPullRequestSnapshot {
     requested_reviewers?: Array<{ login?: string; avatar_url?: string }>;
   };
   reviews?: GitHubReviewSnapshot[];
+  /**
+   * Review threads fetched via GraphQL. Undefined means the thread fetch
+   * was unavailable (not an empty thread list), so consumers must not
+   * treat it as "no threads".
+   */
+  review_threads?: GitHubReviewThreadSnapshot[];
 }
 
 export interface GitHubReviewSnapshot {
@@ -73,6 +79,18 @@ export interface GitHubReviewSnapshot {
   submitted_at?: string;
   commit_id?: string;
   user?: { login?: string; avatar_url?: string };
+}
+
+export interface GitHubReviewThreadSnapshot {
+  id: string;
+  is_resolved?: boolean;
+  is_outdated?: boolean;
+  path?: string | null;
+  line?: number | null;
+  comments?: Array<{
+    author?: { login?: string };
+    created_at?: string;
+  }>;
 }
 
 export interface GitHubPullRequestLookupInput {
@@ -290,12 +308,10 @@ async function listConfiguredRepositoryPullRequests(
       pullRequests,
       8,
       async (pullRequest) => {
-        const reviews = await listPullRequestReviews(
-          octokit,
-          owner,
-          name,
-          pullRequest.number
-        );
+        const [reviews, reviewThreads] = await Promise.all([
+          listPullRequestReviews(octokit, owner, name, pullRequest.number),
+          listPullRequestReviewThreads(octokit, owner, name, pullRequest.number)
+        ]);
 
         return {
           repository: {
@@ -307,7 +323,8 @@ async function listConfiguredRepositoryPullRequests(
             ...pullRequest,
             merged: pullRequest.merged ?? Boolean(pullRequest.merged_at)
           },
-          reviews: stripReviewBodies(reviews)
+          reviews: stripReviewBodies(reviews),
+          review_threads: reviewThreads
         };
       }
     );
@@ -521,12 +538,10 @@ async function getTokenPullRequest(
         pull_number: lookup.number
       }
     );
-    const reviews = await listPullRequestReviews(
-      octokit,
-      owner,
-      repo,
-      response.data.number
-    );
+    const [reviews, reviewThreads] = await Promise.all([
+      listPullRequestReviews(octokit, owner, repo, response.data.number),
+      listPullRequestReviewThreads(octokit, owner, repo, response.data.number)
+    ]);
 
     return {
       repository: {
@@ -538,7 +553,8 @@ async function getTokenPullRequest(
         ...response.data,
         merged: response.data.merged ?? Boolean(response.data.merged_at)
       },
-      reviews: options.stripReviewBodies ? stripReviewBodies(reviews) : reviews
+      reviews: options.stripReviewBodies ? stripReviewBodies(reviews) : reviews,
+      review_threads: reviewThreads
     };
   } catch (error) {
     if (isGithubNotFoundError(error)) {
@@ -556,6 +572,101 @@ function isGithubNotFoundError(error: unknown): boolean {
     "status" in error &&
     (error as { status?: unknown }).status === 404
   );
+}
+
+const reviewThreadsGraphqlQuery = `
+  query ReviewThreads($owner: String!, $name: String!, $number: Int!) {
+    repository(owner: $owner, name: $name) {
+      pullRequest(number: $number) {
+        reviewThreads(first: 100) {
+          nodes {
+            id
+            isResolved
+            isOutdated
+            path
+            line
+            comments(first: 100) {
+              nodes {
+                author { login }
+                createdAt
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+interface GitHubReviewThreadsGraphqlResponse {
+  data?: {
+    repository?: {
+      pullRequest?: {
+        reviewThreads?: {
+          nodes?: Array<{
+            id?: string;
+            isResolved?: boolean;
+            isOutdated?: boolean;
+            path?: string | null;
+            line?: number | null;
+            comments?: {
+              nodes?: Array<{
+                author?: { login?: string } | null;
+                createdAt?: string;
+              } | null>;
+            };
+          } | null>;
+        };
+      };
+    };
+  };
+  errors?: unknown[];
+}
+
+async function listPullRequestReviewThreads(
+  octokit: RequestingOctokit,
+  owner: string,
+  repo: string,
+  pullNumber: number
+): Promise<GitHubReviewThreadSnapshot[] | undefined> {
+  try {
+    const response = await octokit.request<GitHubReviewThreadsGraphqlResponse>(
+      "POST /graphql",
+      {
+        query: reviewThreadsGraphqlQuery,
+        variables: { owner, name: repo, number: pullNumber }
+      }
+    );
+    const pullRequest = response.data.data?.repository?.pullRequest;
+    if (!pullRequest) {
+      return undefined;
+    }
+
+    const nodes = pullRequest.reviewThreads?.nodes ?? [];
+    return nodes
+      .filter((node): node is NonNullable<typeof node> => Boolean(node?.id))
+      .map((node) => ({
+        id: node.id as string,
+        is_resolved: node.isResolved ?? false,
+        is_outdated: node.isOutdated ?? false,
+        path: node.path,
+        line: node.line,
+        comments: (node.comments?.nodes ?? [])
+          .filter((comment): comment is NonNullable<typeof comment> =>
+            Boolean(comment)
+          )
+          .map((comment) => ({
+            author: comment.author?.login
+              ? { login: comment.author.login }
+              : undefined,
+            created_at: comment.createdAt
+          }))
+      }));
+  } catch {
+    // Thread data is an enrichment; a failed GraphQL call (older GHES,
+    // token without GraphQL access) must not fail the whole sync.
+    return undefined;
+  }
 }
 
 async function listPullRequestReviews(
@@ -613,13 +724,18 @@ function createTokenRequest(input: {
       return encodeURIComponent(String(value));
     });
     const url = new URL(pathname, apiBaseUrl);
+    const bodyParameters: Record<string, unknown> = {};
 
     for (const [name, value] of Object.entries(parameters)) {
       if (usedParameterNames.has(name) || value === undefined || value === null) {
         continue;
       }
 
-      url.searchParams.set(name, String(value));
+      if (method === "GET") {
+        url.searchParams.set(name, String(value));
+      } else {
+        bodyParameters[name] = value;
+      }
     }
 
     const abortController = new AbortController();
@@ -633,8 +749,12 @@ function createTokenRequest(input: {
         headers: {
           accept: "application/vnd.github+json",
           authorization: `Bearer ${input.token}`,
-          "x-github-api-version": "2022-11-28"
-        }
+          "x-github-api-version": "2022-11-28",
+          ...(method === "GET" ? {} : { "content-type": "application/json" })
+        },
+        ...(method === "GET"
+          ? {}
+          : { body: JSON.stringify(bodyParameters) })
       });
     } catch (error) {
       if (abortController.signal.aborted) {

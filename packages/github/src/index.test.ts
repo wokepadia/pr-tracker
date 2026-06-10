@@ -55,6 +55,42 @@ describe("GitHub token pull request source", () => {
           return { data: [] as T };
         }
 
+        if (route === "POST /graphql") {
+          return {
+            data: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    reviewThreads: {
+                      nodes: [
+                        {
+                          id: "RT_thread_1",
+                          isResolved: false,
+                          isOutdated: true,
+                          path: "src/webhooks.ts",
+                          line: 44,
+                          comments: {
+                            nodes: [
+                              {
+                                author: { login: "viewer" },
+                                createdAt: "2026-06-01T08:30:00.000Z"
+                              },
+                              {
+                                author: { login: "author" },
+                                createdAt: "2026-06-01T09:00:00.000Z"
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            } as T
+          };
+        }
+
         throw new Error(`Unexpected route: ${route}`);
       }
     });
@@ -75,9 +111,79 @@ describe("GitHub token pull request source", () => {
         requested_reviewers: [{ login: "viewer" }]
       }
     });
+    expect(snapshots[0]?.review_threads).toEqual([
+      {
+        id: "RT_thread_1",
+        is_resolved: false,
+        is_outdated: true,
+        path: "src/webhooks.ts",
+        line: 44,
+        comments: [
+          {
+            author: { login: "viewer" },
+            created_at: "2026-06-01T08:30:00.000Z"
+          },
+          {
+            author: { login: "author" },
+            created_at: "2026-06-01T09:00:00.000Z"
+          }
+        ]
+      }
+    ]);
+    const graphqlCall = calls.find((call) => call.route === "POST /graphql");
+    expect(graphqlCall?.parameters).toMatchObject({
+      variables: { owner: "acme", name: "web", number: 42 }
+    });
     expect(calls.map((call) => call.route)).not.toContain(
       "GET /repos/{owner}/{repo}/pulls/{pull_number}/files"
     );
+  });
+
+  it("keeps review threads undefined when the GraphQL fetch fails", async () => {
+    const source = createGithubTokenPullRequestSource({
+      token: "token",
+      repositories: ["acme/web"],
+      request: async <T = unknown>(
+        route: string,
+        parameters?: Record<string, unknown>
+      ) => {
+        void parameters;
+
+        if (route === "GET /repos/{owner}/{repo}/pulls") {
+          return {
+            data: [
+              {
+                id: 1,
+                number: 42,
+                title: "Ship reviewer inbox",
+                state: "open",
+                updated_at: "2026-06-01T09:00:00.000Z",
+                user: { login: "author" }
+              }
+            ] as T
+          };
+        }
+
+        if (route === "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews") {
+          return { data: [] as T };
+        }
+
+        if (route === "POST /graphql") {
+          throw new Error("GraphQL unavailable");
+        }
+
+        throw new Error(`Unexpected route: ${route}`);
+      }
+    });
+
+    if (!source.listOpenPullRequests) {
+      throw new Error("Expected token source to support listOpenPullRequests.");
+    }
+
+    const snapshots = await source.listOpenPullRequests();
+
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]?.review_threads).toBeUndefined();
   });
 
   it("uses GitHub issue search syntax to list matching pull requests", async () => {
