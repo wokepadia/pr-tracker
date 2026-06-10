@@ -43,13 +43,12 @@ export function SettingsPage() {
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <KeyRound className="h-4 w-4" />
-              Local GitHub access
-            </div>
-            <h1 className="mt-2 text-2xl font-semibold tracking-normal text-foreground">
-              GitHub token settings
+            <h1 className="text-2xl font-semibold tracking-normal text-foreground">
+              Settings
             </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Everything is stored locally on this machine.
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <Button asChild className="rounded-md" variant="ghost">
@@ -63,12 +62,16 @@ export function SettingsPage() {
 
         <Card className="rounded-md border-border p-5 shadow-none">
           <div>
-            <div className="text-sm font-medium text-foreground">
-              Token storage
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <KeyRound className="h-4 w-4" />
+              GitHub connection
             </div>
-            <div className="mt-1 text-sm text-muted-foreground">
+            <h2 className="mt-2 text-lg font-semibold tracking-normal text-foreground">
+              Token and repositories
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
               {storageDescription}
-            </div>
+            </p>
           </div>
 
           {settingsQuery.error ? (
@@ -89,7 +92,19 @@ export function SettingsPage() {
             </div>
           ) : null}
 
-          <GithubSettingsForm settings={settingsQuery.data} />
+          {settingsQuery.isLoading ? (
+            <div
+              className="grid gap-3"
+              aria-busy="true"
+              aria-label="Loading saved settings"
+            >
+              <div className="h-9 animate-pulse rounded-md bg-muted/60" />
+              <div className="h-9 animate-pulse rounded-md bg-muted/60" />
+              <div className="h-9 w-40 animate-pulse rounded-md bg-muted/60" />
+            </div>
+          ) : (
+            <GithubSettingsForm settings={settingsQuery.data} />
+          )}
         </Card>
 
         <AttentionTimingCard />
@@ -99,10 +114,10 @@ export function SettingsPage() {
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                 <Database className="h-4 w-4" />
-                SQLite backup
+                Data &amp; backup
               </div>
               <h2 className="mt-2 text-lg font-semibold tracking-normal text-foreground">
-                Unencrypted local database backup
+                SQLite backup
               </h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
                 Create a plain SQLite backup of the local reviewer database.
