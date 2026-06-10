@@ -51,6 +51,7 @@ import {
   Eye,
   BellOff,
   Maximize2,
+  GitCompareArrows,
   GitCommitHorizontal,
   GitPullRequest,
   GripVertical,
@@ -62,6 +63,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  ShieldAlert,
   Sparkles,
   Trash2,
   X,
@@ -101,6 +103,7 @@ import {
   buildInboxView,
   canMarkReviewItemCaughtUp,
   type ReviewQueueItemView,
+  type SinceLastReviewView,
 } from "@/reviewer/view-model"
 import {
   bucketIdForLocalQueueItem,
@@ -2340,6 +2343,14 @@ function QueueCard({
               active={item.unresolvedThreadCount > 0}
             />
           ) : null}
+          {item.approvalStale ? (
+            <FactChip
+              icon={ShieldAlert}
+              text="stale approval"
+              label="The author pushed after your approval"
+              active
+            />
+          ) : null}
           {reReviewRequested ? (
             <FactChip
               icon={Eye}
@@ -2605,6 +2616,14 @@ function QueueRow({
                 "review thread"
               )} unresolved`}
               active={item.unresolvedThreadCount > 0}
+            />
+          ) : null}
+          {item.approvalStale ? (
+            <FactChip
+              icon={ShieldAlert}
+              text="stale approval"
+              label="The author pushed after your approval"
+              active
             />
           ) : null}
           {reReviewRequested ? (
@@ -2911,6 +2930,37 @@ function QuickPeekPanel({
           </ul>
         </section>
 
+        {item.sinceLastReview ? (
+          <>
+            <Separator className="my-4 bg-border" />
+
+            <section className="rounded-md border border-border bg-card p-3.5">
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <GitCompareArrows className="h-3.5 w-3.5" />
+                Since your last review · {sinceReviewHeading(item.sinceLastReview)}
+              </div>
+              <ul className="mt-3 space-y-2 text-sm leading-5 text-foreground">
+                {sinceReviewFacts(item.sinceLastReview).map((fact) => (
+                  <li key={fact} className="flex gap-2">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
+                    <span>{fact}</span>
+                  </li>
+                ))}
+              </ul>
+              {item.sinceLastReview.compareUrl ? (
+                <a
+                  href={item.sinceLastReview.compareUrl}
+                  {...externalLinkProps}
+                  className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-foreground underline underline-offset-4 hover:text-muted-foreground"
+                >
+                  View what changed since your review
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              ) : null}
+            </section>
+          </>
+        ) : null}
+
         {item.totalThreadCount > 0 ? (
           <>
             <Separator className="my-4 bg-border" />
@@ -3101,6 +3151,35 @@ function queuePillTooltip(item: ReviewQueueItemView): string {
   if (item.laneId === "caught_up") return "You are caught up on this PR"
   if (item.laneId === "stale") return "No recent activity on this PR"
   return "You are watching this PR"
+}
+
+function sinceReviewHeading(view: SinceLastReviewView): string {
+  const action =
+    view.decision === "approved"
+      ? "approved"
+      : view.decision === "changes_requested"
+        ? "requested changes"
+        : "commented"
+  return `you ${action} ${view.reviewedAt}`
+}
+
+function sinceReviewFacts(view: SinceLastReviewView): string[] {
+  const facts: string[] = []
+  if (view.commits.length > 0) {
+    facts.push(`+${formatCount(view.commits.length, "commit")} pushed`)
+  } else if (view.compareUrl) {
+    facts.push("New commits were pushed")
+  }
+  if (view.replyCount > 0) {
+    facts.push(`${formatCount(view.replyCount, "reply", "replies")} from others`)
+  }
+  if (view.threadsResolvedCount > 0) {
+    facts.push(`${formatCount(view.threadsResolvedCount, "thread")} resolved`)
+  }
+  if (facts.length === 0) {
+    facts.push("No new activity since your review")
+  }
+  return facts
 }
 
 function waitingAgeClass(item: ReviewQueueItemView): string | undefined {

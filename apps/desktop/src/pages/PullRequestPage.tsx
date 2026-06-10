@@ -17,8 +17,10 @@ import {
   Clock3,
   ExternalLink,
   FileText,
+  GitCompareArrows,
   Pin,
   RotateCcw,
+  ShieldAlert,
   Sparkles,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -48,6 +50,7 @@ import {
   toReviewQueueItemView,
   type ActivityEventView,
   type ReviewQueueItemView,
+  type SinceLastReviewView,
 } from "@/reviewer/view-model"
 import {
   bucketIdForLocalQueueItem,
@@ -319,6 +322,7 @@ export function PullRequestPage() {
             onSave={updateNotes}
             className="mb-6"
           />
+          <SinceLastReviewPanel view={loadedItem.sinceLastReview} />
           <div className="mb-4 text-xs text-muted-foreground">
             Activity · newest first
           </div>
@@ -368,6 +372,64 @@ function DescriptionPanel({ description }: { description?: string }) {
         PR description
       </div>
       <MarkdownContent className="mt-3 max-w-4xl" source={description} />
+    </section>
+  )
+}
+
+function SinceLastReviewPanel({ view }: { view?: SinceLastReviewView }) {
+  if (!view) return null
+
+  const action =
+    view.decision === "approved"
+      ? "approved"
+      : view.decision === "changes_requested"
+        ? "requested changes"
+        : "commented"
+  const facts: string[] = []
+  if (view.replyCount > 0) {
+    facts.push(`${formatCount(view.replyCount, "reply", "replies")} from others`)
+  }
+  if (view.threadsResolvedCount > 0) {
+    facts.push(`${formatCount(view.threadsResolvedCount, "thread")} resolved`)
+  }
+
+  return (
+    <section className="mb-6 rounded-md border border-border bg-card p-4">
+      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+        <GitCompareArrows className="h-3.5 w-3.5" />
+        Since your last review · you {action} {view.reviewedAt}
+      </div>
+      <ul className="mt-3 space-y-2 text-sm leading-5 text-foreground">
+        {view.commits.map((commit) => (
+          <li key={commit.id} className="flex gap-2">
+            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+            <span>
+              {commit.title}
+              <span className="text-muted-foreground"> · {commit.occurredAt}</span>
+            </span>
+          </li>
+        ))}
+        {view.commits.length === 0 && view.compareUrl ? (
+          <li className="flex gap-2">
+            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+            <span>New commits were pushed</span>
+          </li>
+        ) : null}
+        {facts.map((fact) => (
+          <li key={fact} className="flex gap-2">
+            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+            <span>{fact}</span>
+          </li>
+        ))}
+      </ul>
+      {view.compareUrl ? (
+        <Button asChild variant="outline" className="mt-4 h-8 rounded-md text-xs">
+          <a href={view.compareUrl} {...externalLinkProps}>
+            View what changed since your review
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </Button>
+      ) : null}
     </section>
   )
 }
@@ -458,6 +520,17 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
           >
             {detailQueueLabel(item)} · {item.waitingAge}
           </span>
+          {item.approvalStale ? (
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-medium",
+                detailToneClasses.hot
+              )}
+            >
+              <ShieldAlert className="h-3.5 w-3.5" />
+              Approved, then the author pushed
+            </span>
+          ) : null}
           {item.unseenEventCount > 0 ? (
             <span
               className={cn(
