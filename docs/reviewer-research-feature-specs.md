@@ -144,10 +144,11 @@ since-your-last-review deltas with compare links; stale-approval
 warnings; the thread resolution ledger backed by a GraphQL thread
 fetch; size chips; two-tone obligation emphasis). F7 was already
 covered by the description-first detail layout. F10 (CI chips)
-remains deferred post-V1 per existing scope. Known deferred
-details: urgency thresholds are constants rather than settings,
-and the thread fetch reads the first 100 threads and 100 comments
-per thread without pagination.
+remains deferred post-V1 per existing scope. The urgency
+thresholds are editable in Settings (attention timing), the
+thread fetch paginates with the newest comments per thread, and
+an opt-in live smoke test (PR_TRACKER_LIVE_SMOKE=1) verifies the
+ingestion against real GitHub data.
 
 ### F1. Turn-based attention classification
 
