@@ -193,6 +193,16 @@ const defaultLaneDescriptions: Record<string, string> = {
   done: "Finished or caught up",
 }
 
+const defaultLaneEmptyHints: Record<string, string> = {
+  inbox: "New PRs land here when they enter your review queue.",
+  reviewing: "Drag a PR here when you start reviewing it.",
+  waiting: "Drag a PR here once it is waiting on someone else.",
+  later: "Park lower-urgency PRs here to keep them visible.",
+  done: "Drag a PR here when you are finished or caught up.",
+}
+
+const fallbackLaneEmptyHint = "Drag a PR here to organize your queue."
+
 const defaultLaneTones: Record<string, LaneDefinition["tone"]> = {
   inbox: "hot",
   reviewing: "changed",
@@ -2144,7 +2154,7 @@ function KanbanColumn({
             ))
           ) : (
             <div className="grid min-h-[140px] place-items-center rounded-md border border-dashed border-border bg-card/50 px-4 text-center text-xs leading-5 text-muted-foreground">
-              No PRs.
+              {defaultLaneEmptyHints[lane.id] ?? fallbackLaneEmptyHint}
             </div>
           )}
         </div>
