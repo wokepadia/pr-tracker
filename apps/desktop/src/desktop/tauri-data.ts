@@ -16,6 +16,7 @@ import {
   parseGithubRepositories,
   type GitHubPullRequestSnapshot,
   type GitHubReviewSnapshot,
+  type GitHubReviewThreadSnapshot,
 } from "@pr-tracker/github"
 import { buildReviewerInbox } from "@pr-tracker/reviewer-workflow"
 import Database from "@tauri-apps/plugin-sql"
@@ -453,6 +454,7 @@ async function initializeDatabase(): Promise<SqlDatabase> {
     await db.execute(statement)
   }
   await ensureBoardItemNotesColumn(db)
+  await ensureReviewThreadLedgerColumns(db)
   return db
 }
 
@@ -729,6 +731,7 @@ async function upsertLocalPullRequestSnapshot(
   const storedPullRequestId = await upsertPullRequestItem(db, pullRequest, now, {
     githubNodeId,
     rawPayload: snapshot,
+    skipThreads: snapshot.review_threads === undefined,
   })
   await storeSnapshotAvatarUrls(db, snapshot, now)
   await ensureDefaultBoardItem(db, storedPullRequestId, now)
@@ -777,7 +780,12 @@ async function upsertPullRequestItem(
   db: SqlDatabase,
   pullRequest: PullRequestItem,
   now: string,
-  options: { githubNodeId?: string; rawPayload?: unknown } = {}
+  options: {
+    githubNodeId?: string
+    rawPayload?: unknown
+    /** Keep existing thread rows when the snapshot had no thread data. */
+    skipThreads?: boolean
+  } = {}
 ): Promise<string> {
   const [owner = "unknown", repoName = pullRequest.repository] =
     pullRequest.repository.split("/")
@@ -895,7 +903,9 @@ async function upsertPullRequestItem(
   const storedPullRequest = { ...pullRequest, id: storedPullRequestId }
   await replaceReviewRequests(db, storedPullRequest, now)
   await replaceReviews(db, storedPullRequest.reviews, storedPullRequest.id, now)
-  await replaceThreads(db, storedPullRequest.threads, storedPullRequest.id, now)
+  if (!options.skipThreads) {
+    await replaceThreads(db, storedPullRequest.threads, storedPullRequest.id, now)
+  }
   await replaceActivity(db, storedPullRequest.activity, storedPullRequest.id, now)
 
   return storedPullRequestId
@@ -1094,16 +1104,18 @@ async function replaceThreads(
     await db.execute(
       `
         insert into review_threads (
-          id, pull_request_id, github_node_id, is_resolved, file_path,
-          line, last_activity_at, raw_payload_json
+          id, pull_request_id, github_node_id, is_resolved, is_outdated,
+          last_actor_login, file_path, line, last_activity_at, raw_payload_json
         )
-        values ($1, $2, $3, $4, $5, $6, $7, $8)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       `,
       [
         thread.id,
         pullRequestId,
         thread.id,
         boolToSqlite(thread.isResolved),
+        boolToSqlite(thread.isOutdated ?? false),
+        thread.lastActorId ?? null,
         thread.filePath ?? null,
         thread.line ?? null,
         thread.lastActivityAt,
@@ -1349,7 +1361,9 @@ async function toPullRequestItem(
     threads: reviewThreads.map((thread) => ({
       id: thread.id,
       isResolved: Boolean(thread.is_resolved),
+      isOutdated: Boolean(thread.is_outdated),
       participantIds: participantIdsByThreadId.get(thread.id) ?? [],
+      lastActorId: thread.last_actor_login ?? undefined,
       filePath: thread.file_path ?? undefined,
       line: thread.line ?? undefined,
       lastActivityAt: thread.last_activity_at,
@@ -1428,13 +1442,16 @@ async function listReviewThreadRows(db: SqlDatabase, pullRequestId: string) {
       id: string
       pull_request_id: string
       is_resolved: number
+      is_outdated: number
+      last_actor_login: string | null
       file_path: string | null
       line: number | null
       last_activity_at: string
     }>
   >(
     `
-      select id, pull_request_id, is_resolved, file_path, line, last_activity_at
+      select id, pull_request_id, is_resolved, is_outdated, last_actor_login,
+        file_path, line, last_activity_at
       from review_threads
       where pull_request_id = $1
       order by last_activity_at desc
@@ -1839,8 +1856,40 @@ function snapshotToPullRequestItem(
       .map((reviewer) => reviewer.login)
       .filter((login): login is string => Boolean(login)),
     reviews: reviews.flatMap(mapSnapshotReview),
-    threads: [],
+    threads: (snapshot.review_threads ?? []).map((thread) =>
+      mapSnapshotReviewThread(thread, updatedAt)
+    ),
     activity: buildSnapshotActivity({ ...snapshot, reviews }),
+  }
+}
+
+function mapSnapshotReviewThread(
+  thread: GitHubReviewThreadSnapshot,
+  fallbackTimestamp: string
+): ReviewThread {
+  const comments = (thread.comments ?? [])
+    .slice()
+    .sort(
+      (a, b) => Date.parse(a.created_at ?? "") - Date.parse(b.created_at ?? "")
+    )
+  const lastComment = comments[comments.length - 1]
+  const participantIds = [
+    ...new Set(
+      comments
+        .map((comment) => comment.author?.login)
+        .filter((login): login is string => Boolean(login))
+    ),
+  ]
+
+  return {
+    id: thread.id,
+    isResolved: thread.is_resolved ?? false,
+    isOutdated: thread.is_outdated ?? false,
+    participantIds,
+    lastActorId: lastComment?.author?.login,
+    filePath: thread.path ?? undefined,
+    line: thread.line ?? undefined,
+    lastActivityAt: lastComment?.created_at ?? fallbackTimestamp,
   }
 }
 
@@ -2059,6 +2108,22 @@ async function ensureBoardItemNotesColumn(db: SqlDatabase): Promise<void> {
   if (rows.some((row) => row.name === "notes")) return
 
   await db.execute(`alter table board_items add column notes text`)
+}
+
+async function ensureReviewThreadLedgerColumns(db: SqlDatabase): Promise<void> {
+  const rows = await db.select<Array<{ name: string }>>(
+    `pragma table_info(review_threads)`
+  )
+  const columnNames = new Set(rows.map((row) => row.name))
+
+  if (!columnNames.has("is_outdated")) {
+    await db.execute(
+      `alter table review_threads add column is_outdated integer not null default 0`
+    )
+  }
+  if (!columnNames.has("last_actor_login")) {
+    await db.execute(`alter table review_threads add column last_actor_login text`)
+  }
 }
 
 function localGithubSettingsFingerprint(credentials: LocalGithubCredentials): string {

@@ -12,7 +12,8 @@ import {
 } from "@pr-tracker/core";
 import type {
   GitHubPullRequestSnapshot,
-  GitHubReviewSnapshot
+  GitHubReviewSnapshot,
+  GitHubReviewThreadSnapshot
 } from "@pr-tracker/github";
 import { deterministicUuid } from "./ids";
 import { localDesktopSchemaSql } from "./local-schema";
@@ -72,6 +73,8 @@ export interface LocalReviewThreadRow {
   id: string;
   pull_request_id: string;
   is_resolved: number;
+  is_outdated: number;
+  last_actor_login: string | null;
   file_path: string | null;
   line: number | null;
   last_activity_at: string;
@@ -194,6 +197,7 @@ export function createLocalDatabaseBackup(
 export function initializeLocalDatabase(db: DatabaseSync): void {
   db.exec(localDesktopSchemaSql);
   ensureLocalBoardItemNotesColumn(db);
+  ensureLocalReviewThreadLedgerColumns(db);
 }
 
 function sqliteStringLiteral(value: string): string {
@@ -267,7 +271,8 @@ export function upsertLocalPullRequestSnapshot(
     if (isFreshEnough) {
       storedPullRequestId = upsertLocalPullRequest(db, pullRequest, now, {
         githubNodeId,
-        rawPayload: snapshot
+        rawPayload: snapshot,
+        skipThreads: snapshot.review_threads === undefined
       });
       ensureDefaultBoardItem(db, { ...pullRequest, id: storedPullRequestId }, now);
     }
@@ -377,6 +382,8 @@ export function listLocalReviewThreadRows(
           id,
           pull_request_id,
           is_resolved,
+          is_outdated,
+          last_actor_login,
           file_path,
           line,
           last_activity_at
@@ -696,6 +703,8 @@ function upsertLocalPullRequest(
   options: {
     githubNodeId?: string;
     rawPayload?: unknown;
+    /** Keep existing thread rows when the snapshot had no thread data. */
+    skipThreads?: boolean;
   } = {}
 ): string {
   const [owner, repoName = pullRequest.repository] = pullRequest.repository.split("/");
@@ -836,7 +845,9 @@ function upsertLocalPullRequest(
   const storedPullRequest = { ...pullRequest, id: storedPullRequestId };
   replaceLocalReviewRequests(db, storedPullRequest, now);
   replaceLocalReviews(db, storedPullRequest.reviews, storedPullRequest.id, now);
-  replaceLocalThreads(db, storedPullRequest.threads, storedPullRequest.id, now);
+  if (!options.skipThreads) {
+    replaceLocalThreads(db, storedPullRequest.threads, storedPullRequest.id, now);
+  }
   replaceLocalActivity(db, storedPullRequest.activity, storedPullRequest.id, now);
 
   return storedPullRequestId;
@@ -867,8 +878,40 @@ function snapshotToPullRequestItem(snapshot: GitHubPullRequestSnapshot): PullReq
       .map((reviewer) => reviewer.login)
       .filter((login): login is string => Boolean(login)),
     reviews: reviews.flatMap(mapSnapshotReview),
-    threads: [],
+    threads: (snapshot.review_threads ?? []).map((thread) =>
+      mapSnapshotReviewThread(thread, updatedAt)
+    ),
     activity: buildSnapshotActivity({ ...snapshot, reviews })
+  };
+}
+
+function mapSnapshotReviewThread(
+  thread: GitHubReviewThreadSnapshot,
+  fallbackTimestamp: string
+): ReviewThread {
+  const comments = (thread.comments ?? [])
+    .slice()
+    .sort(
+      (a, b) => Date.parse(a.created_at ?? "") - Date.parse(b.created_at ?? "")
+    );
+  const lastComment = comments[comments.length - 1];
+  const participantIds = [
+    ...new Set(
+      comments
+        .map((comment) => comment.author?.login)
+        .filter((login): login is string => Boolean(login))
+    )
+  ];
+
+  return {
+    id: thread.id,
+    isResolved: thread.is_resolved ?? false,
+    isOutdated: thread.is_outdated ?? false,
+    participantIds,
+    lastActorId: lastComment?.author?.login,
+    filePath: thread.path ?? undefined,
+    line: thread.line ?? undefined,
+    lastActivityAt: lastComment?.created_at ?? fallbackTimestamp
   };
 }
 
@@ -1018,6 +1061,22 @@ function ensureLocalBoardItemNotesColumn(db: DatabaseSync): void {
   if (rows.some((row) => row.name === "notes")) return;
 
   db.exec(`alter table board_items add column notes text`);
+}
+
+function ensureLocalReviewThreadLedgerColumns(db: DatabaseSync): void {
+  const rows = db
+    .prepare(`pragma table_info(review_threads)`)
+    .all() as Array<{ name: string }>;
+  const columnNames = new Set(rows.map((row) => row.name));
+
+  if (!columnNames.has("is_outdated")) {
+    db.exec(
+      `alter table review_threads add column is_outdated integer not null default 0`
+    );
+  }
+  if (!columnNames.has("last_actor_login")) {
+    db.exec(`alter table review_threads add column last_actor_login text`);
+  }
 }
 
 function snapshotReviewTitle(state: string | undefined): string {
@@ -1245,18 +1304,22 @@ function replaceLocalThreads(
           pull_request_id,
           github_node_id,
           is_resolved,
+          is_outdated,
+          last_actor_login,
           file_path,
           line,
           last_activity_at,
           raw_payload_json
         )
-        values (?, ?, ?, ?, ?, ?, ?, ?)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `
     ).run(
       thread.id,
       pullRequestId,
       thread.id,
       boolToSqlite(thread.isResolved),
+      boolToSqlite(thread.isOutdated ?? false),
+      thread.lastActorId ?? null,
       thread.filePath ?? null,
       thread.line ?? null,
       thread.lastActivityAt,

@@ -57,6 +57,8 @@ describe("local SQLite storage", () => {
         {
           id: "t1",
           is_resolved: 0,
+          is_outdated: 0,
+          last_actor_login: "sam",
           file_path: "src/webhooks.ts"
         }
       ]);
@@ -303,6 +305,95 @@ describe("local SQLite storage", () => {
           column_id: "inbox"
         }
       ]);
+    } finally {
+      local.close();
+    }
+  });
+
+  it("ingests review threads and keeps them when a later sync lacks thread data", async () => {
+    const local = openLocalDatabase({ path: ":memory:" });
+    const basePullRequest = {
+      id: 55,
+      node_id: "PR_kw_threads_55",
+      number: 55,
+      title: "Thread ledger ingestion",
+      html_url: "https://github.com/acme/web/pull/55",
+      state: "open",
+      created_at: "2026-06-01T08:00:00.000Z",
+      user: { login: "author" }
+    };
+
+    try {
+      await syncPullRequestsToLocalSqlite(local.db, {
+        async listPullRequests() {
+          return [
+            {
+              repository: { full_name: "acme/web" },
+              pull_request: {
+                ...basePullRequest,
+                updated_at: "2026-06-01T09:00:00.000Z"
+              },
+              review_threads: [
+                {
+                  id: "RT_55_1",
+                  is_resolved: false,
+                  is_outdated: true,
+                  path: "src/sync.ts",
+                  line: 12,
+                  comments: [
+                    {
+                      author: { login: "viewer" },
+                      created_at: "2026-06-01T08:30:00.000Z"
+                    },
+                    {
+                      author: { login: "author" },
+                      created_at: "2026-06-01T08:45:00.000Z"
+                    }
+                  ]
+                }
+              ]
+            }
+          ];
+        }
+      });
+
+      const threads = listLocalReviewThreadRows(local.db, "github:acme~web:55");
+      expect(threads).toMatchObject([
+        {
+          id: "RT_55_1",
+          is_resolved: 0,
+          is_outdated: 1,
+          last_actor_login: "author",
+          file_path: "src/sync.ts",
+          line: 12,
+          last_activity_at: "2026-06-01T08:45:00.000Z"
+        }
+      ]);
+      expect(
+        listLocalReviewThreadParticipantRows(
+          local.db,
+          threads.map((thread) => thread.id)
+        ).map((row) => row.login)
+      ).toEqual(["viewer", "author"]);
+
+      await syncPullRequestsToLocalSqlite(local.db, {
+        async listPullRequests() {
+          return [
+            {
+              repository: { full_name: "acme/web" },
+              pull_request: {
+                ...basePullRequest,
+                updated_at: "2026-06-01T10:00:00.000Z"
+              }
+              // review_threads intentionally absent: fetch unavailable.
+            }
+          ];
+        }
+      });
+
+      expect(
+        listLocalReviewThreadRows(local.db, "github:acme~web:55")
+      ).toMatchObject([{ id: "RT_55_1", last_actor_login: "author" }]);
     } finally {
       local.close();
     }

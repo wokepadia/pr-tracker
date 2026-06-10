@@ -20,7 +20,11 @@ export interface ReviewDecisionEvent {
 export interface ReviewThread {
   id: string;
   isResolved: boolean;
+  /** True when new commits made the thread's diff context outdated. */
+  isOutdated?: boolean;
   participantIds: string[];
+  /** Who commented last in the thread; undefined when not ingested. */
+  lastActorId?: string;
   filePath?: string;
   line?: number;
   lastActivityAt: string;
@@ -178,7 +182,9 @@ export const samplePullRequests: PullRequestItem[] = [
       {
         id: "t1",
         isResolved: false,
+        isOutdated: false,
         participantIds: ["viewer", "sam"],
+        lastActorId: "sam",
         filePath: "src/webhooks.ts",
         line: 44,
         lastActivityAt: "2026-05-30T10:05:00.000Z"

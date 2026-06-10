@@ -240,12 +240,15 @@ create table review_threads (
   pull_request_id text not null references pull_requests(id) on delete cascade,
   github_node_id text not null unique,
   is_resolved integer not null default 0,
+  is_outdated integer not null default 0,
+  last_actor_login text,
   file_path text,
   line integer,
   start_line integer,
   last_activity_at text not null,
   raw_payload_json text not null default '{}',
-  check (is_resolved in (0, 1))
+  check (is_resolved in (0, 1)),
+  check (is_outdated in (0, 1))
 );
 
 create index review_threads_pull_request_activity_idx
