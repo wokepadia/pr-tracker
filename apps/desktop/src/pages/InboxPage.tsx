@@ -2969,6 +2969,9 @@ function QuickPeekPanel({
               <div className="text-xs text-muted-foreground">
                 Open threads · {item.unresolvedThreadCount} of{" "}
                 {item.totalThreadCount} unresolved
+                {threadsAwaitingReplyCount(item) > 0
+                  ? ` · ${threadsAwaitingReplyCount(item)} awaiting your reply`
+                  : ""}
               </div>
               <div className="mt-3 space-y-2">
                 {item.reviewThreads.map((thread) => (
@@ -2991,8 +2994,7 @@ function QuickPeekPanel({
                             : "text-muted-foreground/70"
                         )}
                       >
-                        {thread.status}
-                        {thread.authorReplied ? " · author replied" : ""}
+                        {threadStatusLine(thread)}
                       </div>
                     </div>
                   </div>
@@ -3151,6 +3153,31 @@ function queuePillTooltip(item: ReviewQueueItemView): string {
   if (item.laneId === "caught_up") return "You are caught up on this PR"
   if (item.laneId === "stale") return "No recent activity on this PR"
   return "You are watching this PR"
+}
+
+function threadsAwaitingReplyCount(item: ReviewQueueItemView): number {
+  return item.reviewThreads.filter((thread) => thread.awaitingYourReply).length
+}
+
+function threadStatusLine(thread: ReviewQueueItemView["reviewThreads"][number]): string {
+  if (thread.status === "resolved") {
+    return thread.isOutdated ? "resolved · outdated" : "resolved"
+  }
+
+  const parts = ["unresolved"]
+  if (thread.awaitingYourReply) {
+    parts.push(
+      thread.lastActorLogin
+        ? `${thread.lastActorLogin} replied · awaiting your reply`
+        : "awaiting your reply"
+    )
+  } else {
+    parts.push("you replied last")
+  }
+  if (thread.isOutdated) {
+    parts.push("outdated by new commits")
+  }
+  return parts.join(" · ")
 }
 
 function sinceReviewHeading(view: SinceLastReviewView): string {

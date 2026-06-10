@@ -54,6 +54,10 @@ export interface ReviewThreadView {
   status: "resolved" | "unresolved"
   authorReplied: boolean
   excerpt: string
+  /** True when someone else (or an unknown actor) commented last. */
+  awaitingYourReply: boolean
+  isOutdated: boolean
+  lastActorLogin?: string
 }
 
 export interface ActivityEventView {
@@ -227,17 +231,30 @@ export function toReviewQueueItemView(
     unresolvedThreadCount: pullRequest.threads.filter((thread) => !thread.isResolved)
       .length,
     totalThreadCount: pullRequest.threads.length,
-    reviewThreads: pullRequest.threads.map((thread) => ({
-      id: thread.id,
-      author: thread.participantIds
-        .map((participantId) => actorLogin(actorById, participantId))
-        .find((login) => login !== "you") ?? authorLogin,
-      status: thread.isResolved ? "resolved" : "unresolved",
-      authorReplied: isNewerThan(thread.lastActivityAt, lastSeenAt),
-      excerpt: thread.filePath
-        ? `${thread.filePath}${thread.line ? `:${thread.line}` : ""}`
-        : "Review thread",
-    })),
+    reviewThreads: pullRequest.threads
+      .map((thread) => ({
+        id: thread.id,
+        author: thread.participantIds
+          .map((participantId) => actorLogin(actorById, participantId))
+          .find((login) => login !== "you") ?? authorLogin,
+        status: thread.isResolved
+          ? ("resolved" as const)
+          : ("unresolved" as const),
+        authorReplied: isNewerThan(thread.lastActivityAt, lastSeenAt),
+        excerpt: thread.filePath
+          ? `${thread.filePath}${thread.line ? `:${thread.line}` : ""}`
+          : "Review thread",
+        awaitingYourReply:
+          !thread.isResolved && thread.lastActorId !== viewerId,
+        isOutdated: thread.isOutdated ?? false,
+        lastActorLogin: thread.lastActorId
+          ? actorLogin(actorById, thread.lastActorId)
+          : undefined,
+      }))
+      .sort(
+        (a, b) =>
+          Number(a.status === "resolved") - Number(b.status === "resolved")
+      ),
     activityEvents: pullRequest.activity
       .slice()
       .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))

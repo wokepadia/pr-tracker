@@ -18,6 +18,7 @@ import {
   ExternalLink,
   FileText,
   GitCompareArrows,
+  MessagesSquare,
   Pin,
   RotateCcw,
   ShieldAlert,
@@ -323,6 +324,7 @@ export function PullRequestPage() {
             className="mb-6"
           />
           <SinceLastReviewPanel view={loadedItem.sinceLastReview} />
+          <ThreadLedgerPanel item={loadedItem} />
           <div className="mb-4 text-xs text-muted-foreground">
             Activity · newest first
           </div>
@@ -430,6 +432,64 @@ function SinceLastReviewPanel({ view }: { view?: SinceLastReviewView }) {
           </a>
         </Button>
       ) : null}
+    </section>
+  )
+}
+
+function ThreadLedgerPanel({ item }: { item: ReviewQueueItemView }) {
+  if (item.totalThreadCount === 0) return null
+
+  const unresolvedThreads = item.reviewThreads.filter(
+    (thread) => thread.status === "unresolved"
+  )
+  const resolvedCount = item.totalThreadCount - unresolvedThreads.length
+  const awaitingCount = unresolvedThreads.filter(
+    (thread) => thread.awaitingYourReply
+  ).length
+
+  return (
+    <section className="mb-6 rounded-md border border-border bg-card p-4">
+      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+        <MessagesSquare className="h-3.5 w-3.5" />
+        Threads · {item.unresolvedThreadCount} of {item.totalThreadCount}{" "}
+        unresolved
+        {awaitingCount > 0 ? ` · ${awaitingCount} awaiting your reply` : ""}
+      </div>
+      <div className="mt-3 space-y-2">
+        {unresolvedThreads.map((thread) => (
+          <div
+            key={thread.id}
+            className="rounded-md border border-border bg-muted/30 p-3"
+          >
+            <div className="text-sm leading-5 text-foreground">
+              {thread.excerpt}
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+              <span
+                className={cn(
+                  thread.awaitingYourReply && "font-medium text-foreground"
+                )}
+              >
+                {thread.awaitingYourReply
+                  ? thread.lastActorLogin
+                    ? `${thread.lastActorLogin} replied · awaiting your reply`
+                    : "awaiting your reply"
+                  : "you replied last"}
+              </span>
+              {thread.isOutdated ? (
+                <span className="rounded-full border border-border bg-muted/40 px-1.5 py-[1px]">
+                  outdated by new commits
+                </span>
+              ) : null}
+            </div>
+          </div>
+        ))}
+        {resolvedCount > 0 ? (
+          <div className="text-xs text-muted-foreground/70">
+            + {formatCount(resolvedCount, "resolved thread")}
+          </div>
+        ) : null}
+      </div>
     </section>
   )
 }
@@ -874,6 +934,16 @@ function DetailSideRail({
           label="attention"
           value={detailAttentionLabel(item)}
         />
+        {item.reviewRounds > 0 ? (
+          <RailKeyValue
+            label="rounds of changes"
+            value={
+              item.reviewRounds > 2
+                ? `${item.reviewRounds} · unusually high`
+                : `${item.reviewRounds}`
+            }
+          />
+        ) : null}
       </RailCard>
     </aside>
   )
