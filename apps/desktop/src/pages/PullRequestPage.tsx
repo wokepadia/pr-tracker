@@ -13,7 +13,7 @@ import {
   ArrowLeft,
   BellOff,
   Check,
-  ChevronsLeftRight,
+  ChevronDown,
   Clock3,
   ExternalLink,
   FileText,
@@ -513,13 +513,19 @@ function BucketMoveMenu({
         <Button
           type="button"
           variant="outline"
+          aria-label={`Move to bucket, currently ${userBucketLabelFromId(userBuckets, bucketId)}`}
           className={cn(
-            "h-8 justify-start rounded-md text-xs",
-            fullWidth && "w-full justify-center"
+            "h-9 justify-between rounded-md text-xs",
+            fullWidth && "w-full"
           )}
         >
-          <ChevronsLeftRight className="h-3.5 w-3.5" />
-          Bucket: {userBucketLabelFromId(userBuckets, bucketId)}
+          <span className="font-normal text-muted-foreground">
+            Move to bucket
+          </span>
+          <span className="inline-flex items-center gap-1.5 font-medium">
+            {userBucketLabelFromId(userBuckets, bucketId)}
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          </span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-48 rounded-lg">
@@ -670,7 +676,7 @@ function DetailSideRail({
           <Button asChild className="h-9 justify-center">
             <a href={item.url} {...externalLinkProps}>
               {newEventCount > 0
-                ? `Review ${formatCount(newEventCount, "new event")}`
+                ? `Review in GitHub · ${formatCount(newEventCount, "new event")}`
                 : "Review in GitHub"}
               <ExternalLink className="h-4 w-4" />
             </a>
