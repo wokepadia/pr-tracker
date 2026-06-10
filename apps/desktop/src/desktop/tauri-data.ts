@@ -436,6 +436,8 @@ async function getDatabase(): Promise<SqlDatabase> {
 
 async function initializeDatabase(): Promise<SqlDatabase> {
   const db = await Database.load(databaseUrl)
+  await db.execute("pragma busy_timeout = 10000")
+  await db.execute("pragma journal_mode = wal")
   await db.execute("pragma foreign_keys = on")
   for (const statement of splitSqlStatements(localDesktopSchemaSql)) {
     await db.execute(statement)
@@ -571,16 +573,29 @@ async function startLocalSyncRun(
   const syncRunId = deterministicUuid(
     `sync-run:${sourceName}:${new Date().toISOString()}:${Math.random()}`
   )
-  await db.execute(
-    `
-      insert into sync_runs (
-        id, source, status, scanned_pull_requests, ingested_pull_requests,
-        ingested_reviews, ignored_pull_requests, error, started_at, finished_at
-      )
-      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-    `,
-    [syncRunId, sourceName, "running", 0, 0, 0, 0, null, new Date().toISOString(), null]
-  )
+  await transaction(db, async () => {
+    await db.execute(
+      `
+        insert into sync_runs (
+          id, source, status, scanned_pull_requests, ingested_pull_requests,
+          ingested_reviews, ignored_pull_requests, error, started_at, finished_at
+        )
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `,
+      [
+        syncRunId,
+        sourceName,
+        "running",
+        0,
+        0,
+        0,
+        0,
+        null,
+        new Date().toISOString(),
+        null,
+      ]
+    )
+  })
   return syncRunId
 }
 
@@ -596,30 +611,32 @@ async function finishLocalSyncRun(
   },
   error?: unknown
 ): Promise<void> {
-  await db.execute(
-    `
-      update sync_runs
-      set
-        status = $1,
-        scanned_pull_requests = $2,
-        ingested_pull_requests = $3,
-        ingested_reviews = $4,
-        ignored_pull_requests = $5,
-        error = $6,
-        finished_at = $7
-      where id = $8
-    `,
-    [
-      status,
-      result.scannedPullRequests,
-      result.ingestedPullRequests,
-      result.ingestedReviews,
-      result.ignoredPullRequests,
-      error instanceof Error ? error.message : error ? String(error) : null,
-      new Date().toISOString(),
-      syncRunId,
-    ]
-  )
+  await transaction(db, async () => {
+    await db.execute(
+      `
+        update sync_runs
+        set
+          status = $1,
+          scanned_pull_requests = $2,
+          ingested_pull_requests = $3,
+          ingested_reviews = $4,
+          ignored_pull_requests = $5,
+          error = $6,
+          finished_at = $7
+        where id = $8
+      `,
+      [
+        status,
+        result.scannedPullRequests,
+        result.ingestedPullRequests,
+        result.ingestedReviews,
+        result.ignoredPullRequests,
+        error instanceof Error ? error.message : error ? String(error) : null,
+        new Date().toISOString(),
+        syncRunId,
+      ]
+    )
+  })
 }
 
 async function seedLocalSampleData(db: SqlDatabase): Promise<void> {
