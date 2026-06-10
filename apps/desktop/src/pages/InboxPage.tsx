@@ -2103,7 +2103,6 @@ function KanbanBoard({
               }
               bucketLanes={bucketLanes}
               userBuckets={userBuckets}
-              showBucketMenu={false}
               dragging
               onMoveToBucket={() => undefined}
               onOpenPeek={() => undefined}
@@ -2253,7 +2252,6 @@ function SortableQueueCard({
         bucketId={bucketId}
         bucketLanes={bucketLanes}
         userBuckets={userBuckets}
-        showBucketMenu={false}
         dragHandle={
           <button
             type="button"
@@ -2280,7 +2278,6 @@ function QueueCard({
   bucketId,
   bucketLanes,
   userBuckets,
-  showBucketMenu = true,
   dragHandle,
   dragging,
   onOpenPeek,
@@ -2291,7 +2288,6 @@ function QueueCard({
   bucketId: UserBucketId
   bucketLanes: LaneDefinition[]
   userBuckets: UserBucketDefinition[]
-  showBucketMenu?: boolean
   dragHandle?: ReactNode
   dragging?: boolean
   onOpenPeek: () => void
@@ -2386,17 +2382,15 @@ function QueueCard({
           </span>
         </div>
       </div>
-      {showBucketMenu ? (
-        <div className="mt-3">
-          <BucketMoveMenu
-            bucketId={bucketId}
-            bucketLanes={bucketLanes}
-            userBuckets={userBuckets}
-            onMoveToBucket={onMoveToBucket}
-            compact
-          />
-        </div>
-      ) : null}
+      <div className="mt-3">
+        <BucketMoveMenu
+          bucketId={bucketId}
+          bucketLanes={bucketLanes}
+          userBuckets={userBuckets}
+          onMoveToBucket={onMoveToBucket}
+          compact
+        />
+      </div>
     </article>
   )
 }
