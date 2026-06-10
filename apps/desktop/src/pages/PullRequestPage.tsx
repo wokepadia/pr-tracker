@@ -315,11 +315,6 @@ export function PullRequestPage() {
       />
       <div className="grid grid-cols-1 gap-0 border-t border-border xl:grid-cols-[62fr_38fr]">
         <main className="min-w-0 px-7 py-6">
-          <BoardItemNotes
-            value={loadedItemLocalState.notes ?? ""}
-            onSave={updateNotes}
-            className="mb-6"
-          />
           <DescriptionPanel description={loadedItem.description} />
           <div className="mb-4 text-xs text-muted-foreground">
             Activity · newest first
@@ -329,6 +324,12 @@ export function PullRequestPage() {
             oldEvents={oldEvents}
             lastSeenAt={item.lastSeenAt}
             tone={detailToneForItem(loadedItem)}
+          />
+          <BoardItemNotes
+            value={loadedItemLocalState.notes ?? ""}
+            onSave={updateNotes}
+            compactWhenEmpty
+            className="mt-6"
           />
         </main>
         <DetailSideRail
@@ -354,19 +355,27 @@ export function PullRequestPage() {
 }
 
 function DescriptionPanel({ description }: { description?: string }) {
+  if (!description) {
+    return (
+      <section className="mb-6">
+        <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+          <FileText className="h-3.5 w-3.5" />
+          PR description
+        </div>
+        <div className="mt-2 text-sm leading-6 text-muted-foreground">
+          No description provided.
+        </div>
+      </section>
+    )
+  }
+
   return (
     <section className="mb-6 rounded-md border border-border bg-card p-4">
       <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
         <FileText className="h-3.5 w-3.5" />
         PR description
       </div>
-      {description ? (
-        <MarkdownContent className="mt-3 max-w-4xl" source={description} />
-      ) : (
-        <div className="mt-3 text-sm leading-6 text-muted-foreground">
-          No description provided.
-        </div>
-      )}
+      <MarkdownContent className="mt-3 max-w-4xl" source={description} />
     </section>
   )
 }

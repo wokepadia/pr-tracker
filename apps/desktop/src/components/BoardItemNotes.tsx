@@ -8,10 +8,12 @@ export function BoardItemNotes({
   value,
   onSave,
   className,
+  compactWhenEmpty = false,
 }: {
   value: string
   onSave: (value: string) => void
   className?: string
+  compactWhenEmpty?: boolean
 }) {
   const [draft, setDraft] = useState(value)
   const [isEditing, setIsEditing] = useState(false)
@@ -36,6 +38,22 @@ export function BoardItemNotes({
   function discardDraft() {
     setDraft(value)
     setIsEditing(false)
+  }
+
+  if (!isEditing && !hasNotes && compactWhenEmpty) {
+    return (
+      <button
+        type="button"
+        onClick={startEditing}
+        className={cn(
+          "inline-flex h-9 w-fit items-center gap-2 rounded-md border border-border bg-card px-3 text-sm text-muted-foreground outline-none transition-colors hover:border-foreground/25 hover:bg-muted/35 hover:text-foreground focus-visible:border-foreground/35 focus-visible:ring-2 focus-visible:ring-foreground/10",
+          className
+        )}
+      >
+        <StickyNote className="h-3.5 w-3.5" />
+        Add note
+      </button>
+    )
   }
 
   return (
