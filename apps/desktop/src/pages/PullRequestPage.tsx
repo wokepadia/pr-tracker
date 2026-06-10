@@ -76,17 +76,17 @@ type DetailTone = "hot" | "changed" | "waiting" | "success" | "quiet"
 const detailToneClasses: Record<DetailTone, string> = {
   hot: "border-amber-200 bg-amber-50 text-amber-800",
   changed: "border-sky-200 bg-sky-50 text-sky-800",
-  waiting: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  success: "border-teal-200 bg-teal-50 text-teal-800",
+  waiting: "border-violet-200 bg-violet-50 text-violet-800",
+  success: "border-emerald-200 bg-emerald-50 text-emerald-800",
   quiet: "border-border bg-muted/40 text-muted-foreground",
 }
 
 const detailDotClasses: Record<DetailTone, string> = {
   hot: "bg-amber-500",
   changed: "bg-sky-500",
-  waiting: "bg-emerald-500",
-  success: "bg-teal-500",
-  quiet: "bg-slate-300",
+  waiting: "bg-violet-500",
+  success: "bg-emerald-500",
+  quiet: "bg-slate-400",
 }
 
 const detailBucketToneClasses: Partial<Record<UserBucketId, DetailTone>> = {
