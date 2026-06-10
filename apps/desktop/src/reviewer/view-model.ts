@@ -24,6 +24,14 @@ export type WaitingOn = "you" | "author" | "none"
 
 export type WaitingUrgency = "none" | "elevated" | "overdue"
 
+export type SizeBucket = "S" | "M" | "L" | "XL"
+
+export interface SizeChipView {
+  bucket: SizeBucket
+  lineCount: number
+  fileCount?: number
+}
+
 export interface SinceLastReviewView {
   decision: ReviewDecision
   reviewedAt: string
@@ -98,6 +106,7 @@ export interface ReviewQueueItemView {
   approvalStale: boolean
   /** Completed changes-requested → push cycles; high counts mean stuck. */
   reviewRounds: number
+  size?: SizeChipView
   otherReviewers: ReviewerState[]
   unseenEventCount: number
   newCommitCount: number
@@ -222,6 +231,7 @@ export function toReviewQueueItemView(
     approvalStale:
       latestViewerReview?.decision === "approved" && reviewedHeadMoved,
     reviewRounds: countReviewRounds(viewerReviews, pullRequest.activity),
+    size: buildSizeChip(pullRequest),
     otherReviewers: buildReviewerStates(pullRequest, actorById, viewerId),
     unseenEventCount: item.unseenActivityCount,
     newCommitCount: newActivity.filter((event) => event.type === "commit").length,
@@ -339,6 +349,24 @@ function getWaitingUrgency(
   if (waitedMs >= overdueWaitMs) return "overdue"
   if (waitedMs >= elevatedWaitMs) return "elevated"
   return "none"
+}
+
+// Bucket thresholds follow the research spec: small changes get reviewed
+// first and large ones degrade review quality, so the chip orders triage
+// without ever reclassifying a pull request on its own.
+function buildSizeChip(pullRequest: PullRequestItem): SizeChipView | undefined {
+  if (
+    pullRequest.additions === undefined &&
+    pullRequest.deletions === undefined
+  ) {
+    return undefined
+  }
+
+  const lineCount = (pullRequest.additions ?? 0) + (pullRequest.deletions ?? 0)
+  const bucket: SizeBucket =
+    lineCount <= 50 ? "S" : lineCount <= 250 ? "M" : lineCount <= 1000 ? "L" : "XL"
+
+  return { bucket, lineCount, fileCount: pullRequest.changedFiles }
 }
 
 function countReviewRounds(

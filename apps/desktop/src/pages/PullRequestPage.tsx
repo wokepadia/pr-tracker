@@ -16,6 +16,7 @@ import {
   ChevronDown,
   Clock3,
   ExternalLink,
+  FileDiff,
   FileText,
   GitCompareArrows,
   MessagesSquare,
@@ -52,6 +53,7 @@ import {
   type ActivityEventView,
   type ReviewQueueItemView,
   type SinceLastReviewView,
+  type SizeChipView,
 } from "@/reviewer/view-model"
 import {
   bucketIdForLocalQueueItem,
@@ -607,12 +609,24 @@ function DetailHeader({ item }: { item: ReviewQueueItemView }) {
             <span
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/30 px-2.5 py-1 text-muted-foreground",
-                item.unresolvedThreadCount > 0 &&
+                detailThreadsAwaitingReplyCount(item) > 0 &&
                   "font-medium text-foreground"
               )}
             >
               {item.unresolvedThreadCount} of{" "}
               {formatCount(item.totalThreadCount, "thread")} unresolved
+            </span>
+          ) : null}
+          {item.size ? (
+            <span
+              aria-label={detailSizeLabel(item.size)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/30 px-2.5 py-1 text-muted-foreground"
+            >
+              <FileDiff className="h-3.5 w-3.5" />
+              {item.size.bucket} · {item.size.lineCount} lines
+              {item.size.fileCount !== undefined
+                ? ` · ${formatCount(item.size.fileCount, "file")}`
+                : ""}
             </span>
           ) : null}
           <span className="text-muted-foreground">
@@ -987,6 +1001,21 @@ function userReviewStanding(decision: ReviewDecision | "pending"): string {
   if (decision === "changes_requested") return "You requested changes"
   if (decision === "commented") return "You commented"
   return "No review yet"
+}
+
+const detailSizeBucketNames: Record<SizeChipView["bucket"], string> = {
+  S: "Small",
+  M: "Medium",
+  L: "Large",
+  XL: "Very large",
+}
+
+function detailSizeLabel(size: SizeChipView): string {
+  return `${detailSizeBucketNames[size.bucket]} change`
+}
+
+function detailThreadsAwaitingReplyCount(item: ReviewQueueItemView): number {
+  return item.reviewThreads.filter((thread) => thread.awaitingYourReply).length
 }
 
 function detailQueueLabel(item: ReviewQueueItemView): string {

@@ -514,6 +514,38 @@ describe("per-turn wait timers", () => {
     expect(view.reviewRounds).toBe(2)
   })
 
+  it("buckets diff sizes and omits the chip when size is unknown", () => {
+    const sized = classifiedItem("pr_sized", "needs_review")
+    sized.pullRequest.additions = 214
+    sized.pullRequest.deletions = 58
+    sized.pullRequest.changedFiles = 9
+    const sizedView = toReviewQueueItemView(sized, sampleActorById(), "viewer")
+
+    expect(sizedView.size).toEqual({ bucket: "L", lineCount: 272, fileCount: 9 })
+
+    const tiny = classifiedItem("pr_tiny", "needs_review")
+    tiny.pullRequest.additions = 12
+    tiny.pullRequest.deletions = 3
+    const tinyView = toReviewQueueItemView(tiny, sampleActorById(), "viewer")
+    expect(tinyView.size?.bucket).toBe("S")
+
+    const medium = classifiedItem("pr_medium", "needs_review")
+    medium.pullRequest.additions = 120
+    medium.pullRequest.deletions = 30
+    const mediumView = toReviewQueueItemView(medium, sampleActorById(), "viewer")
+    expect(mediumView.size?.bucket).toBe("M")
+
+    const huge = classifiedItem("pr_huge", "needs_review")
+    huge.pullRequest.additions = 1240
+    huge.pullRequest.deletions = 310
+    const hugeView = toReviewQueueItemView(huge, sampleActorById(), "viewer")
+    expect(hugeView.size?.bucket).toBe("XL")
+
+    const unknown = classifiedItem("pr_unknown_size", "needs_review")
+    const unknownView = toReviewQueueItemView(unknown, sampleActorById(), "viewer")
+    expect(unknownView.size).toBeUndefined()
+  })
+
   it("maps classification evidence into display lines", () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2026-06-02T12:00:00.000Z"))

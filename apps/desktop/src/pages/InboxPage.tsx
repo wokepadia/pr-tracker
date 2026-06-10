@@ -50,6 +50,7 @@ import {
   ExternalLink,
   Eye,
   BellOff,
+  FileDiff,
   Maximize2,
   GitCompareArrows,
   GitCommitHorizontal,
@@ -104,6 +105,7 @@ import {
   canMarkReviewItemCaughtUp,
   type ReviewQueueItemView,
   type SinceLastReviewView,
+  type SizeChipView,
 } from "@/reviewer/view-model"
 import {
   bucketIdForLocalQueueItem,
@@ -2336,11 +2338,15 @@ function QueueCard({
             <FactChip
               icon={Inbox}
               text={`${item.unresolvedThreadCount}/${item.totalThreadCount}`}
-              label={`${item.unresolvedThreadCount} of ${formatCount(
-                item.totalThreadCount,
-                "review thread"
-              )} unresolved`}
-              active={item.unresolvedThreadCount > 0}
+              label={threadChipLabel(item)}
+              active={threadsAwaitingReplyCount(item) > 0}
+            />
+          ) : null}
+          {item.size ? (
+            <FactChip
+              icon={FileDiff}
+              text={sizeChipText(item.size)}
+              label={sizeChipLabel(item.size)}
             />
           ) : null}
           {item.approvalStale ? (
@@ -2611,11 +2617,15 @@ function QueueRow({
             <FactChip
               icon={Inbox}
               text={`${item.unresolvedThreadCount}/${item.totalThreadCount}`}
-              label={`${item.unresolvedThreadCount} of ${formatCount(
-                item.totalThreadCount,
-                "review thread"
-              )} unresolved`}
-              active={item.unresolvedThreadCount > 0}
+              label={threadChipLabel(item)}
+              active={threadsAwaitingReplyCount(item) > 0}
+            />
+          ) : null}
+          {item.size ? (
+            <FactChip
+              icon={FileDiff}
+              text={sizeChipText(item.size)}
+              label={sizeChipLabel(item.size)}
             />
           ) : null}
           {item.approvalStale ? (
@@ -2886,6 +2896,14 @@ function QuickPeekPanel({
             {queueTimingLabel(item)}{" "}
             <span className={waitingAgeClass(item)}>{item.waitingAge}</span>
           </span>
+          {item.size ? (
+            <>
+              <span className="text-muted-foreground/40">·</span>
+              <span aria-label={sizeChipLabel(item.size)}>
+                {sizeChipText(item.size)}
+              </span>
+            </>
+          ) : null}
         </div>
       </div>
 
@@ -3153,6 +3171,36 @@ function queuePillTooltip(item: ReviewQueueItemView): string {
   if (item.laneId === "caught_up") return "You are caught up on this PR"
   if (item.laneId === "stale") return "No recent activity on this PR"
   return "You are watching this PR"
+}
+
+const sizeBucketNames: Record<SizeChipView["bucket"], string> = {
+  S: "Small",
+  M: "Medium",
+  L: "Large",
+  XL: "Very large",
+}
+
+function sizeChipText(size: SizeChipView): string {
+  return size.fileCount !== undefined
+    ? `${size.bucket} · ${formatCount(size.fileCount, "file")}`
+    : size.bucket
+}
+
+function sizeChipLabel(size: SizeChipView): string {
+  const fileSuffix =
+    size.fileCount !== undefined
+      ? ` across ${formatCount(size.fileCount, "file")}`
+      : ""
+  return `${sizeBucketNames[size.bucket]} change · ${size.lineCount} changed lines${fileSuffix}`
+}
+
+function threadChipLabel(item: ReviewQueueItemView): string {
+  const awaiting = threadsAwaitingReplyCount(item)
+  const base = `${item.unresolvedThreadCount} of ${formatCount(
+    item.totalThreadCount,
+    "review thread"
+  )} unresolved`
+  return awaiting > 0 ? `${base}, ${awaiting} awaiting your reply` : base
 }
 
 function threadsAwaitingReplyCount(item: ReviewQueueItemView): number {
