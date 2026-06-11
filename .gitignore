@@ -6,5 +6,13 @@ dist
 coverage
 target
 apps/web/src-tauri/gen
+apps/desktop/src-tauri/gen
 *.log
 .DS_Store
+
+# Local agent/tooling state
+.claude/
+.playwright-mcp/
+
+# QA screenshot artifacts from browser audit sessions
+/*.png
