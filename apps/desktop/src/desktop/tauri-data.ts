@@ -52,6 +52,7 @@ const githubSettingsKey = "github-settings"
 const onboardingSettingsKey = "onboarding"
 const attentionSettingsKey = "attention_thresholds"
 const insightsVisitSettingsKey = "insights-visit"
+const closedPullRequestReadLookbackDays = 14
 const strongholdPasswordSettingsKey = "stronghold-unlock-secret"
 const githubTokenStoreKey = "github-token"
 const strongholdClientName = "review-ninja"
@@ -1385,12 +1386,19 @@ async function listPullRequestRows(
     return []
   }
 
+  // The default scope keeps recently closed PRs visible so projections can
+  // report merges and closes that happened while the viewer was away.
+  const closedCutoffIso = new Date(
+    Date.now() - closedPullRequestReadLookbackDays * 24 * 60 * 60 * 1000
+  ).toISOString()
   const scopeSql = input.id
     ? "pr.id = $1"
     : scopedIds
       ? `pr.id in (${scopedIds.map((_, index) => `$${index + 1}`).join(", ")})`
-      : "pr.state = 'open'"
-  const parameters = input.id ? [input.id] : scopedIds ?? []
+      : "(pr.state = 'open' or pr.github_updated_at >= $1)"
+  const parameters = input.id
+    ? [input.id]
+    : scopedIds ?? [closedCutoffIso]
 
   return db.select<LocalPullRequestRow[]>(
     `
