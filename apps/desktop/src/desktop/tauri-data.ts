@@ -849,6 +849,7 @@ async function initializeDatabase(): Promise<SqlDatabase> {
   await db.execute("pragma busy_timeout = 10000")
   await db.execute("pragma journal_mode = wal")
   await db.execute("pragma foreign_keys = on")
+  await dropOutdatedAiSummariesTable(db)
   for (const statement of splitSqlStatements(localDesktopSchemaSql)) {
     await db.execute(statement)
   }
@@ -857,6 +858,22 @@ async function initializeDatabase(): Promise<SqlDatabase> {
   await ensureReviewThreadLedgerColumns(db)
   await ensurePullRequestSizeColumns(db)
   return db
+}
+
+/**
+ * ai_summaries is a pure cache with a check constraint over the kind list.
+ * When an existing database predates a newly added kind, drop the table
+ * before the schema run so create-if-not-exists rebuilds it with the
+ * current constraint; cached summaries are regenerated on demand.
+ */
+async function dropOutdatedAiSummariesTable(db: SqlDatabase): Promise<void> {
+  const rows = await db.select<Array<{ sql: string | null }>>(
+    `select sql from sqlite_master where type = 'table' and name = 'ai_summaries'`
+  )
+  const createSql = rows[0]?.sql
+  if (createSql && !createSql.includes("'insights-brief'")) {
+    await db.execute(`drop table ai_summaries`)
+  }
 }
 
 async function syncBeforeRead(

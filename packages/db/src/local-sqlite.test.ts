@@ -129,6 +129,16 @@ describe("local SQLite storage", () => {
       expect(() =>
         insert.run("pr_1", "unknown-kind", "x", "m", "{}", "now")
       ).toThrow();
+
+      // Queue-level summaries use a sentinel id with the insights-brief kind.
+      insert.run(
+        "queue",
+        "insights-brief",
+        "hash-q",
+        "anthropic/claude-sonnet-4.6",
+        '{"headline":"calm"}',
+        "2026-06-11T12:00:00.000Z"
+      );
     } finally {
       local.close();
     }
