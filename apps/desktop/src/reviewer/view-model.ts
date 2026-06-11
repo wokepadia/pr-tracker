@@ -5,6 +5,7 @@ import type {
   PullRequestState,
   ReviewDecision,
   ReviewDecisionEvent,
+  StatusCheckRollup,
 } from "@pr-tracker/core"
 import type {
   ClassificationEvidence,
@@ -122,6 +123,8 @@ export interface ReviewQueueItemView {
   /** Completed changes-requested → push cycles; high counts mean stuck. */
   reviewRounds: number
   size?: SizeChipView
+  /** Head commit check rollup; undefined when no checks were ingested. */
+  checks?: StatusCheckRollup
   otherReviewers: ReviewerState[]
   unseenEventCount: number
   newCommitCount: number
@@ -260,6 +263,7 @@ export function toReviewQueueItemView(
       latestViewerReview?.decision === "approved" && reviewedHeadMoved,
     reviewRounds: countReviewRounds(viewerReviews, pullRequest.activity),
     size: buildSizeChip(pullRequest),
+    checks: pullRequest.statusCheckRollup,
     otherReviewers: buildReviewerStates(pullRequest, actorById, viewerId),
     unseenEventCount: item.unseenActivityCount,
     newCommitCount: newActivity.filter((event) => event.type === "commit").length,

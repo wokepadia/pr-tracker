@@ -16,6 +16,7 @@ export type InsightKind =
   | "stale_approval"
   | "snoozed_moved_on"
   | "muted_rerequested"
+  | "approved_checks_failing"
   | "piling_unseen"
   | "parked_no_movement"
   | "merged_without_you"
@@ -100,6 +101,7 @@ export function buildReviewerInsights(input: {
     ...collect(stashedItems, (item) =>
       mutedRerequested(item, input.localQueueState)
     ),
+    ...collect(activeItems, approvedChecksFailing),
     ...collect(activeItems, (item) => pilingUnseen(item, now)),
     ...collect(activeItems, (item) => parkedNoMovement(item, now)),
   ])
@@ -240,6 +242,20 @@ function mutedRerequested(
     kind: "muted_rerequested",
     item,
     whyChip: "Muted, but your review was requested again",
+  }
+}
+
+function approvedChecksFailing(
+  item: ReviewQueueItemView
+): InsightRowView | undefined {
+  if (item.userLastReviewDecision !== "approved") return
+  if (item.checks?.state !== "failure") return
+
+  return {
+    id: item.id,
+    kind: "approved_checks_failing",
+    item,
+    whyChip: "You approved, but checks are failing",
   }
 }
 

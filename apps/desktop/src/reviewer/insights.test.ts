@@ -210,6 +210,35 @@ describe("might-be-missing insights", () => {
     expect(insights.mightBeMissing[0]?.kind).toBe("piling_unseen")
   })
 
+  it("flags approved pull requests whose checks are failing", () => {
+    const insights = build({
+      items: [
+        makeItem({
+          id: "pr_1",
+          workflowState: "approved",
+          waitingOn: "none",
+          userLastReviewDecision: "approved",
+          checks: { state: "failure", totalCount: 4 },
+        }),
+        makeItem({
+          id: "pr_2",
+          workflowState: "approved",
+          waitingOn: "none",
+          userLastReviewDecision: "approved",
+          checks: { state: "success" },
+        }),
+        makeItem({
+          id: "pr_3",
+          waitingOn: "none",
+          checks: { state: "failure" },
+        }),
+      ],
+    })
+
+    expect(insights.mightBeMissing.map((row) => row.id)).toEqual(["pr_1"])
+    expect(insights.mightBeMissing[0]?.kind).toBe("approved_checks_failing")
+  })
+
   it("flags author-turn pull requests with no movement", () => {
     const insights = build({
       items: [

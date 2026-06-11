@@ -93,10 +93,12 @@ is the lowest-priority item and can be dropped if it feels like noise.
 ### Explicitly excluded
 
 - Team metrics, reviewer load balancing, DORA-style analytics (n=1).
-- CI/check-run insights ("approved but CI red", "checks went green while
-  you waited") — high value but **blocked on F10**: the
-  `pull_request_check_runs` table exists and is indexed, but nothing
-  ingests check runs yet. Revisit when F10 lands.
+- ~~CI/check-run insights~~ — implemented 2026-06-11: the per-PR GraphQL
+  facts fetch now ingests the head commit's status check rollup into
+  `pull_requests.status_check_summary_json`, and "you approved, but
+  checks are failing" ships in the might-be-missing section. "Checks
+  went green while you waited" still needs state history; revisit if
+  the simpler rollup proves useful.
 - Anything requiring LLM summarization (V1 scope rule).
 
 ## Page design
