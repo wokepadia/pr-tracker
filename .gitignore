@@ -14,5 +14,8 @@ apps/desktop/src-tauri/gen
 .claude/
 .playwright-mcp/
 
+# Dev-only browser shim for preview audits; never ship it
+apps/desktop/public/tauri-browser-shim.js
+
 # QA screenshot artifacts from browser audit sessions
 /*.png
