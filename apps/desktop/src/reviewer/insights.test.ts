@@ -14,6 +14,7 @@ function makeEvent(
   return {
     type: "comment",
     actor: "maya",
+    isViewer: false,
     action: "commented",
     occurredAt: "1d ago",
     occurredAtIso: daysAgo(1),
@@ -329,6 +330,63 @@ describe("hygiene insights", () => {
 
     expect(insights.hygiene[0]?.whyChip).toBe(
       "No activity for 6w — last was a commit"
+    )
+  })
+
+  it("attributes the stall to the author when the viewer spoke last", () => {
+    const insights = build({
+      items: [
+        makeItem({
+          id: "pr_stale",
+          workflowState: "stale",
+          waitingOn: "none",
+          updatedAtIso: daysAgo(20),
+          activityEvents: [
+            makeEvent({ id: "e2", type: "commit", occurredAtIso: daysAgo(20) }),
+            makeEvent({
+              id: "e1",
+              type: "comment",
+              isViewer: true,
+              occurredAtIso: daysAgo(21),
+            }),
+          ],
+        }),
+      ],
+    })
+
+    expect(insights.hygiene[0]?.whyChip).toBe(
+      "No activity for 2w — stalled by the author, you spoke last"
+    )
+  })
+
+  it("attributes the stall to the viewer when someone else spoke last", () => {
+    const insights = build({
+      items: [
+        makeItem({
+          id: "pr_stale",
+          workflowState: "stale",
+          waitingOn: "none",
+          updatedAtIso: daysAgo(20),
+          activityEvents: [
+            makeEvent({
+              id: "e1",
+              type: "review",
+              actor: "maya",
+              occurredAtIso: daysAgo(20),
+            }),
+            makeEvent({
+              id: "e2",
+              type: "comment",
+              isViewer: true,
+              occurredAtIso: daysAgo(25),
+            }),
+          ],
+        }),
+      ],
+    })
+
+    expect(insights.hygiene[0]?.whyChip).toBe(
+      "No activity for 2w — stalled by you, maya spoke last"
     )
   })
 })

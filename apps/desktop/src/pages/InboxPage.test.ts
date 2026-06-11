@@ -308,6 +308,7 @@ function makeQueueItem(
         id: `${overrides.id}_event`,
         type: "comment",
         actor: overrides.authorLogin,
+        isViewer: false,
         action: overrides.activityAction,
         occurredAt: "1h ago",
         occurredAtIso: "2026-06-01T12:00:00.000Z",

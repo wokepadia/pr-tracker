@@ -326,14 +326,23 @@ function stalled(
   if (item.workflowState !== "stale") return
 
   const quietFor = formatDuration(now - Date.parse(item.updatedAtIso))
+  // Whoever spoke last is waiting on the other side: a final word from
+  // the viewer means the author stalled the conversation, and vice versa.
+  const lastConversation = item.activityEvents.find(
+    (event) => event.type === "comment" || event.type === "review"
+  )
   const lastEvent = item.activityEvents[0]
   return {
     id: item.id,
     kind: "stalled",
     item,
-    whyChip: lastEvent
-      ? `No activity for ${quietFor} — last was ${eventNoun(lastEvent.type)}`
-      : `No activity for ${quietFor}`,
+    whyChip: lastConversation
+      ? lastConversation.isViewer
+        ? `No activity for ${quietFor} — stalled by the author, you spoke last`
+        : `No activity for ${quietFor} — stalled by you, ${lastConversation.actor} spoke last`
+      : lastEvent
+        ? `No activity for ${quietFor} — last was ${eventNoun(lastEvent.type)}`
+        : `No activity for ${quietFor}`,
   }
 }
 

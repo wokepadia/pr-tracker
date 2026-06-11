@@ -84,6 +84,8 @@ export interface ActivityEventView {
   id: string
   type: PullRequestActivity["type"]
   actor: string
+  /** True when the viewer performed this event. */
+  isViewer: boolean
   actorAvatarUrl?: string
   action: string
   occurredAt: string
@@ -300,7 +302,7 @@ export function toReviewQueueItemView(
     activityEvents: pullRequest.activity
       .slice()
       .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))
-      .map((event) => toActivityEventView(event, actorById, lastSeenAt)),
+      .map((event) => toActivityEventView(event, actorById, lastSeenAt, viewerId)),
     isPinned: false,
     isMuted: item.workflowState === "watching",
   }
@@ -526,7 +528,8 @@ function buildReviewerStates(
 function toActivityEventView(
   event: PullRequestActivity,
   actorById: Map<string, Actor>,
-  lastSeenAt: string | undefined
+  lastSeenAt: string | undefined,
+  viewerId: string
 ): ActivityEventView {
   const actor = actorLogin(actorById, event.actorId)
 
@@ -534,6 +537,7 @@ function toActivityEventView(
     id: event.id,
     type: event.type,
     actor,
+    isViewer: event.actorId === viewerId,
     actorAvatarUrl: actorById.get(event.actorId)?.avatarUrl,
     action: withoutActorPrefix(event.title, actor),
     occurredAt: formatRelativeTime(event.occurredAt),
