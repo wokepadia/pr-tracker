@@ -72,6 +72,16 @@ export interface GitHubPullRequestSnapshot {
    * treat it as "no threads".
    */
   review_threads?: GitHubReviewThreadSnapshot[];
+  /**
+   * Combined check/status rollup for the head commit, fetched via GraphQL.
+   * Undefined means the rollup was unavailable or the commit has no checks.
+   */
+  status_check_rollup?: GitHubStatusCheckRollupSnapshot;
+}
+
+export interface GitHubStatusCheckRollupSnapshot {
+  state: "success" | "failure" | "pending";
+  total_count?: number;
 }
 
 export interface GitHubReviewSnapshot {
@@ -331,7 +341,8 @@ async function listConfiguredRepositoryPullRequests(
             merged: pullRequest.merged ?? Boolean(pullRequest.merged_at)
           },
           reviews: stripReviewBodies(reviews),
-          review_threads: graphqlFacts.reviewThreads
+          review_threads: graphqlFacts.reviewThreads,
+          status_check_rollup: graphqlFacts.statusCheckRollup
         };
       }
     );
@@ -561,7 +572,8 @@ async function getTokenPullRequest(
         merged: response.data.merged ?? Boolean(response.data.merged_at)
       },
       reviews: options.stripReviewBodies ? stripReviewBodies(reviews) : reviews,
-      review_threads: graphqlFacts.reviewThreads
+      review_threads: graphqlFacts.reviewThreads,
+      status_check_rollup: graphqlFacts.statusCheckRollup
     };
   } catch (error) {
     if (isGithubNotFoundError(error)) {
@@ -588,6 +600,18 @@ const reviewThreadsGraphqlQuery = `
         additions
         deletions
         changedFiles
+        commits(last: 1) {
+          nodes {
+            commit {
+              statusCheckRollup {
+                state
+                contexts(first: 0) {
+                  totalCount
+                }
+              }
+            }
+          }
+        }
         reviewThreads(first: 50, after: $cursor) {
           pageInfo {
             hasNextPage
@@ -619,6 +643,16 @@ interface GitHubReviewThreadsGraphqlResponse {
         additions?: number;
         deletions?: number;
         changedFiles?: number;
+        commits?: {
+          nodes?: Array<{
+            commit?: {
+              statusCheckRollup?: {
+                state?: string;
+                contexts?: { totalCount?: number };
+              } | null;
+            };
+          } | null>;
+        };
         reviewThreads?: {
           pageInfo?: {
             hasNextPage?: boolean;
@@ -651,6 +685,27 @@ interface PullRequestGraphqlFacts {
     deletions?: number;
     changed_files?: number;
   };
+  statusCheckRollup?: GitHubStatusCheckRollupSnapshot;
+}
+
+function toStatusCheckRollupSnapshot(
+  rollup:
+    | { state?: string; contexts?: { totalCount?: number } }
+    | null
+    | undefined
+): GitHubStatusCheckRollupSnapshot | undefined {
+  if (!rollup?.state) {
+    return undefined;
+  }
+
+  const state =
+    rollup.state === "SUCCESS"
+      ? "success"
+      : rollup.state === "FAILURE" || rollup.state === "ERROR"
+        ? "failure"
+        : "pending";
+
+  return { state, total_count: rollup.contexts?.totalCount };
 }
 
 // Runaway guard: 40 pages of 50 covers 2000 threads, far beyond any
@@ -666,6 +721,7 @@ async function fetchPullRequestGraphqlFacts(
   try {
     const reviewThreads: GitHubReviewThreadSnapshot[] = [];
     let size: PullRequestGraphqlFacts["size"];
+    let statusCheckRollup: GitHubStatusCheckRollupSnapshot | undefined;
     let cursor: string | null = null;
 
     for (let page = 0; page < maxReviewThreadPages; page += 1) {
@@ -687,6 +743,9 @@ async function fetchPullRequestGraphqlFacts(
         deletions: pullRequest.deletions,
         changed_files: pullRequest.changedFiles
       };
+      statusCheckRollup ??= toStatusCheckRollupSnapshot(
+        pullRequest.commits?.nodes?.[0]?.commit?.statusCheckRollup
+      );
 
       const nodes = pullRequest.reviewThreads?.nodes ?? [];
       reviewThreads.push(
@@ -718,7 +777,7 @@ async function fetchPullRequestGraphqlFacts(
       cursor = pageInfo.endCursor;
     }
 
-    return { size, reviewThreads };
+    return { size, reviewThreads, statusCheckRollup };
   } catch {
     // GraphQL facts are an enrichment; a failed call (older GHES, token
     // without GraphQL access) must not fail the whole sync. A failure on

@@ -50,6 +50,11 @@ export interface PullRequestActivity {
   diffUrl?: string;
 }
 
+export interface StatusCheckRollup {
+  state: "success" | "failure" | "pending";
+  totalCount?: number;
+}
+
 export interface PullRequestItem {
   id: string;
   repository: string;
@@ -67,6 +72,9 @@ export interface PullRequestItem {
   additions?: number;
   deletions?: number;
   changedFiles?: number;
+  /** Combined check/status rollup for the head commit; undefined when the
+   * sync source did not provide it or the commit has no checks. */
+  statusCheckRollup?: StatusCheckRollup;
   requestedReviewerIds: string[];
   reviews: ReviewDecisionEvent[];
   threads: ReviewThread[];

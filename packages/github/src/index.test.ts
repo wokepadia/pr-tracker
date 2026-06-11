@@ -218,6 +218,75 @@ describe("GitHub token pull request source", () => {
     ]);
   });
 
+  it("maps the head commit status check rollup onto the snapshot", async () => {
+    const source = createGithubTokenPullRequestSource({
+      token: "token",
+      repositories: ["acme/web"],
+      request: async <T = unknown>(route: string) => {
+        if (route === "GET /repos/{owner}/{repo}/pulls") {
+          return {
+            data: [
+              {
+                id: 1,
+                number: 42,
+                title: "Ship reviewer inbox",
+                state: "open",
+                updated_at: "2026-06-01T09:00:00.000Z",
+                user: { login: "author" }
+              }
+            ] as T
+          };
+        }
+
+        if (route === "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews") {
+          return { data: [] as T };
+        }
+
+        if (route === "POST /graphql") {
+          return {
+            data: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    commits: {
+                      nodes: [
+                        {
+                          commit: {
+                            statusCheckRollup: {
+                              state: "FAILURE",
+                              contexts: { totalCount: 5 }
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    reviewThreads: {
+                      pageInfo: { hasNextPage: false, endCursor: null },
+                      nodes: []
+                    }
+                  }
+                }
+              }
+            } as T
+          };
+        }
+
+        throw new Error(`Unexpected route: ${route}`);
+      }
+    });
+
+    if (!source.listOpenPullRequests) {
+      throw new Error("Expected token source to support listOpenPullRequests.");
+    }
+
+    const snapshots = await source.listOpenPullRequests();
+
+    expect(snapshots[0]?.status_check_rollup).toEqual({
+      state: "failure",
+      total_count: 5
+    });
+  });
+
   it("keeps review threads undefined when the GraphQL fetch fails", async () => {
     const source = createGithubTokenPullRequestSource({
       token: "token",

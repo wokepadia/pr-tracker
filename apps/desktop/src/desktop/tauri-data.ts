@@ -99,6 +99,7 @@ interface LocalPullRequestRow {
   github_created_at: string | null
   github_updated_at: string | null
   merged_at: string | null
+  status_check_summary_json: string | null
   raw_payload_json: string
 }
 
@@ -953,11 +954,11 @@ async function upsertPullRequestItem(
         author_account_id, state, is_draft, latest_commit_sha,
         additions, deletions, changed_files,
         github_created_at, github_updated_at, merged_at,
-        raw_payload_json, created_at, updated_at
+        status_check_summary_json, raw_payload_json, created_at, updated_at
       )
       values (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-        $17, $18, $19, $20
+        $17, $18, $19, $20, $21
       )
       on conflict(github_node_id)
       do update set
@@ -975,6 +976,7 @@ async function upsertPullRequestItem(
         github_created_at = excluded.github_created_at,
         github_updated_at = excluded.github_updated_at,
         merged_at = excluded.merged_at,
+        status_check_summary_json = excluded.status_check_summary_json,
         raw_payload_json = excluded.raw_payload_json,
         updated_at = excluded.updated_at
     `,
@@ -998,6 +1000,7 @@ async function upsertPullRequestItem(
       pullRequest.createdAt,
       pullRequest.updatedAt,
       pullRequest.state === "merged" ? pullRequest.updatedAt : null,
+      JSON.stringify(pullRequest.statusCheckRollup ?? {}),
       JSON.stringify(options.rawPayload ?? pullRequest),
       now,
       now,
@@ -1425,6 +1428,7 @@ async function listPullRequestRows(
         pr.github_created_at,
         pr.github_updated_at,
         pr.merged_at,
+        pr.status_check_summary_json,
         pr.raw_payload_json
       from pull_requests pr
       join github_repositories repo on repo.id = pr.repository_id
@@ -1475,6 +1479,7 @@ async function toPullRequestItem(
     additions: row.additions ?? undefined,
     deletions: row.deletions ?? undefined,
     changedFiles: row.changed_files ?? undefined,
+    statusCheckRollup: parseStatusCheckRollup(row.status_check_summary_json),
     requestedReviewerIds: reviewRequests.flatMap((request) =>
       request.login ? [request.login] : []
     ),
@@ -1887,6 +1892,31 @@ function normalizeOnboardingVersion(value: unknown): number {
     : 1
 }
 
+function parseStatusCheckRollup(
+  json: string | null
+): PullRequestItem["statusCheckRollup"] {
+  if (!json) return undefined
+
+  try {
+    const parsed = JSON.parse(json) as { state?: unknown; totalCount?: unknown }
+    if (
+      parsed.state !== "success" &&
+      parsed.state !== "failure" &&
+      parsed.state !== "pending"
+    ) {
+      return undefined
+    }
+
+    return {
+      state: parsed.state,
+      totalCount:
+        typeof parsed.totalCount === "number" ? parsed.totalCount : undefined,
+    }
+  } catch {
+    return undefined
+  }
+}
+
 async function isLocalDatabaseEmpty(db: SqlDatabase): Promise<boolean> {
   const row = (
     await db.select<Array<{ count: number }>>(
@@ -1979,6 +2009,12 @@ function snapshotToPullRequestItem(
     additions: pullRequest.additions,
     deletions: pullRequest.deletions,
     changedFiles: pullRequest.changed_files,
+    statusCheckRollup: snapshot.status_check_rollup
+      ? {
+          state: snapshot.status_check_rollup.state,
+          totalCount: snapshot.status_check_rollup.total_count,
+        }
+      : undefined,
     requestedReviewerIds: (pullRequest.requested_reviewers ?? [])
       .map((reviewer) => reviewer.login)
       .filter((login): login is string => Boolean(login)),
