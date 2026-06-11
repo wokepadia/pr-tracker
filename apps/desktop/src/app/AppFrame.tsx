@@ -59,9 +59,21 @@ export function AppFrame() {
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
       <header className="z-20 flex h-[48px] shrink-0 items-center border-b border-border bg-white px-5 text-xs text-muted-foreground">
-        <Link to="/" className="mr-auto inline-flex items-center gap-2 font-medium text-foreground">
+        <Link to="/" className="inline-flex items-center gap-2 font-medium text-foreground">
           <AppLogo />
         </Link>
+        <nav aria-label="Main views" className="ml-6 mr-auto flex items-center gap-1">
+          <HeaderNavLink
+            to="/"
+            label="Inbox"
+            active={pathname === "/" || pathname.startsWith("/pull-requests")}
+          />
+          <HeaderNavLink
+            to="/insights"
+            label="Insights"
+            active={pathname.startsWith("/insights")}
+          />
+        </nav>
         <Link
           to="/settings"
           className="ml-4 inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-muted"
@@ -107,5 +119,29 @@ export function AppFrame() {
         </div>
       </main>
     </div>
+  )
+}
+
+function HeaderNavLink({
+  to,
+  label,
+  active,
+}: {
+  to: string
+  label: string
+  active: boolean
+}) {
+  return (
+    <Link
+      to={to}
+      aria-current={active ? "page" : undefined}
+      className={
+        active
+          ? "inline-flex h-8 items-center rounded-md bg-muted px-3 text-xs font-semibold text-foreground"
+          : "inline-flex h-8 items-center rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+      }
+    >
+      {label}
+    </Link>
   )
 }
