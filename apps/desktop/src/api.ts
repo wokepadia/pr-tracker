@@ -3,6 +3,7 @@ import type {
   ClassifiedPullRequest,
   ReviewerInbox,
 } from "@pr-tracker/reviewer-workflow"
+import type { PrSummaryContent } from "@/ai/summaries"
 
 export interface PullRequestDetailResponse {
   viewer: Actor
@@ -64,6 +65,16 @@ export interface AiSettingsStatus {
   enabled: boolean
   model: string
   apiKeyConfigured: boolean
+}
+
+/** A cached AI generation. `isStale` means the underlying data changed
+ * since it was generated; the cached content still renders until the user
+ * explicitly regenerates. */
+export interface AiGenerated<T> {
+  content: T
+  generatedAt: string
+  model: string
+  isStale: boolean
 }
 
 export interface SaveAiSettingsInput {
@@ -170,6 +181,18 @@ export async function saveAiSettings(
   input: SaveAiSettingsInput
 ): Promise<AiSettingsStatus> {
   return (await getDesktopApi()).saveDesktopAiSettings(input)
+}
+
+export async function getAiPrSummary(
+  pullRequestId: string
+): Promise<AiGenerated<PrSummaryContent> | undefined> {
+  return (await getDesktopApi()).getDesktopAiPrSummary(pullRequestId)
+}
+
+export async function generateAiPrSummary(
+  pullRequestId: string
+): Promise<AiGenerated<PrSummaryContent>> {
+  return (await getDesktopApi()).generateDesktopAiPrSummary(pullRequestId)
 }
 
 export async function getOnboardingState(): Promise<OnboardingState> {

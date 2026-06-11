@@ -30,6 +30,7 @@ import {
   join,
 } from "@tauri-apps/api/path"
 import type {
+  AiGenerated,
   AiSettingsStatus,
   AttentionSettings,
   BoardState,
@@ -48,6 +49,15 @@ import {
   normalizeStoredAiSettings,
   type StoredAiSettings,
 } from "@/ai/ai-settings"
+import { hashContent } from "@/ai/content-hash"
+import { requestStructuredCompletion } from "@/ai/openrouter"
+import {
+  buildPrSummaryPrompt,
+  normalizePrSummaryContent,
+  prSummarySchema,
+  prSummarySchemaName,
+  type PrSummaryContent,
+} from "@/ai/summaries"
 import { defaultAttentionThresholds } from "@/reviewer/view-model"
 import { localDesktopSchemaSql } from "../../../../packages/db/src/local-schema"
 import { createQueuedTransaction } from "./sqlite-transaction"
@@ -597,6 +607,89 @@ export async function saveDesktopAiSettings(
   }
   await writeAppSetting(db, aiSettingsKey, settings)
   return settings
+}
+
+export async function getDesktopAiPrSummary(
+  pullRequestId: string
+): Promise<AiGenerated<PrSummaryContent> | undefined> {
+  const db = await getDatabase()
+  const row = await readAiSummaryRow(db, pullRequestId, "pr-summary")
+  if (!row) {
+    return undefined
+  }
+
+  const settings = await readLocalAiSettings(db)
+  const expectedKey = await prSummaryCacheKey(db, pullRequestId, settings.model)
+
+  return {
+    content: normalizePrSummaryContent(JSON.parse(row.content_json)),
+    generatedAt: row.generated_at,
+    model: row.model,
+    isStale: expectedKey !== row.cache_key,
+  }
+}
+
+export async function generateDesktopAiPrSummary(
+  pullRequestId: string
+): Promise<AiGenerated<PrSummaryContent>> {
+  const db = await getDatabase()
+  const config = await requireActiveAiConfig(db)
+  const pullRequest = (await listPullRequestRows(db, { id: pullRequestId }))[0]
+  if (!pullRequest) {
+    throw new Error("Pull request not found.")
+  }
+
+  const credentials = await loadLocalGithubCredentials(db)
+  if (!credentials) {
+    throw new Error(
+      "Generating a summary needs GitHub access to fetch the diff. Configure GitHub in Settings first."
+    )
+  }
+
+  const source = createGithubTokenPullRequestSource(credentials)
+  const files = await source.listPullRequestChangedFiles({
+    repository: pullRequest.repository_full_name,
+    number: pullRequest.number,
+  })
+  if (!files) {
+    throw new Error(
+      "Could not fetch the diff for this pull request from GitHub."
+    )
+  }
+
+  const prompt = buildPrSummaryPrompt({
+    repository: pullRequest.repository_full_name,
+    number: pullRequest.number,
+    title: pullRequest.title,
+    body: pullRequest.body ?? undefined,
+    authorLogin: pullRequest.author_login,
+    state: pullRequest.state,
+    isDraft: pullRequest.is_draft === 1,
+    additions: pullRequest.additions ?? undefined,
+    deletions: pullRequest.deletions ?? undefined,
+    changedFiles: pullRequest.changed_files ?? undefined,
+    files,
+  })
+  const content = normalizePrSummaryContent(
+    await requestStructuredCompletion<PrSummaryContent>({
+      apiKey: config.apiKey,
+      model: config.model,
+      system: prompt.system,
+      user: prompt.user,
+      schemaName: prSummarySchemaName,
+      schema: prSummarySchema,
+    })
+  )
+
+  const generatedAt = new Date().toISOString()
+  await writeAiSummaryRow(db, pullRequestId, "pr-summary", {
+    cacheKey: await prSummaryCacheKey(db, pullRequestId, config.model),
+    model: config.model,
+    contentJson: JSON.stringify(content),
+    generatedAt,
+  })
+
+  return { content, generatedAt, model: config.model, isStale: false }
 }
 
 export async function getDesktopOnboardingState(): Promise<OnboardingState> {
@@ -1940,6 +2033,92 @@ async function writeAiApiKey(db: SqlDatabase, apiKey: string): Promise<void> {
   await stronghold.save()
   cachedAiApiKey = apiKey
   aiApiKeyReadPromise = Promise.resolve(apiKey)
+}
+
+type AiSummaryKind = "pr-summary" | "catch-up-digest" | "thread-state"
+
+interface AiSummaryRow {
+  cache_key: string
+  model: string
+  content_json: string
+  generated_at: string
+}
+
+async function requireActiveAiConfig(
+  db: SqlDatabase
+): Promise<{ model: string; apiKey: string }> {
+  const settings = await readLocalAiSettings(db)
+  const apiKey = settings.apiKeyConfigured ? await readAiApiKey(db) : undefined
+  if (!settings.enabled || !apiKey) {
+    throw new Error("AI mode is not enabled. Turn it on in Settings.")
+  }
+
+  return { model: settings.model, apiKey }
+}
+
+async function readAiSummaryRow(
+  db: SqlDatabase,
+  pullRequestId: string,
+  kind: AiSummaryKind
+): Promise<AiSummaryRow | undefined> {
+  return (
+    await db.select<AiSummaryRow[]>(
+      `
+        select cache_key, model, content_json, generated_at
+        from ai_summaries
+        where pull_request_id = $1 and kind = $2
+      `,
+      [pullRequestId, kind]
+    )
+  )[0]
+}
+
+async function writeAiSummaryRow(
+  db: SqlDatabase,
+  pullRequestId: string,
+  kind: AiSummaryKind,
+  input: {
+    cacheKey: string
+    model: string
+    contentJson: string
+    generatedAt: string
+  }
+): Promise<void> {
+  await db.execute(
+    `
+      insert into ai_summaries
+        (pull_request_id, kind, cache_key, model, content_json, generated_at)
+      values ($1, $2, $3, $4, $5, $6)
+      on conflict(pull_request_id, kind)
+      do update set
+        cache_key = excluded.cache_key,
+        model = excluded.model,
+        content_json = excluded.content_json,
+        generated_at = excluded.generated_at
+    `,
+    [
+      pullRequestId,
+      kind,
+      input.cacheKey,
+      input.model,
+      input.contentJson,
+      input.generatedAt,
+    ]
+  )
+}
+
+/**
+ * The summary is regenerated only when the head commit (or the model)
+ * changes; comment-only activity keeps the cached diff summary valid.
+ */
+async function prSummaryCacheKey(
+  db: SqlDatabase,
+  pullRequestId: string,
+  model: string
+): Promise<string> {
+  const row = (await listPullRequestRows(db, { id: pullRequestId }))[0]
+  const head = row?.latest_commit_sha ?? row?.github_updated_at ?? ""
+  return hashContent(`pr-summary\n${model}\n${head}`)
 }
 
 async function getStrongholdSession(

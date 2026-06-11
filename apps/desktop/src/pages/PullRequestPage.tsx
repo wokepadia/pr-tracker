@@ -26,8 +26,10 @@ import {
   Sparkles,
 } from "lucide-react"
 import { useGithubSync } from "@/app/use-github-sync"
+import { isAiModeActive } from "@/ai/ai-settings"
 import { Button } from "@/components/ui/button"
 import { ActivityEventLine } from "@/components/ActivityEventLine"
+import { AiPrSummaryPanel } from "@/components/AiPanels"
 import { AuthorAvatar } from "@/components/AuthorAvatar"
 import { BoardItemNotes } from "@/components/BoardItemNotes"
 import { MarkdownContent } from "@/components/MarkdownContent"
@@ -41,6 +43,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Separator } from "@/components/ui/separator"
 import {
+  getAiSettings,
   getAttentionSettings,
   getBoardState,
   getPullRequest,
@@ -137,6 +140,11 @@ export function PullRequestPage() {
     queryKey: ["attention-settings"],
     queryFn: getAttentionSettings,
   })
+  const aiSettingsQuery = useQuery({
+    queryKey: ["ai-settings"],
+    queryFn: getAiSettings,
+  })
+  const aiActive = isAiModeActive(aiSettingsQuery.data)
   const saveBoardStateMutation = useMutation({
     mutationFn: saveBoardState,
   })
@@ -336,6 +344,7 @@ export function PullRequestPage() {
       <div className="grid grid-cols-1 gap-0 border-t border-border xl:grid-cols-[62fr_38fr]">
         <main className="min-w-0 px-7 py-6">
           <DescriptionPanel description={loadedItem.description} />
+          {aiActive ? <AiPrSummaryPanel pullRequestId={loadedItem.id} /> : null}
           <BoardItemNotes
             value={loadedItemLocalState.notes ?? ""}
             onSave={updateNotes}
