@@ -47,6 +47,7 @@ pub fn run() {
             Ok(())
         })
         .plugin(tauri_plugin_sql::Builder::default().build())
+        .plugin(tauri_plugin_opener::init())
         .run(tauri::generate_context!())
         .expect("error while running Review Ninja desktop application");
 }
