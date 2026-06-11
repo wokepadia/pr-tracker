@@ -214,7 +214,101 @@ embedding.
   Copilot and gray ChatGPT subscription paths, which a homegrown
   client cannot legally replicate.
 
+### 7b. OpenCode as the complete AI layer (follow-up, 2026-06-11)
+
+Deeper look at the server/SDK surface, prompted by the decision
+to not build a first-party BYOK layer at all. Verified against
+live docs, the checked-in OpenAPI 3.1 spec
+(`packages/sdk/openapi.json`, 144 paths), and source.
+
+What the server API covers — everything an AI layer needs:
+
+- Credential management: `PUT /auth/{providerID}` sets API keys
+  programmatically (SDK: `auth.set()`), so the app can ship its
+  own key-entry UI and push keys into OpenCode; users never run
+  `opencode auth login`. Keys land in
+  `~/.local/share/opencode/auth.json` — plaintext, mode 0600,
+  shared with the user's own opencode install.
+- Model picker: `GET /provider` returns all providers with model
+  catalogs, per-provider defaults, and which providers are
+  authenticated (`connected`).
+- Pure-completion prompting: `POST /session/{id}/message`
+  accepts per-request `model`, `system` (system-prompt
+  override), `tools: { ... }` (disable all tools), and inline
+  text parts — so PR diffs + threads go in as text with no repo
+  checkout and no agent behavior.
+- Structured output: `format: {type: "json_schema", schema,
+  retryCount}` returns schema-validated JSON with built-in
+  validation retries (API/SDK only; `opencode run --format
+  json` does NOT do schema validation).
+- Config injection: the SDK's `config` option is delivered via
+  the `OPENCODE_CONFIG_CONTENT` env var at spawn — the app can
+  define its own locked-down agent (custom system prompt,
+  `permission: deny` for everything, cheap `small_model`)
+  without writing files or clobbering the user's setup. It is a
+  merge, not isolation: the user's global config (plugins, MCP
+  servers) still loads underneath.
+- Lifecycle: localhost-bound `opencode serve --port N`, health/
+  version via `GET /global/health`, SSE event stream, multiple
+  clients per server supported. The SDK does NOT bundle the
+  binary (it spawns `opencode` from PATH); a Tauri app would
+  bundle it as a sidecar or detect/install it. Since the API is
+  OpenAPI-specified, a Rust client can be generated and called
+  from the Tauri backend directly — no Node sidecar needed.
+
+What the app still builds: binary distribution/detection and
+process supervision; version pinning (no stability policy —
+15 releases in the three weeks before this research, and a
+v1→v2 API route migration in flight; pin the binary+spec pair
+and gate on the health-check version); PR-domain prompting,
+diff chunking, and summary caching; key-entry form UX; privacy
+messaging.
+
+Gotchas for the no-tools use case:
+
+- The default `build` agent is a full coding agent with all
+  permissions defaulting to allow. Always pass a dedicated
+  agent/system prompt with explicit `deny` (not `ask` — "ask"
+  blocks headless flows waiting for a permission reply) plus
+  per-request `tools: {}`.
+- Session title generation makes a surprise side-call via
+  `small_model`; pass `title` at session create or pin
+  `small_model` to something cheap/local.
+- Root sessions in a dedicated empty scratch directory so
+  AGENTS.md / project instructions from user repos don't leak
+  into prompts; consider `snapshot: false`.
+- Prompt text (PR diffs, comments) persists in OpenCode's local
+  session storage, and keys live in its plaintext auth.json —
+  both outside the app's Stronghold story; the privacy posture
+  is "user's existing opencode trust domain," slightly weaker
+  than direct-to-provider with keys in the OS keychain.
+
 ## Recommended architecture
+
+Direction update (2026-06-11): the developer does not want to
+build or maintain a first-party BYOK/provider layer. That
+leaves two viable shapes, both keeping a single "analysis
+provider" interface in front of the rest of the app:
+
+- **OpenCode as the complete AI backend** (section 7b): spawn a
+  private `opencode serve` with injected locked-down config and
+  delegate auth, providers, models, inference, and structured
+  output to it. Buys the whole 75+ provider matrix, local
+  models, and the sanctioned Copilot / gray ChatGPT subscription
+  paths for free; costs a fast-moving binary dependency,
+  install/version management, and a slightly weaker privacy
+  story (plaintext auth.json, prompts persisted in OpenCode's
+  session storage).
+- **In-process provider library** (e.g. Vercel AI SDK — the same
+  library OpenCode itself builds on): not building a BYOK layer
+  by hand, but linking one. No binary dependency, direct
+  client-to-provider calls, keys stay in Stronghold; the app
+  still owns key-entry UI and model lists, and gets no
+  subscription paths.
+
+The original from-scratch recommendation below is retained for
+reference; its tiering still applies whichever provider
+substrate is chosen.
 
 A thin provider-abstraction layer in its own package, with the
 reviewer-workflow/UI layers consuming a single "analysis
