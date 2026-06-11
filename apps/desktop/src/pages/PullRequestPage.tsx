@@ -25,7 +25,6 @@ import {
   ShieldAlert,
   Sparkles,
 } from "lucide-react"
-import { useGithubSync } from "@/app/use-github-sync"
 import { isAiModeActive } from "@/ai/ai-settings"
 import { Button } from "@/components/ui/button"
 import { ActivityEventLine } from "@/components/ActivityEventLine"
@@ -133,9 +132,6 @@ export function PullRequestPage() {
     queryKey: ["pull-request", pullRequestId],
     queryFn: () => getPullRequest(pullRequestId),
   })
-  // Keeps deep links fresh: reads stay local while the deduped background
-  // sync refreshes this page through query invalidation.
-  useGithubSync()
   const boardStateQuery = useQuery({
     queryKey: ["board-state"],
     queryFn: getBoardState,

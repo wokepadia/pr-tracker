@@ -17,9 +17,11 @@ import {
 import { AppLogo } from "@/components/AppLogo"
 import { Button } from "@/components/ui/button"
 import { shouldRedirectToOnboarding } from "./onboarding-gate"
+import { useGithubSyncController } from "./use-github-sync"
 import { useReviewerInsights } from "./use-reviewer-insights"
 
 export function AppFrame() {
+  useGithubSyncController()
   const navigate = useNavigate()
   const pathname = useRouterState({
     select: (state) => state.location.pathname,

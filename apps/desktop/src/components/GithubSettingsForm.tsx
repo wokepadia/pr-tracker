@@ -16,6 +16,7 @@ import {
   saveGithubSettings,
   type GithubSettingsStatus,
 } from "@/api"
+import { useGithubSync } from "@/app/use-github-sync"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -38,6 +39,7 @@ export function GithubSettingsForm({
   onSaved,
 }: GithubSettingsFormProps) {
   const queryClient = useQueryClient()
+  const { syncNow } = useGithubSync()
   const [token, setToken] = useState("")
   const [repositories, setRepositories] = useState("")
   const [viewerLogin, setViewerLogin] = useState("")
@@ -53,6 +55,9 @@ export function GithubSettingsForm({
         queryClient.invalidateQueries({ queryKey: ["github-settings"] }),
         queryClient.invalidateQueries({ queryKey: ["reviewer-inbox"] }),
       ])
+      // New settings should take effect immediately, not on the next
+      // scheduled background sync.
+      syncNow()
       await onSaved?.(savedSettings)
     },
   })
