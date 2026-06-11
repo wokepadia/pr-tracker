@@ -62,11 +62,12 @@ describe("buildQueueBriefInput", () => {
       mightBeMissing: [makeRow(missing, "Snoozed, but 4 events arrived")],
     })
 
-    const input = buildQueueBriefInput(
-      insights,
-      [urgent, aging, missing, unseenOnly],
-      "2026-06-04T08:00:00.000Z"
-    )
+    const input = buildQueueBriefInput(insights, [
+      urgent,
+      aging,
+      missing,
+      unseenOnly,
+    ])
 
     expect(input.items.map((item) => item.id)).toEqual([
       "pr_urgent",
@@ -80,7 +81,6 @@ describe("buildQueueBriefInput", () => {
     ])
     expect(input.items[2]?.unseenEvents).toEqual(["maya pushed 2 commits"])
     expect(input.omittedCount).toBe(0)
-    expect(input.previousVisitAt).toBe("2026-06-04T08:00:00.000Z")
   })
 
   it("keeps the edges when the queue exceeds the cap", () => {

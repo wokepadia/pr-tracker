@@ -17,13 +17,16 @@ import {
   Timer,
 } from "lucide-react"
 import {
+  getAiSettings,
   getBoardState,
   getGithubSettingsStatus,
   saveBoardState,
   visitInsights,
 } from "@/api"
+import { isAiModeActive } from "@/ai/ai-settings"
 import { useGithubSync } from "@/app/use-github-sync"
 import { useReviewerInsights } from "@/app/use-reviewer-insights"
+import { AiQueueBriefPanel } from "@/components/AiQueueBriefPanel"
 import { AuthorAvatar } from "@/components/AuthorAvatar"
 import { Button } from "@/components/ui/button"
 import { formatSyncStatusLabel } from "./inbox-helpers"
@@ -107,10 +110,15 @@ export function InsightsPage() {
     },
   })
 
-  const { insights: computedInsights } = useReviewerInsights({
+  const { insights: computedInsights, allItems } = useReviewerInsights({
     previousVisitAt: visitQuery.data?.previousVisitAt,
   })
   const insights = visitQuery.isLoading ? undefined : computedInsights
+  const aiSettingsQuery = useQuery({
+    queryKey: ["ai-settings"],
+    queryFn: getAiSettings,
+  })
+  const aiActive = isAiModeActive(aiSettingsQuery.data)
 
   function restoreItem(itemId: string) {
     const boardState = boardStateQuery.data
@@ -170,6 +178,10 @@ export function InsightsPage() {
         </div>
 
         {insights?.digest ? <DigestStrip digest={insights.digest} /> : null}
+
+        {aiActive && insights && allItems ? (
+          <AiQueueBriefPanel insights={insights} allItems={allItems} />
+        ) : null}
 
         {!insights ? (
           <div className="h-64" aria-busy="true" />

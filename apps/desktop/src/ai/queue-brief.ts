@@ -25,7 +25,6 @@ export interface QueueBriefPrInput {
 }
 
 export interface QueueBriefInput {
-  previousVisitAt?: string
   items: QueueBriefPrInput[]
   omittedCount: number
 }
@@ -56,8 +55,7 @@ const sectionLabels: Array<{
  */
 export function buildQueueBriefInput(
   insights: ReviewerInsightsView,
-  items: ReviewQueueItemView[],
-  previousVisitAt?: string
+  items: ReviewQueueItemView[]
 ): QueueBriefInput {
   const recordById = new Map<string, QueueBriefPrInput>()
   const itemById = new Map(items.map((item) => [item.id, item]))
@@ -125,7 +123,6 @@ export function buildQueueBriefInput(
       : [...ordered.slice(0, maxBriefItems - 10), ...ordered.slice(-10)]
 
   return {
-    previousVisitAt,
     items: within,
     omittedCount: ordered.length - within.length,
   }
@@ -207,11 +204,11 @@ export function buildQueueBriefPrompt(input: QueueBriefInput): {
     "Be brief and concrete. Do not assess code quality, risk, or the reviewer's performance.",
   ].join(" ")
 
+  // No raw timestamps here: the visit anchor advances every session even
+  // when the queue is unchanged, and embedding it made cached briefs go
+  // stale on every visit. The away window is already baked into the rows.
   const lines: string[] = [
     "The reviewer's queue, as computed deterministically:",
-    input.previousVisitAt
-      ? `The reviewer last visited the insights page at ${input.previousVisitAt}.`
-      : "This is the reviewer's first insights visit in a while.",
     "",
   ]
 

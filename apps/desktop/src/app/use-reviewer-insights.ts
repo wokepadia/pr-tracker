@@ -12,6 +12,7 @@ import {
 import {
   buildInboxView,
   defaultAttentionThresholds,
+  type ReviewQueueItemView,
 } from "@/reviewer/view-model"
 
 /**
@@ -21,6 +22,9 @@ import {
  */
 export function useReviewerInsights(options?: { previousVisitAt?: string }): {
   insights?: ReviewerInsightsView
+  /** Active and recently inactive items, for consumers that need to look
+   * up the underlying pull requests behind the insight rows. */
+  allItems?: ReviewQueueItemView[]
   isLoading: boolean
 } {
   const inboxQuery = useQuery({
@@ -37,19 +41,22 @@ export function useReviewerInsights(options?: { previousVisitAt?: string }): {
   })
   const previousVisitAt = options?.previousVisitAt
 
-  const insights = useMemo(() => {
+  const computed = useMemo(() => {
     if (!inboxQuery.data) return undefined
 
     const inboxView = buildInboxView(
       inboxQuery.data,
       attentionSettingsQuery.data ?? defaultAttentionThresholds
     )
-    return buildReviewerInsights({
-      items: inboxView.items,
-      inactiveItems: inboxView.inactiveItems,
-      localQueueState: boardStateQuery.data?.localQueueState ?? {},
-      previousVisitAt,
-    })
+    return {
+      insights: buildReviewerInsights({
+        items: inboxView.items,
+        inactiveItems: inboxView.inactiveItems,
+        localQueueState: boardStateQuery.data?.localQueueState ?? {},
+        previousVisitAt,
+      }),
+      allItems: [...inboxView.items, ...inboxView.inactiveItems],
+    }
   }, [
     attentionSettingsQuery.data,
     boardStateQuery.data,
@@ -57,5 +64,9 @@ export function useReviewerInsights(options?: { previousVisitAt?: string }): {
     previousVisitAt,
   ])
 
-  return { insights, isLoading: inboxQuery.isLoading }
+  return {
+    insights: computed?.insights,
+    allItems: computed?.allItems,
+    isLoading: inboxQuery.isLoading,
+  }
 }
