@@ -280,6 +280,7 @@ function makeQueueItem(
     title: overrides.title,
     authorLogin: overrides.authorLogin,
     url: "https://github.com/acme/repo/pull/1",
+    state: "open",
     workflowState: "needs_review",
     laneId: "needs_review",
     reason: overrides.reason,
@@ -288,8 +289,10 @@ function makeQueueItem(
     waitingAge: "1h",
     waitingUrgency: "none",
     updatedAt: "1h ago",
+    updatedAtIso: "2026-06-01T12:00:00.000Z",
     openedAt: "2h ago",
     lastSeenAt: "3h ago",
+    lastSeenAtIso: "2026-06-01T10:00:00.000Z",
     userLastReviewDecision: "pending",
     approvalStale: false,
     reviewRounds: 0,
@@ -303,6 +306,7 @@ function makeQueueItem(
     activityEvents: [
       {
         id: `${overrides.id}_event`,
+        type: "comment",
         actor: overrides.authorLogin,
         action: overrides.activityAction,
         occurredAt: "1h ago",

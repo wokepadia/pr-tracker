@@ -2,6 +2,7 @@ import type {
   Actor,
   PullRequestActivity,
   PullRequestItem,
+  PullRequestState,
   ReviewDecision,
   ReviewDecisionEvent,
 } from "@pr-tracker/core"
@@ -80,6 +81,7 @@ export interface ReviewThreadView {
 
 export interface ActivityEventView {
   id: string
+  type: PullRequestActivity["type"]
   actor: string
   actorAvatarUrl?: string
   action: string
@@ -100,6 +102,7 @@ export interface ReviewQueueItemView {
   authorLogin: string
   authorAvatarUrl?: string
   url: string
+  state: PullRequestState
   workflowState: WorkflowState
   laneId: ReviewLaneId | "approved" | "caught_up" | "watching" | "stale"
   reason: string
@@ -108,8 +111,10 @@ export interface ReviewQueueItemView {
   waitingAge: string
   waitingUrgency: WaitingUrgency
   updatedAt: string
+  updatedAtIso: string
   openedAt: string
   lastSeenAt: string
+  lastSeenAtIso?: string
   userLastReviewDecision: ReviewDecision | "pending"
   userLastReviewAt?: string
   sinceLastReview?: SinceLastReviewView
@@ -132,6 +137,8 @@ export interface ReviewQueueItemView {
 
 export interface ReviewerInboxView {
   items: ReviewQueueItemView[]
+  /** Recently closed or merged pull requests, for insight projections. */
+  inactiveItems: ReviewQueueItemView[]
   laneItems: Record<ReviewQueueBucketId, ReviewQueueItemView[]>
   approvedCount: number
   watchingCount: number
@@ -154,9 +161,13 @@ export function buildInboxView(
   const items = inbox.items.map((item) =>
     toReviewQueueItemView(item, actorById, inbox.viewer.id, thresholds)
   )
+  const inactiveItems = (inbox.inactiveItems ?? []).map((item) =>
+    toReviewQueueItemView(item, actorById, inbox.viewer.id, thresholds)
+  )
 
   return {
     items,
+    inactiveItems,
     laneItems: {
       needs_review: items.filter((item) => item.laneId === "needs_review"),
       updated_since_review: items.filter(
@@ -223,6 +234,7 @@ export function toReviewQueueItemView(
     authorLogin,
     authorAvatarUrl,
     url: pullRequest.url,
+    state: pullRequest.state,
     workflowState: item.workflowState,
     laneId: getLaneId(item.workflowState),
     reason: item.reason,
@@ -233,8 +245,10 @@ export function toReviewQueueItemView(
     waitingAge: formatDurationSince(waitingSinceAt),
     waitingUrgency: getWaitingUrgency(waitingOn, waitingSinceAt, thresholds),
     updatedAt: formatRelativeTime(pullRequest.updatedAt),
+    updatedAtIso: pullRequest.updatedAt,
     openedAt: formatRelativeTime(pullRequest.createdAt),
     lastSeenAt: lastSeenAt ? formatRelativeTime(lastSeenAt) : "not seen yet",
+    lastSeenAtIso: lastSeenAt,
     userLastReviewDecision: latestViewerReview?.decision ?? "pending",
     userLastReviewAt: latestViewerReview
       ? formatRelativeTime(latestViewerReview.submittedAt)
@@ -514,6 +528,7 @@ function toActivityEventView(
 
   return {
     id: event.id,
+    type: event.type,
     actor,
     actorAvatarUrl: actorById.get(event.actorId)?.avatarUrl,
     action: withoutActorPrefix(event.title, actor),
