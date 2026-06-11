@@ -17,6 +17,7 @@ import {
 import { AppLogo } from "@/components/AppLogo"
 import { Button } from "@/components/ui/button"
 import { shouldRedirectToOnboarding } from "./onboarding-gate"
+import { useReviewerInsights } from "./use-reviewer-insights"
 
 export function AppFrame() {
   const navigate = useNavigate()
@@ -31,6 +32,8 @@ export function AppFrame() {
     queryKey: ["github-settings"],
     queryFn: getGithubSettingsStatus,
   })
+  const { insights } = useReviewerInsights()
+  const needsYouNowCount = insights?.needsYouNow.length ?? 0
   const gateError = onboardingQuery.error ?? settingsQuery.error
   const showGateError =
     Boolean(gateError) && pathname !== "/settings" && pathname !== "/onboarding"
@@ -72,6 +75,7 @@ export function AppFrame() {
             to="/insights"
             label="Insights"
             active={pathname.startsWith("/insights")}
+            badgeCount={needsYouNowCount}
           />
         </nav>
         <Link
@@ -126,10 +130,12 @@ function HeaderNavLink({
   to,
   label,
   active,
+  badgeCount = 0,
 }: {
   to: string
   label: string
   active: boolean
+  badgeCount?: number
 }) {
   return (
     <Link
@@ -142,6 +148,14 @@ function HeaderNavLink({
       }
     >
       {label}
+      {badgeCount > 0 ? (
+        <span
+          aria-label={`${badgeCount} items need you now`}
+          className="ml-1.5 rounded-full border border-amber-200 bg-amber-50 px-1.5 py-[1px] text-[11px] font-semibold leading-4 text-amber-800"
+        >
+          {badgeCount}
+        </span>
+      ) : null}
     </Link>
   )
 }

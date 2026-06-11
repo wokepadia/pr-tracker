@@ -17,27 +17,21 @@ import {
   Timer,
 } from "lucide-react"
 import {
-  getAttentionSettings,
   getBoardState,
   getGithubSettingsStatus,
-  getReviewerInbox,
   saveBoardState,
   visitInsights,
 } from "@/api"
 import { useGithubSync } from "@/app/use-github-sync"
+import { useReviewerInsights } from "@/app/use-reviewer-insights"
 import { AuthorAvatar } from "@/components/AuthorAvatar"
 import { Button } from "@/components/ui/button"
 import { formatSyncStatusLabel } from "./inbox-helpers"
 import { cn, externalLinkProps } from "@/lib/utils"
 import {
-  buildReviewerInsights,
   type InsightRowView,
   type InsightsDigestView,
 } from "@/reviewer/insights"
-import {
-  buildInboxView,
-  defaultAttentionThresholds,
-} from "@/reviewer/view-model"
 
 const SECTION_ROW_CAP = 5
 
@@ -93,14 +87,6 @@ const insightSections: InsightSectionDefinition[] = [
 export function InsightsPage() {
   const queryClient = useQueryClient()
   const githubSync = useGithubSync()
-  const inboxQuery = useQuery({
-    queryKey: ["reviewer-inbox", ""],
-    queryFn: () => getReviewerInbox({}),
-  })
-  const attentionSettingsQuery = useQuery({
-    queryKey: ["attention-settings"],
-    queryFn: getAttentionSettings,
-  })
   const boardStateQuery = useQuery({
     queryKey: ["board-state"],
     queryFn: getBoardState,
@@ -121,22 +107,10 @@ export function InsightsPage() {
     },
   })
 
-  const localQueueState = boardStateQuery.data?.localQueueState ?? {}
-  const inboxView = inboxQuery.data
-    ? buildInboxView(
-        inboxQuery.data,
-        attentionSettingsQuery.data ?? defaultAttentionThresholds
-      )
-    : undefined
-  const insights =
-    inboxView && !visitQuery.isLoading
-      ? buildReviewerInsights({
-          items: inboxView.items,
-          inactiveItems: inboxView.inactiveItems,
-          localQueueState,
-          previousVisitAt: visitQuery.data?.previousVisitAt,
-        })
-      : undefined
+  const { insights: computedInsights } = useReviewerInsights({
+    previousVisitAt: visitQuery.data?.previousVisitAt,
+  })
+  const insights = visitQuery.isLoading ? undefined : computedInsights
 
   function restoreItem(itemId: string) {
     const boardState = boardStateQuery.data
