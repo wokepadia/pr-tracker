@@ -52,6 +52,7 @@ describe("reviewer view model", () => {
         watching: [classifiedItem("pr_watching", "watching")],
         inactive: [],
       },
+      inactiveItems: [],
     }
 
     const view = buildInboxView(inbox)

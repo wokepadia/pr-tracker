@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { samplePullRequests } from "@pr-tracker/core";
 import type { PullRequestItem } from "@pr-tracker/core";
-import { buildSampleInbox, classifyPullRequest } from "./index";
+import {
+  buildReviewerInbox,
+  buildSampleInbox,
+  classifyPullRequest
+} from "./index";
 
 const baseViewerContext = {
   viewerId: "viewer",
@@ -318,5 +322,23 @@ describe("turn ownership and evidence", () => {
       id: "closed",
       label: "This pull request was merged."
     });
+  });
+
+  it("keeps closed pull requests out of the queue but on inactiveItems", () => {
+    const viewer = { id: "viewer", login: "viewer", type: "user" as const };
+    const inbox = buildReviewerInbox({
+      viewer,
+      actors: [viewer],
+      pullRequests: [
+        samplePullRequests[0]!,
+        { ...samplePullRequests[1]!, state: "merged" }
+      ],
+      now: baseViewerContext.now
+    });
+
+    expect(inbox.items.map((item) => item.pullRequest.id)).toEqual(["pr_1"]);
+    expect(inbox.inactiveItems.map((item) => item.pullRequest.id)).toEqual([
+      "pr_2"
+    ]);
   });
 });

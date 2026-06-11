@@ -56,6 +56,9 @@ export interface ReviewerInbox {
   actors: Actor[];
   items: ClassifiedPullRequest[];
   sections: Record<WorkflowState, ClassifiedPullRequest[]>;
+  /** Closed or merged pull requests, kept out of the active queue but
+   * available to insight projections such as "merged without you". */
+  inactiveItems: ClassifiedPullRequest[];
 }
 
 const activeStates: WorkflowState[] = [
@@ -310,9 +313,14 @@ export function buildReviewerInbox(input: {
     lastSeenAtByPullRequestId: input.lastSeenAtByPullRequestId ?? {}
   };
 
-  const items = input.pullRequests
-    .map((pullRequest) => classifyPullRequest(pullRequest, viewerContext))
+  const classified = input.pullRequests.map((pullRequest) =>
+    classifyPullRequest(pullRequest, viewerContext)
+  );
+  const items = classified
     .filter((item) => item.workflowState !== "inactive")
+    .sort(compareClassifiedPullRequests);
+  const inactiveItems = classified
+    .filter((item) => item.workflowState === "inactive")
     .sort(compareClassifiedPullRequests);
 
   const sections = Object.fromEntries(
@@ -326,7 +334,8 @@ export function buildReviewerInbox(input: {
     viewer: input.viewer,
     actors: input.actors,
     items,
-    sections
+    sections,
+    inactiveItems
   };
 }
 
