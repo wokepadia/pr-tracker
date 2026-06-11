@@ -97,6 +97,12 @@ undermines the app's privacy-first positioning. Copilot's terms
 are also in churn (Product Specific Terms deprecated 2026-03-05
 in favor of the GitHub Generative AI Services Terms).
 
+Note: the sanctioned way to reach a user's Copilot subscription
+is not the Copilot CLI but OpenCode's formal GitHub partnership
+(see option 7) — though the same non-editor retention terms
+likely apply to whatever surface the requests go through, so the
+privacy caveat should be surfaced to the user either way.
+
 ### 5. Local open-weight models (Ollama / LM Studio) — opt-in tier
 
 - Operationally feasible on Apple Silicon. Verified llama.cpp
@@ -125,6 +131,89 @@ in favor of the GitHub Generative AI Services Terms).
 - Integration is free once the OpenAI-compatible client exists:
   Ollama and LM Studio both expose OpenAI-format endpoints.
 
+### 6. OpenAI Codex CLI / SDK — effectively sanctioned harness
+
+Researched 2026-06-11 as a follow-up (the original pass left
+OpenAI subscription auth as an open question).
+
+- The harness is built for embedding. `openai/codex` is
+  Apache-2.0; `codex exec` is the official headless mode with
+  `--json` (JSONL events), `--output-schema` (final answer
+  conforming to a JSON Schema), `--skip-git-repo-check`
+  (arbitrary text via stdin, no checkout needed), and
+  `--ephemeral` (no session files). There is an official
+  TypeScript SDK (`@openai/codex-sdk`) wrapping the CLI and a
+  JSON-RPC "App Server" whose docs explicitly invite "deep
+  integration inside your own product."
+- Subscription auth is publicly embraced, not just tolerated.
+  OpenAI's posture is the opposite of Google's and Anthropic's
+  OAuth bans: Sam Altman publicly endorsed signing in to
+  third-party tools (OpenClaw) with a ChatGPT account, and
+  OpenClaw, OpenCode, and OpenHands all ship ChatGPT-subscription
+  auth openly with no enforcement against them. Caveat: there is
+  no formal policy document analogous to Anthropic's Agent SDK
+  credit — the endorsement is practice-based (CEO tweet, tolerated
+  ecosystem, harness docs), and direct "can a paid third-party
+  app ride subscription auth?" questions to OpenAI staff remain
+  unanswered. Anthropic's tolerate→ban→formalize arc shows this
+  can flip. The defensible shape is shelling out to the
+  user-installed official harness with the user's own login —
+  never raw OAuth token reuse against backend endpoints.
+- Privacy is the weak point. Consumer ChatGPT plans (Free/Plus/
+  Pro) train on content by default, including Codex tasks, unless
+  the user opts out via Data Controls; prompts are retained
+  server-side under normal ChatGPT retention. For an unconfigured
+  user this is arguably worse than Copilot's 28-day retention.
+  If this tier ships, the app should detect ChatGPT-auth mode and
+  prominently tell users to disable "Improve the model for
+  everyone."
+- Usage is credit-based under ChatGPT plans (5-hour windows plus
+  weekly caps; Plus roughly 15-80 messages per window as of the
+  April 2026 repricing, two repricings in 2026 already). When
+  exhausted, users can buy credits or fall back to an API key.
+- Known rough edges: `--output-schema`/`--json` interactions
+  with MCP tools have open bugs; fast release cadence means the
+  app should feature-detect flags against the installed version
+  and never copy or relocate the user's auth token (a June 2026
+  npm supply-chain attack targeted Codex auth tokens).
+
+### 7. OpenCode — strongest harness shape, BYOK-equivalent auth
+
+Researched 2026-06-11. OpenCode (anomalyco/opencode, MIT,
+maintained by Anomaly Co.) is the most popular open-source
+coding agent and is purpose-built for exactly this kind of
+embedding.
+
+- Architecture: client/server. `opencode serve` runs a local
+  HTTP server with an OpenAPI 3.1 spec, SSE streaming, and
+  structured JSON output with schema validation; the official
+  `@opencode-ai/sdk` (JS/TS) spawns or attaches to it.
+  `opencode run --format json` is the non-interactive CLI mode.
+  A real ecosystem of third-party apps embeds it this way
+  (OpenChamber, CodeNomad, OpenWork, Promptfoo provider).
+- Auth matrix is its unique value: 75+ providers via API keys,
+  plus subscription logins — GitHub Copilot login is formally
+  sanctioned via a GitHub partnership (the only unambiguously
+  blessed Copilot path; announced 2026-01-16), ChatGPT Plus/Pro
+  login works via the Codex OAuth flow (gray, same posture as
+  option 6), and Claude Pro/Max login is permanently gone
+  (removed in v1.3.0 after an Anthropic legal request; Anthropic
+  via OpenCode is API-key only).
+- Privacy: inference calls go direct from the user's machine to
+  providers; no default phone-home (sharing is manual and can be
+  hard-disabled). Its paid "Zen" gateway is optional — fully
+  BYOK without it.
+- Costs/risks as a dependency: it is a full agent loop (shell,
+  file tools, sessions) — surplus capability and a larger
+  permission surface for a summarize/classify feature. Release
+  cadence is very hot (multiple releases per day at times,
+  pre-2.0, no formal API stability guarantee), and the user must
+  have it installed and authenticated, so the app inherits
+  version skew. For pure API-key usage it buys little over a
+  thin direct BYOK client; its real draw is the sanctioned
+  Copilot and gray ChatGPT subscription paths, which a homegrown
+  client cannot legally replicate.
+
 ## Recommended architecture
 
 A thin provider-abstraction layer in its own package, with the
@@ -139,10 +228,20 @@ provider" interface:
    Ollama/LM Studio as a privacy-maximal opt-in, with diff
    chunking for large PRs and a curated default model picked
    after hands-on quality testing.
-3. **"Sign in with Claude subscription" as a later tier** via
-   the Agent SDK, once the 2026-06-15 credit policy proves
-   stable.
-4. **No Gemini CLI OAuth piggybacking, no Copilot CLI shelling.**
+3. **A "subscription harness" tier as a later phase**, behind
+   the same provider interface: detect locally installed
+   harnesses and let subscribers use what they already pay for —
+   Claude Agent SDK (Claude Pro/Max; sanctioned via the
+   2026-06-15 credit once it proves stable), `codex exec` /
+   Codex SDK (ChatGPT Plus/Pro; effectively sanctioned but
+   practice-based — pair with a training-opt-out warning), and
+   optionally OpenCode attach (Copilot subscribers; formally
+   sanctioned partnership). Each is a small adapter producing
+   the same structured output as the BYOK clients.
+4. **No Gemini CLI OAuth piggybacking, no direct Copilot CLI
+   shelling, no raw OAuth token reuse against any provider's
+   backend.** Subscription access only through each vendor's
+   official harness with the user's own login.
 
 Per user segment:
 
@@ -150,6 +249,8 @@ Per user segment:
 | --- | --- |
 | Has a provider API key | BYOK direct (best quality, pay-per-use, strongest cloud privacy) |
 | Claude Pro/Max subscriber | Agent SDK tier (zero marginal cost up to the monthly credit) |
+| ChatGPT Plus/Pro subscriber | Codex harness tier (credit-capped; warn about training default) |
+| Copilot subscriber | OpenCode attach (formally sanctioned; non-editor retention applies) |
 | Privacy-absolutist / offline | Ollama / LM Studio local tier |
 | Wants one key, many models | Generic endpoint pointed at OpenRouter |
 
@@ -158,9 +259,13 @@ Per user segment:
 - Measured quality (not throughput) of 7B-32B local models on
   PR-diff summarization; minimum model size for trustworthy
   "is this risky" output.
-- Whether OpenAI (ChatGPT/Codex) or GitHub ship a sanctioned
-  subscription-auth path analogous to Anthropic's Agent SDK
-  credit, or whether Anthropic stays unique.
+- Whether OpenAI formalizes its practice-based endorsement of
+  third-party subscription auth into a written policy (and
+  whether it survives a pricing/policy flip like Anthropic's
+  Feb-June 2026 arc).
+- Retention terms for Copilot requests made through OpenCode's
+  sanctioned partnership — assumed to follow the non-editor
+  (~28-day) rules, not verified.
 - Real long-context (32k+) prefill latency on mainstream
   Apple Silicon (M2/M3 Pro, 16-36GB) — determines how aggressive
   diff chunking must be for the local tier.
@@ -178,3 +283,14 @@ Per user segment:
 - Gemini CLI ToS/privacy (OAuth prohibition): https://geminicli.com/docs/resources/tos-privacy/
 - Copilot product terms (CLI prompt retention): https://github.com/customer-terms/github-copilot-product-specific-terms
 - llama.cpp Apple Silicon benchmarks: https://github.com/ggml-org/llama.cpp/discussions/4167
+- Codex non-interactive mode (`codex exec`): https://developers.openai.com/codex/noninteractive
+- Codex TypeScript SDK: https://developers.openai.com/codex/sdk
+- Codex auth modes and recommendation: https://developers.openai.com/codex/auth
+- Codex pricing/limits under ChatGPT plans: https://developers.openai.com/codex/pricing
+- Altman endorsement of subscription auth in OpenClaw: https://x.com/sama/status/2050357911915028689
+- OpenAI data-use defaults (consumer training opt-out): https://help.openai.com/en/articles/5722486-how-your-data-is-used-to-improve-model-performance
+- OpenCode server mode: https://opencode.ai/docs/server/
+- OpenCode SDK: https://opencode.ai/docs/sdk/
+- OpenCode providers/auth: https://opencode.ai/docs/providers/
+- GitHub Copilot × OpenCode partnership: https://github.blog/changelog/2026-01-16-github-copilot-now-supports-opencode/
+- OpenCode removal of Anthropic OAuth ("anthropic legal requests"): https://github.com/anomalyco/opencode/pull/18186
