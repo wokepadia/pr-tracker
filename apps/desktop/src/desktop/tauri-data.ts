@@ -54,14 +54,19 @@ import { requestStructuredCompletion } from "@/ai/openrouter"
 import {
   buildCatchUpDigestPrompt,
   buildPrSummaryPrompt,
+  buildThreadStatePrompt,
   catchUpDigestSchema,
   catchUpDigestSchemaName,
   normalizeCatchUpDigestContent,
   normalizePrSummaryContent,
+  normalizeThreadStateContent,
   prSummarySchema,
   prSummarySchemaName,
+  threadStateSchema,
+  threadStateSchemaName,
   type CatchUpDigestContent,
   type PrSummaryContent,
+  type ThreadStateContent,
 } from "@/ai/summaries"
 import { defaultAttentionThresholds } from "@/reviewer/view-model"
 import { localDesktopSchemaSql } from "../../../../packages/db/src/local-schema"
@@ -745,6 +750,67 @@ export async function generateDesktopAiCatchUpDigest(
   await writeAiSummaryRow(db, pullRequestId, "catch-up-digest", {
     cacheKey: await hashContent(
       `catch-up-digest\n${config.model}\n${prompt.user}`
+    ),
+    model: config.model,
+    contentJson: JSON.stringify(content),
+    generatedAt,
+  })
+
+  return { content, generatedAt, model: config.model, isStale: false }
+}
+
+export async function getDesktopAiThreadState(
+  pullRequestId: string
+): Promise<AiGenerated<ThreadStateContent> | undefined> {
+  const db = await getDatabase()
+  const row = await readAiSummaryRow(db, pullRequestId, "thread-state")
+  if (!row) {
+    return undefined
+  }
+
+  const settings = await readLocalAiSettings(db)
+  const input = await buildThreadStateInputForPullRequest(db, pullRequestId)
+  const expectedKey = await hashContent(
+    `thread-state\n${settings.model}\n${input?.prompt.user ?? ""}`
+  )
+
+  return {
+    content: normalizeThreadStateContent(
+      JSON.parse(row.content_json),
+      input?.allowedFiles ?? []
+    ),
+    generatedAt: row.generated_at,
+    model: row.model,
+    isStale: expectedKey !== row.cache_key,
+  }
+}
+
+export async function generateDesktopAiThreadState(
+  pullRequestId: string
+): Promise<AiGenerated<ThreadStateContent>> {
+  const db = await getDatabase()
+  const config = await requireActiveAiConfig(db)
+  const input = await buildThreadStateInputForPullRequest(db, pullRequestId)
+  if (!input) {
+    throw new Error("This pull request has no review threads to summarize.")
+  }
+
+  const content = normalizeThreadStateContent(
+    await requestStructuredCompletion<ThreadStateContent>({
+      apiKey: config.apiKey,
+      model: config.model,
+      system: input.prompt.system,
+      user: input.prompt.user,
+      schemaName: threadStateSchemaName,
+      schema: threadStateSchema,
+    }),
+    input.allowedFiles
+  )
+
+  const generatedAt = new Date().toISOString()
+  await writeAiSummaryRow(db, pullRequestId, "thread-state", {
+    cacheKey: await hashContent(
+      `thread-state\n${config.model}\n${input.prompt.user}`
     ),
     model: config.model,
     contentJson: JSON.stringify(content),
@@ -2213,6 +2279,76 @@ async function buildCatchUpDigestPromptForPullRequest(
       occurredAt: event.occurred_at,
     })),
   })
+}
+
+/**
+ * Thread-state input is fully local: the cached thread rows plus the
+ * comment/review bodies from the activity feed. The allowed file list lets
+ * the normalizer drop any note whose path is not a real thread.
+ */
+async function buildThreadStateInputForPullRequest(
+  db: SqlDatabase,
+  pullRequestId: string
+): Promise<
+  | {
+      prompt: { system: string; user: string }
+      allowedFiles: string[]
+    }
+  | undefined
+> {
+  const pullRequest = (await listPullRequestRows(db, { id: pullRequestId }))[0]
+  if (!pullRequest) {
+    throw new Error("Pull request not found.")
+  }
+
+  const threads = await listReviewThreadRows(db, pullRequestId)
+  if (threads.length === 0) {
+    return undefined
+  }
+
+  const participants = await listReviewThreadParticipantRows(
+    db,
+    threads.map((thread) => thread.id)
+  )
+  const participantsByThreadId = new Map<string, string[]>()
+  for (const participant of participants) {
+    const logins = participantsByThreadId.get(participant.review_thread_id) ?? []
+    logins.push(participant.login)
+    participantsByThreadId.set(participant.review_thread_id, logins)
+  }
+
+  const comments = (await listActivityEventRows(db, pullRequestId)).filter(
+    (event) =>
+      ["comment", "review"].includes(event.event_type) && event.body
+  )
+
+  const prompt = buildThreadStatePrompt({
+    repository: pullRequest.repository_full_name,
+    number: pullRequest.number,
+    title: pullRequest.title,
+    viewerLogin: await resolveViewerLogin(db),
+    threads: threads.map((thread) => ({
+      filePath: thread.file_path ?? undefined,
+      line: thread.line ?? undefined,
+      isResolved: thread.is_resolved === 1,
+      isOutdated: thread.is_outdated === 1,
+      participants: participantsByThreadId.get(thread.id) ?? [],
+      lastActorLogin: thread.last_actor_login ?? undefined,
+      lastActivityAt: thread.last_activity_at,
+    })),
+    comments: comments.map((comment) => ({
+      actor: comment.actor_login,
+      body: comment.body ?? "",
+      occurredAt: comment.occurred_at,
+    })),
+  })
+
+  return {
+    prompt,
+    allowedFiles: threads.flatMap((thread) =>
+      thread.file_path ? [thread.file_path] : []
+    ),
+  }
 }
 
 /**

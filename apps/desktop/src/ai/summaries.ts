@@ -301,3 +301,161 @@ function truncateText(text: string, maxChars: number): string {
 
   return `${text.slice(0, maxChars)}\n(truncated)`
 }
+
+export interface ThreadStateContent {
+  overall: string
+  threadNotes: Array<{ file: string; note: string }>
+}
+
+export interface ThreadStateThreadInput {
+  filePath?: string
+  line?: number
+  isResolved: boolean
+  isOutdated: boolean
+  participants: string[]
+  lastActorLogin?: string
+  lastActivityAt: string
+}
+
+export interface ThreadStateCommentInput {
+  actor: string
+  body: string
+  occurredAt: string
+}
+
+export interface ThreadStatePromptInput {
+  repository: string
+  number: number
+  title: string
+  viewerLogin: string
+  threads: ThreadStateThreadInput[]
+  comments: ThreadStateCommentInput[]
+}
+
+export const threadStateSchemaName = "thread_state"
+
+export const threadStateSchema: Record<string, unknown> = {
+  type: "object",
+  additionalProperties: false,
+  required: ["overall", "threadNotes"],
+  properties: {
+    overall: {
+      type: "string",
+      description:
+        "Two to four plain sentences: what is settled, what is still open, and who is waiting on whom.",
+    },
+    threadNotes: {
+      type: "array",
+      maxItems: 10,
+      description:
+        "One short note per thread you can say something concrete about, keyed by the thread's file path exactly as listed.",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["file", "note"],
+        properties: {
+          file: {
+            type: "string",
+            description: "A thread file path exactly as listed above.",
+          },
+          note: {
+            type: "string",
+            description: "One sentence on where that discussion stands.",
+          },
+        },
+      },
+    },
+  },
+}
+
+const maxThreadStateThreads = 30
+const maxThreadStateComments = 30
+const maxThreadStateBodyChars = 600
+
+export function buildThreadStatePrompt(input: ThreadStatePromptInput): {
+  system: string
+  user: string
+} {
+  const system = [
+    "You summarize the state of code review discussions on a GitHub pull request.",
+    "Use only the threads and comments provided. Never invent file paths, opinions, or agreements.",
+    "Attribute a position to a login only when a listed comment states it.",
+    "Be brief and concrete. Do not assess code quality, risk, or priority.",
+  ].join(" ")
+
+  const lines: string[] = [
+    `Repository: ${input.repository}`,
+    `Pull request #${input.number}: ${input.title}`,
+    `The reviewer reading this summary is ${input.viewerLogin}.`,
+    "",
+    "Review threads:",
+  ]
+
+  for (const thread of input.threads.slice(0, maxThreadStateThreads)) {
+    const location = thread.filePath
+      ? `${thread.filePath}${thread.line ? `:${thread.line}` : ""}`
+      : "(no file recorded)"
+    const facts = [
+      thread.isResolved ? "resolved" : "unresolved",
+      thread.isOutdated ? "outdated by new commits" : undefined,
+      `participants: ${thread.participants.join(", ") || "unknown"}`,
+      thread.lastActorLogin
+        ? `last reply by ${thread.lastActorLogin} at ${thread.lastActivityAt}`
+        : `last activity at ${thread.lastActivityAt}`,
+    ].filter(Boolean)
+    lines.push(`- ${location} — ${facts.join(", ")}`)
+  }
+
+  lines.push("", "Recent discussion, oldest first:")
+  if (input.comments.length === 0) {
+    lines.push("(no comment text cached locally)")
+  }
+  for (const comment of input.comments.slice(-maxThreadStateComments)) {
+    lines.push(
+      "",
+      `- [${comment.occurredAt}] ${comment.actor}:`,
+      indentBlock(truncateText(comment.body, maxThreadStateBodyChars))
+    )
+  }
+
+  lines.push(
+    "",
+    "Describe the overall state of the review discussion, then add a short note per thread (keyed by its listed file path) only where you can say something concrete."
+  )
+
+  return { system, user: lines.join("\n") }
+}
+
+/**
+ * Grounding guard: notes are kept only when they cite a file path that is
+ * actually one of the pull request's review threads, so a hallucinated path
+ * can never render.
+ */
+export function normalizeThreadStateContent(
+  value: unknown,
+  allowedFiles: string[]
+): ThreadStateContent {
+  const parsed = (value ?? {}) as { overall?: unknown; threadNotes?: unknown }
+  if (typeof parsed.overall !== "string" || parsed.overall.trim() === "") {
+    throw new Error("The model response was missing the thread overview.")
+  }
+
+  const allowed = new Set(allowedFiles)
+  const threadNotes = Array.isArray(parsed.threadNotes)
+    ? parsed.threadNotes.flatMap((entry) => {
+        const candidate = (entry ?? {}) as { file?: unknown; note?: unknown }
+        if (
+          typeof candidate.file !== "string" ||
+          typeof candidate.note !== "string" ||
+          candidate.note.trim() === "" ||
+          !allowed.has(candidate.file.trim())
+        ) {
+          return []
+        }
+
+        return [{ file: candidate.file.trim(), note: candidate.note.trim() }]
+      })
+    : []
+
+  return { overall: parsed.overall.trim(), threadNotes }
+}

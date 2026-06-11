@@ -12,13 +12,16 @@ import {
 import {
   generateAiCatchUpDigest,
   generateAiPrSummary,
+  generateAiThreadState,
   getAiCatchUpDigest,
   getAiPrSummary,
+  getAiThreadState,
   type AiGenerated,
 } from "@/api"
 import type {
   CatchUpDigestContent,
   PrSummaryContent,
+  ThreadStateContent,
 } from "@/ai/summaries"
 import { Button } from "@/components/ui/button"
 import { formatRelativeTime } from "@/reviewer/view-model"
@@ -244,6 +247,64 @@ export function AiCatchUpDigestPanel({
                 <li key={bullet} className="flex gap-2">
                   <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
                   <span>{bullet}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      )}
+    />
+  )
+}
+
+export function AiThreadStatePanel({
+  pullRequestId,
+  hasThreads,
+}: {
+  pullRequestId: string
+  hasThreads: boolean
+}) {
+  const queryClient = useQueryClient()
+  const threadStateQuery = useQuery({
+    queryKey: ["ai-thread-state", pullRequestId],
+    queryFn: () => getAiThreadState(pullRequestId),
+  })
+  const generateMutation = useMutation({
+    mutationFn: () => generateAiThreadState(pullRequestId),
+    onSuccess: (result) => {
+      queryClient.setQueryData(["ai-thread-state", pullRequestId], result)
+    },
+  })
+
+  if (!hasThreads && !threadStateQuery.data) {
+    return null
+  }
+
+  return (
+    <AiPanelShell<ThreadStateContent>
+      title="AI thread state"
+      hint="Summarize where the review threads stand: who owes a reply and what is still contested. Sends the cached threads and comments to OpenRouter using your key."
+      generateLabel="Summarize threads"
+      staleNote="Threads changed since this summary"
+      result={threadStateQuery.data}
+      isLoadingCache={threadStateQuery.isLoading}
+      isGenerating={generateMutation.isPending}
+      error={generateMutation.error}
+      onGenerate={() => generateMutation.mutate()}
+      renderContent={(content) => (
+        <div>
+          <p className="text-sm leading-6 text-foreground">{content.overall}</p>
+          {content.threadNotes.length > 0 ? (
+            <ul className="mt-2 space-y-1.5 text-sm leading-5 text-foreground">
+              {content.threadNotes.map((note) => (
+                <li key={`${note.file}-${note.note}`} className="flex gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+                  <span>
+                    <code className="rounded bg-muted/60 px-1 py-[1px] text-xs">
+                      {note.file}
+                    </code>{" "}
+                    {note.note}
+                  </span>
                 </li>
               ))}
             </ul>

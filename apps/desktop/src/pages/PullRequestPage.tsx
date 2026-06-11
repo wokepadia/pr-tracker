@@ -32,6 +32,7 @@ import { ActivityEventLine } from "@/components/ActivityEventLine"
 import {
   AiCatchUpDigestPanel,
   AiPrSummaryPanel,
+  AiThreadStatePanel,
 } from "@/components/AiPanels"
 import { AuthorAvatar } from "@/components/AuthorAvatar"
 import { BoardItemNotes } from "@/components/BoardItemNotes"
@@ -362,6 +363,12 @@ export function PullRequestPage() {
           ) : null}
           <SinceLastReviewPanel view={loadedItem.sinceLastReview} />
           <ThreadLedgerPanel item={loadedItem} />
+          {aiActive ? (
+            <AiThreadStatePanel
+              pullRequestId={loadedItem.id}
+              hasThreads={loadedItem.totalThreadCount > 0}
+            />
+          ) : null}
           <div className="mb-4 text-xs text-muted-foreground">
             Activity · newest first
           </div>

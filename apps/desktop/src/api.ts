@@ -6,6 +6,7 @@ import type {
 import type {
   CatchUpDigestContent,
   PrSummaryContent,
+  ThreadStateContent,
 } from "@/ai/summaries"
 
 export interface PullRequestDetailResponse {
@@ -208,6 +209,18 @@ export async function generateAiCatchUpDigest(
   pullRequestId: string
 ): Promise<AiGenerated<CatchUpDigestContent>> {
   return (await getDesktopApi()).generateDesktopAiCatchUpDigest(pullRequestId)
+}
+
+export async function getAiThreadState(
+  pullRequestId: string
+): Promise<AiGenerated<ThreadStateContent> | undefined> {
+  return (await getDesktopApi()).getDesktopAiThreadState(pullRequestId)
+}
+
+export async function generateAiThreadState(
+  pullRequestId: string
+): Promise<AiGenerated<ThreadStateContent>> {
+  return (await getDesktopApi()).generateDesktopAiThreadState(pullRequestId)
 }
 
 export async function getOnboardingState(): Promise<OnboardingState> {

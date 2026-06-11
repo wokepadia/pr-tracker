@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest"
 import {
   buildCatchUpDigestPrompt,
   buildPrSummaryPrompt,
+  buildThreadStatePrompt,
   normalizeCatchUpDigestContent,
   normalizePrSummaryContent,
+  normalizeThreadStateContent,
   type PrSummaryPromptInput,
 } from "./summaries"
 
@@ -195,6 +197,98 @@ describe("normalizeCatchUpDigestContent", () => {
   it("throws when the narrative is missing", () => {
     expect(() => normalizeCatchUpDigestContent({ bullets: [] })).toThrow(
       "The model response was missing the digest narrative."
+    )
+  })
+})
+
+describe("buildThreadStatePrompt", () => {
+  it("lists thread facts and discussion excerpts", () => {
+    const { system, user } = buildThreadStatePrompt({
+      repository: "acme/web",
+      number: 42,
+      title: "Add webhook retries",
+      viewerLogin: "viewer",
+      threads: [
+        {
+          filePath: "src/webhooks.ts",
+          line: 44,
+          isResolved: false,
+          isOutdated: true,
+          participants: ["viewer", "sam"],
+          lastActorLogin: "sam",
+          lastActivityAt: "2026-06-10T09:00:00.000Z",
+        },
+        {
+          isResolved: true,
+          isOutdated: false,
+          participants: [],
+          lastActivityAt: "2026-06-09T09:00:00.000Z",
+        },
+      ],
+      comments: [
+        {
+          actor: "sam",
+          body: "Should this retry on 5xx only?",
+          occurredAt: "2026-06-10T09:00:00.000Z",
+        },
+      ],
+    })
+
+    expect(system).toContain("Never invent file paths")
+    expect(user).toContain("The reviewer reading this summary is viewer.")
+    expect(user).toContain(
+      "- src/webhooks.ts:44 — unresolved, outdated by new commits, participants: viewer, sam, last reply by sam at 2026-06-10T09:00:00.000Z"
+    )
+    expect(user).toContain("- (no file recorded) — resolved")
+    expect(user).toContain("Should this retry on 5xx only?")
+  })
+
+  it("notes when no comment text is cached", () => {
+    const { user } = buildThreadStatePrompt({
+      repository: "acme/web",
+      number: 42,
+      title: "Add webhook retries",
+      viewerLogin: "viewer",
+      threads: [
+        {
+          filePath: "src/a.ts",
+          isResolved: false,
+          isOutdated: false,
+          participants: ["sam"],
+          lastActivityAt: "2026-06-10T09:00:00.000Z",
+        },
+      ],
+      comments: [],
+    })
+    expect(user).toContain("(no comment text cached locally)")
+  })
+})
+
+describe("normalizeThreadStateContent", () => {
+  it("drops notes whose file is not a real thread path", () => {
+    expect(
+      normalizeThreadStateContent(
+        {
+          overall: "One thread is still open.",
+          threadNotes: [
+            { file: "src/webhooks.ts", note: "Sam asked about 5xx retries." },
+            { file: "invented/path.ts", note: "Hallucinated." },
+            { file: "src/webhooks.ts", note: "  " },
+          ],
+        },
+        ["src/webhooks.ts"]
+      )
+    ).toEqual({
+      overall: "One thread is still open.",
+      threadNotes: [
+        { file: "src/webhooks.ts", note: "Sam asked about 5xx retries." },
+      ],
+    })
+  })
+
+  it("throws when the overall summary is missing", () => {
+    expect(() => normalizeThreadStateContent({}, [])).toThrow(
+      "The model response was missing the thread overview."
     )
   })
 })
