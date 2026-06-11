@@ -412,4 +412,82 @@ describe("GitHub token pull request source", () => {
     expect(snapshots).toHaveLength(1);
     expect(snapshots[0]?.reviews?.[0]?.body).toBeUndefined();
   });
+
+  it("lists changed files with patches across pages", async () => {
+    const calls: Array<{ route: string; parameters?: Record<string, unknown> }> = [];
+    const firstPage = Array.from({ length: 100 }, (_value, index) => ({
+      filename: `src/file-${index}.ts`,
+      status: "modified",
+      additions: 1,
+      deletions: 0,
+      patch: `@@ -1 +1 @@\n-old-${index}\n+new-${index}`
+    }));
+    const source = createGithubTokenPullRequestSource({
+      token: "token",
+      repositories: ["acme/web"],
+      request: async <T = unknown>(
+        route: string,
+        parameters?: Record<string, unknown>
+      ) => {
+        calls.push({ route, parameters });
+
+        if (route === "GET /repos/{owner}/{repo}/pulls/{pull_number}/files") {
+          if (parameters?.page === 1) {
+            return { data: firstPage as T };
+          }
+
+          return {
+            data: [
+              {
+                filename: "assets/logo.png",
+                status: "added",
+                additions: 0,
+                deletions: 0
+              }
+            ] as T
+          };
+        }
+
+        throw new Error(`Unexpected route: ${route}`);
+      }
+    });
+
+    const files = await source.listPullRequestChangedFiles({
+      repository: "acme/web",
+      number: 42
+    });
+
+    expect(files).toHaveLength(101);
+    expect(files?.[0]).toEqual({
+      path: "src/file-0.ts",
+      status: "modified",
+      additions: 1,
+      deletions: 0,
+      patch: "@@ -1 +1 @@\n-old-0\n+new-0"
+    });
+    expect(files?.[100]).toEqual({
+      path: "assets/logo.png",
+      status: "added",
+      additions: 0,
+      deletions: 0,
+      patch: undefined
+    });
+    expect(
+      calls.map((call) => call.parameters?.page)
+    ).toEqual([1, 2]);
+  });
+
+  it("returns undefined changed files for repositories outside the allow list", async () => {
+    const source = createGithubTokenPullRequestSource({
+      token: "token",
+      repositories: ["acme/web"],
+      request: async () => {
+        throw new Error("Should not be called.");
+      }
+    });
+
+    await expect(
+      source.listPullRequestChangedFiles({ repository: "other/repo", number: 1 })
+    ).resolves.toBeUndefined();
+  });
 });

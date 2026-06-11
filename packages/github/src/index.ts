@@ -111,6 +111,15 @@ export interface GitHubPullRequestLookupInput {
   number: number;
 }
 
+export interface GitHubPullRequestFileSnapshot {
+  path: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  /** Unified diff hunk; absent for binary or very large files. */
+  patch?: string;
+}
+
 export interface GitHubPullRequestListOptions {
   searchQuery?: string;
 }
@@ -197,6 +206,14 @@ interface GitHubUserFromApi {
   login: string;
 }
 
+interface GitHubPullRequestFileFromApi {
+  filename?: string;
+  status?: string;
+  additions?: number;
+  deletions?: number;
+  patch?: string;
+}
+
 export function createGithubTokenPullRequestSource(input: {
   token: string;
   repositories: string[];
@@ -204,7 +221,12 @@ export function createGithubTokenPullRequestSource(input: {
   closedLookbackDays?: number;
   maxPullRequests?: number;
   request?: RequestingOctokit["request"];
-}): GitHubPullRequestSource & { getViewerLogin(): Promise<string> } {
+}): GitHubPullRequestSource & {
+  getViewerLogin(): Promise<string>;
+  listPullRequestChangedFiles(
+    lookup: GitHubPullRequestLookupInput
+  ): Promise<GitHubPullRequestFileSnapshot[] | undefined>;
+} {
   const octokit: RequestingOctokit = {
     request:
       input.request ??
@@ -253,6 +275,13 @@ export function createGithubTokenPullRequestSource(input: {
       }
 
       return getTokenPullRequest(octokit, lookup);
+    },
+    async listPullRequestChangedFiles(lookup) {
+      if (!input.repositories.includes(lookup.repository)) {
+        return undefined;
+      }
+
+      return listTokenPullRequestChangedFiles(octokit, lookup);
     }
   };
 }
@@ -575,6 +604,67 @@ async function getTokenPullRequest(
       review_threads: graphqlFacts.reviewThreads,
       status_check_rollup: graphqlFacts.statusCheckRollup
     };
+  } catch (error) {
+    if (isGithubNotFoundError(error)) {
+      return undefined;
+    }
+
+    throw error;
+  }
+}
+
+/**
+ * Lists the changed files of a pull request with their unified-diff patches,
+ * for on-demand AI change summaries. Capped at three pages (300 files);
+ * beyond that the listing is representative enough for a summary and the
+ * prompt builder truncates further anyway.
+ */
+async function listTokenPullRequestChangedFiles(
+  octokit: RequestingOctokit,
+  lookup: GitHubPullRequestLookupInput
+): Promise<GitHubPullRequestFileSnapshot[] | undefined> {
+  const [owner, repo] = lookup.repository.split("/");
+  if (!owner || !repo) {
+    return undefined;
+  }
+
+  const files: GitHubPullRequestFileSnapshot[] = [];
+  const perPage = 100;
+  const maxPages = 3;
+
+  try {
+    for (let page = 1; page <= maxPages; page += 1) {
+      const response = await octokit.request<GitHubPullRequestFileFromApi[]>(
+        "GET /repos/{owner}/{repo}/pulls/{pull_number}/files",
+        {
+          owner,
+          repo,
+          pull_number: lookup.number,
+          per_page: perPage,
+          page
+        }
+      );
+
+      for (const file of response.data) {
+        if (!file.filename) {
+          continue;
+        }
+
+        files.push({
+          path: file.filename,
+          status: file.status ?? "modified",
+          additions: file.additions ?? 0,
+          deletions: file.deletions ?? 0,
+          patch: file.patch
+        });
+      }
+
+      if (response.data.length < perPage) {
+        break;
+      }
+    }
+
+    return files;
   } catch (error) {
     if (isGithubNotFoundError(error)) {
       return undefined;
