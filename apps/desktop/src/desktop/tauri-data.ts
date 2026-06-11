@@ -35,6 +35,7 @@ import type {
   GithubSettingsStatus,
   OnboardingState,
   PullRequestDetailResponse,
+  InsightsVisit,
   SaveGithubSettingsInput,
   SqliteBackupResult,
   SyncGithubDataResult,
@@ -50,6 +51,7 @@ const defaultLocalBoardId = "default-board"
 const githubSettingsKey = "github-settings"
 const onboardingSettingsKey = "onboarding"
 const attentionSettingsKey = "attention_thresholds"
+const insightsVisitSettingsKey = "insights-visit"
 const strongholdPasswordSettingsKey = "stronghold-unlock-secret"
 const githubTokenStoreKey = "github-token"
 const strongholdClientName = "review-ninja"
@@ -124,6 +126,7 @@ interface StrongholdSession {
 }
 
 let databasePromise: Promise<SqlDatabase> | undefined
+let insightsVisitAnchor: { previousVisitAt?: string } | undefined
 let lastSuccessfulSyncFingerprint: string | undefined
 let lastSuccessfulSyncScope: { pullRequestIds?: string[] } | undefined
 const transaction = createQueuedTransaction<SqlDatabase>()
@@ -244,6 +247,29 @@ export async function syncDesktopGithubData(input?: {
 
   await syncBeforeRead(db, { githubSearchQuery: input?.githubSearchQuery })
   return { status: "synced" }
+}
+
+export async function visitDesktopInsights(): Promise<InsightsVisit> {
+  const db = await getDatabase()
+
+  // The anchor stays fixed for the whole app session so revisits keep the
+  // same "since you were last here" window; only the stored value advances.
+  if (!insightsVisitAnchor) {
+    let previousVisitAt: string | undefined
+    const raw = await readAppSetting(db, insightsVisitSettingsKey)
+    if (raw) {
+      const parsed = JSON.parse(raw) as { value?: unknown }
+      if (typeof parsed.value === "string" && parsed.value.length > 0) {
+        previousVisitAt = parsed.value
+      }
+    }
+    insightsVisitAnchor = { previousVisitAt }
+  }
+
+  await writeAppSetting(db, insightsVisitSettingsKey, {
+    value: new Date().toISOString(),
+  })
+  return insightsVisitAnchor
 }
 
 export async function getDesktopSyncStatus(): Promise<SyncStatus> {

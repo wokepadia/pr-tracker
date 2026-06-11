@@ -47,6 +47,12 @@ export interface SyncStatus {
   lastSyncedAt?: string
 }
 
+export interface InsightsVisit {
+  /** Last insights visit before this app session, if any. Stable for the
+   * whole session so the "while you were away" window does not collapse. */
+  previousVisitAt?: string
+}
+
 export interface SaveGithubSettingsInput {
   token?: string
   repositories: string
@@ -114,6 +120,10 @@ export async function syncGithubData(
 
 export async function getSyncStatus(): Promise<SyncStatus> {
   return (await getDesktopApi()).getDesktopSyncStatus()
+}
+
+export async function visitInsights(): Promise<InsightsVisit> {
+  return (await getDesktopApi()).visitDesktopInsights()
 }
 
 export async function getGithubSettingsStatus(): Promise<GithubSettingsStatus> {
