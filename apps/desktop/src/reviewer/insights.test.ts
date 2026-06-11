@@ -309,7 +309,27 @@ describe("hygiene insights", () => {
       "stalled",
       "review_ping_pong",
     ])
-    expect(insights.hygiene[0]?.whyChip).toContain("11d")
+    expect(insights.hygiene[0]?.whyChip).toBe("No activity for 11d")
+  })
+
+  it("names the last event and uses week granularity on stalled chips", () => {
+    const insights = build({
+      items: [
+        makeItem({
+          id: "pr_stale",
+          workflowState: "stale",
+          waitingOn: "none",
+          updatedAtIso: daysAgo(44),
+          activityEvents: [
+            makeEvent({ id: "e1", type: "commit", occurredAtIso: daysAgo(44) }),
+          ],
+        }),
+      ],
+    })
+
+    expect(insights.hygiene[0]?.whyChip).toBe(
+      "No activity for 6w — last was a commit"
+    )
   })
 })
 
