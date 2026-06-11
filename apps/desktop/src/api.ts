@@ -8,6 +8,10 @@ import type {
   PrSummaryContent,
   ThreadStateContent,
 } from "@/ai/summaries"
+import type {
+  QueueBriefContent,
+  QueueBriefInput,
+} from "@/ai/queue-brief"
 
 export interface PullRequestDetailResponse {
   viewer: Actor
@@ -221,6 +225,18 @@ export async function generateAiThreadState(
   pullRequestId: string
 ): Promise<AiGenerated<ThreadStateContent>> {
   return (await getDesktopApi()).generateDesktopAiThreadState(pullRequestId)
+}
+
+export async function getAiQueueBrief(
+  input: QueueBriefInput
+): Promise<AiGenerated<QueueBriefContent> | null> {
+  return (await getDesktopApi()).getDesktopAiQueueBrief(input)
+}
+
+export async function generateAiQueueBrief(
+  input: QueueBriefInput
+): Promise<AiGenerated<QueueBriefContent>> {
+  return (await getDesktopApi()).generateDesktopAiQueueBrief(input)
 }
 
 export async function getOnboardingState(): Promise<OnboardingState> {

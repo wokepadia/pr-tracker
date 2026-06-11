@@ -52,6 +52,14 @@ import {
 import { hashContent } from "@/ai/content-hash"
 import { requestStructuredCompletion } from "@/ai/openrouter"
 import {
+  buildQueueBriefPrompt,
+  normalizeQueueBriefContent,
+  queueBriefSchema,
+  queueBriefSchemaName,
+  type QueueBriefContent,
+  type QueueBriefInput,
+} from "@/ai/queue-brief"
+import {
   buildCatchUpDigestPrompt,
   buildPrSummaryPrompt,
   buildThreadStatePrompt,
@@ -812,6 +820,69 @@ export async function generateDesktopAiThreadState(
   await writeAiSummaryRow(db, pullRequestId, "thread-state", {
     cacheKey: await hashContent(
       `thread-state\n${config.model}\n${input.prompt.user}`
+    ),
+    model: config.model,
+    contentJson: JSON.stringify(content),
+    generatedAt,
+  })
+
+  return { content, generatedAt, model: config.model, isStale: false }
+}
+
+const queueBriefSentinelId = "queue"
+
+export async function getDesktopAiQueueBrief(
+  input: QueueBriefInput
+): Promise<AiGenerated<QueueBriefContent> | null> {
+  const db = await getDatabase()
+  const row = await readAiSummaryRow(db, queueBriefSentinelId, "insights-brief")
+  if (!row) {
+    return null
+  }
+
+  const settings = await readLocalAiSettings(db)
+  const prompt = buildQueueBriefPrompt(input)
+  const expectedKey = await hashContent(
+    `insights-brief\n${settings.model}\n${prompt.user}`
+  )
+
+  return {
+    content: normalizeQueueBriefContent(
+      JSON.parse(row.content_json),
+      input.items.map((item) => item.id)
+    ),
+    generatedAt: row.generated_at,
+    model: row.model,
+    isStale: expectedKey !== row.cache_key,
+  }
+}
+
+export async function generateDesktopAiQueueBrief(
+  input: QueueBriefInput
+): Promise<AiGenerated<QueueBriefContent>> {
+  const db = await getDatabase()
+  const config = await requireActiveAiConfig(db)
+  if (input.items.length === 0) {
+    throw new Error("There are no insights to brief right now.")
+  }
+
+  const prompt = buildQueueBriefPrompt(input)
+  const content = normalizeQueueBriefContent(
+    await requestStructuredCompletion<QueueBriefContent>({
+      apiKey: config.apiKey,
+      model: config.model,
+      system: prompt.system,
+      user: prompt.user,
+      schemaName: queueBriefSchemaName,
+      schema: queueBriefSchema,
+    }),
+    input.items.map((item) => item.id)
+  )
+
+  const generatedAt = new Date().toISOString()
+  await writeAiSummaryRow(db, queueBriefSentinelId, "insights-brief", {
+    cacheKey: await hashContent(
+      `insights-brief\n${config.model}\n${prompt.user}`
     ),
     model: config.model,
     contentJson: JSON.stringify(content),
@@ -2181,7 +2252,11 @@ async function writeAiApiKey(db: SqlDatabase, apiKey: string): Promise<void> {
   aiApiKeyReadPromise = Promise.resolve(apiKey)
 }
 
-type AiSummaryKind = "pr-summary" | "catch-up-digest" | "thread-state"
+type AiSummaryKind =
+  | "pr-summary"
+  | "catch-up-digest"
+  | "thread-state"
+  | "insights-brief"
 
 interface AiSummaryRow {
   cache_key: string
