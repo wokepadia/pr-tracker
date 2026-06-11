@@ -151,8 +151,7 @@ export async function getDesktopReviewerInbox(input?: {
   const pullRequests = await loadPullRequests(db, {
     ids: input?.githubSearchQuery ? readScope?.pullRequestIds ?? [] : undefined,
   })
-  const settings = await readLocalGithubSettings(db)
-  const viewerLogin = settings.viewerLogin ?? "viewer"
+  const viewerLogin = await resolveViewerLogin(db)
   const actors = buildActors(
     pullRequests,
     [viewerLogin],
@@ -180,8 +179,7 @@ export async function getDesktopPullRequest(
     throw new Error("Pull request not found.")
   }
 
-  const settings = await readLocalGithubSettings(db)
-  const viewerLogin = settings.viewerLogin ?? "viewer"
+  const viewerLogin = await resolveViewerLogin(db)
   const actors = buildActors(
     pullRequests,
     [viewerLogin],
@@ -1747,6 +1745,26 @@ async function readOnboardingState(db: SqlDatabase): Promise<OnboardingState> {
         ? parsed.introSkippedAt
         : undefined,
   }
+}
+
+/**
+ * Resolves the viewer identity for classification reads. The explicit
+ * Settings username wins, then the login the last sync resolved from the
+ * token (stored on local_profile). Without this fallback a blank username
+ * field made reads classify against the literal "viewer", so no real pull
+ * request could ever match the user.
+ */
+async function resolveViewerLogin(db: SqlDatabase): Promise<string> {
+  const settings = await readLocalGithubSettings(db)
+  if (settings.viewerLogin) {
+    return settings.viewerLogin
+  }
+
+  const rows = await db.select<Array<{ github_login: string | null }>>(
+    `select github_login from local_profile where id = $1`,
+    [defaultLocalProfileId]
+  )
+  return rows[0]?.github_login ?? "viewer"
 }
 
 async function readAppSetting(
