@@ -98,6 +98,7 @@ interface LocalPullRequestRow {
   changed_files: number | null
   github_created_at: string | null
   github_updated_at: string | null
+  merged_at: string | null
   raw_payload_json: string
 }
 
@@ -951,11 +952,12 @@ async function upsertPullRequestItem(
         id, github_node_id, repository_id, number, title, body, url,
         author_account_id, state, is_draft, latest_commit_sha,
         additions, deletions, changed_files,
-        github_created_at, github_updated_at, raw_payload_json, created_at, updated_at
+        github_created_at, github_updated_at, merged_at,
+        raw_payload_json, created_at, updated_at
       )
       values (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-        $17, $18, $19
+        $17, $18, $19, $20
       )
       on conflict(github_node_id)
       do update set
@@ -972,6 +974,7 @@ async function upsertPullRequestItem(
         changed_files = excluded.changed_files,
         github_created_at = excluded.github_created_at,
         github_updated_at = excluded.github_updated_at,
+        merged_at = excluded.merged_at,
         raw_payload_json = excluded.raw_payload_json,
         updated_at = excluded.updated_at
     `,
@@ -984,6 +987,8 @@ async function upsertPullRequestItem(
       pullRequest.description ?? null,
       pullRequest.url,
       authorAccountId,
+      // The schema constrains state to open/closed; merged survives the
+      // round trip through merged_at.
       pullRequest.state === "merged" ? "closed" : pullRequest.state,
       boolToSqlite(pullRequest.isDraft),
       pullRequest.latestCommitSha,
@@ -992,6 +997,7 @@ async function upsertPullRequestItem(
       pullRequest.changedFiles ?? null,
       pullRequest.createdAt,
       pullRequest.updatedAt,
+      pullRequest.state === "merged" ? pullRequest.updatedAt : null,
       JSON.stringify(options.rawPayload ?? pullRequest),
       now,
       now,
@@ -1418,6 +1424,7 @@ async function listPullRequestRows(
         pr.changed_files,
         pr.github_created_at,
         pr.github_updated_at,
+        pr.merged_at,
         pr.raw_payload_json
       from pull_requests pr
       join github_repositories repo on repo.id = pr.repository_id
@@ -1460,7 +1467,7 @@ async function toPullRequestItem(
     description: row.body ?? descriptionFromRawPayload(row.raw_payload_json),
     url: row.url,
     authorId: row.author_login,
-    state: row.state as PullRequestItem["state"],
+    state: row.merged_at ? "merged" : (row.state as PullRequestItem["state"]),
     isDraft: Boolean(row.is_draft),
     createdAt: row.github_created_at ?? new Date().toISOString(),
     updatedAt: row.github_updated_at ?? new Date().toISOString(),
