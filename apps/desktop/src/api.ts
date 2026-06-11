@@ -60,6 +60,18 @@ export interface SaveGithubSettingsInput {
   apiBaseUrl?: string
 }
 
+export interface AiSettingsStatus {
+  enabled: boolean
+  model: string
+  apiKeyConfigured: boolean
+}
+
+export interface SaveAiSettingsInput {
+  apiKey?: string
+  model?: string
+  enabled: boolean
+}
+
 export interface BoardState {
   buckets: Array<{ id: string; label: string }>
   localQueueState: Partial<Record<
@@ -148,6 +160,16 @@ export async function saveAttentionSettings(
   input: AttentionSettings
 ): Promise<AttentionSettings> {
   return (await getDesktopApi()).saveDesktopAttentionSettings(input)
+}
+
+export async function getAiSettings(): Promise<AiSettingsStatus> {
+  return (await getDesktopApi()).getDesktopAiSettings()
+}
+
+export async function saveAiSettings(
+  input: SaveAiSettingsInput
+): Promise<AiSettingsStatus> {
+  return (await getDesktopApi()).saveDesktopAiSettings(input)
 }
 
 export async function getOnboardingState(): Promise<OnboardingState> {

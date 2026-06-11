@@ -30,17 +30,24 @@ import {
   join,
 } from "@tauri-apps/api/path"
 import type {
+  AiSettingsStatus,
   AttentionSettings,
   BoardState,
   GithubSettingsStatus,
   OnboardingState,
   PullRequestDetailResponse,
   InsightsVisit,
+  SaveAiSettingsInput,
   SaveGithubSettingsInput,
   SqliteBackupResult,
   SyncGithubDataResult,
   SyncStatus,
 } from "@/api"
+import {
+  normalizeAiModel,
+  normalizeStoredAiSettings,
+  type StoredAiSettings,
+} from "@/ai/ai-settings"
 import { defaultAttentionThresholds } from "@/reviewer/view-model"
 import { localDesktopSchemaSql } from "../../../../packages/db/src/local-schema"
 import { createQueuedTransaction } from "./sqlite-transaction"
@@ -58,8 +65,12 @@ const githubTokenStoreKey = "github-token"
 const strongholdClientName = "review-ninja"
 const strongholdFilename = "github-token.stronghold"
 const desktopTokenStorage = "stronghold"
+const aiSettingsKey = "ai-settings"
+const openRouterApiKeyStoreKey = "openrouter-api-key"
 let cachedToken: string | undefined
 let tokenReadPromise: Promise<string | undefined> | undefined
+let cachedAiApiKey: string | undefined
+let aiApiKeyReadPromise: Promise<string | undefined> | undefined
 let strongholdSessionPromise: Promise<StrongholdSession> | undefined
 
 type SqlValue = string | number | boolean | null
@@ -545,6 +556,47 @@ function normalizeThresholdHours(value: unknown, fallback: number): number {
     return fallback
   }
   return Math.round(value)
+}
+
+export async function getDesktopAiSettings(): Promise<AiSettingsStatus> {
+  const db = await getDatabase()
+  const stored = await readLocalAiSettings(db)
+  // Verify the key still exists in Stronghold only when settings claim one,
+  // so loading the settings page never creates the vault by itself.
+  const apiKeyConfigured = stored.apiKeyConfigured
+    ? Boolean(await readAiApiKey(db))
+    : false
+
+  return { enabled: stored.enabled, model: stored.model, apiKeyConfigured }
+}
+
+export async function saveDesktopAiSettings(
+  input: SaveAiSettingsInput
+): Promise<AiSettingsStatus> {
+  const db = await getDatabase()
+  const existing = await readLocalAiSettings(db)
+  const apiKey = input.apiKey?.trim()
+  let apiKeyConfigured = false
+
+  if (apiKey) {
+    await writeAiApiKey(db, apiKey)
+    apiKeyConfigured = true
+  } else {
+    apiKeyConfigured =
+      existing.apiKeyConfigured && Boolean(await readAiApiKey(db))
+  }
+
+  if (input.enabled && !apiKeyConfigured) {
+    throw new Error("An OpenRouter API key is required to enable AI mode.")
+  }
+
+  const settings: StoredAiSettings = {
+    enabled: input.enabled,
+    model: normalizeAiModel(input.model),
+    apiKeyConfigured,
+  }
+  await writeAppSetting(db, aiSettingsKey, settings)
+  return settings
 }
 
 export async function getDesktopOnboardingState(): Promise<OnboardingState> {
@@ -1847,6 +1899,47 @@ async function writeToken(db: SqlDatabase, token: string): Promise<void> {
   await stronghold.save()
   cachedToken = token
   tokenReadPromise = Promise.resolve(token)
+}
+
+async function readLocalAiSettings(db: SqlDatabase): Promise<StoredAiSettings> {
+  const raw = await readAppSetting(db, aiSettingsKey)
+  if (!raw) return normalizeStoredAiSettings(undefined)
+
+  try {
+    return normalizeStoredAiSettings(JSON.parse(raw))
+  } catch {
+    return normalizeStoredAiSettings(undefined)
+  }
+}
+
+async function readAiApiKey(db: SqlDatabase): Promise<string | undefined> {
+  if (cachedAiApiKey) {
+    return cachedAiApiKey
+  }
+
+  aiApiKeyReadPromise ??= readAiApiKeyFromStronghold(db)
+  return aiApiKeyReadPromise
+}
+
+async function readAiApiKeyFromStronghold(
+  db: SqlDatabase
+): Promise<string | undefined> {
+  const { store } = await getStrongholdSession(db)
+  const keyBytes = await store.get(openRouterApiKeyStoreKey)
+  cachedAiApiKey = keyBytes ? bytesToString(keyBytes) : undefined
+  if (!cachedAiApiKey) {
+    aiApiKeyReadPromise = undefined
+  }
+
+  return cachedAiApiKey
+}
+
+async function writeAiApiKey(db: SqlDatabase, apiKey: string): Promise<void> {
+  const { stronghold, store } = await getStrongholdSession(db)
+  await store.insert(openRouterApiKeyStoreKey, stringToBytes(apiKey))
+  await stronghold.save()
+  cachedAiApiKey = apiKey
+  aiApiKeyReadPromise = Promise.resolve(apiKey)
 }
 
 async function getStrongholdSession(

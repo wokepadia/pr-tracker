@@ -20,6 +20,7 @@ import {
   getGithubSettingsStatus,
   saveAttentionSettings,
 } from "@/api"
+import { AiSettingsCard } from "@/components/AiSettingsCard"
 import { GithubSettingsForm } from "@/components/GithubSettingsForm"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -108,6 +109,8 @@ export function SettingsPage() {
         </Card>
 
         <AttentionTimingCard />
+
+        <AiSettingsCard />
 
         <Card className="rounded-md border-border p-5 shadow-none">
           <div className="flex items-start justify-between gap-5">
