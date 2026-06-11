@@ -283,12 +283,74 @@ Gotchas for the no-tools use case:
   is "user's existing opencode trust domain," slightly weaker
   than direct-to-provider with keys in the OS keychain.
 
+### 8. Hosted gateways: Zen, OpenRouter, Vercel AI Gateway
+(follow-up, 2026-06-11)
+
+Prompted by the decision to avoid both a first-party BYOK layer
+and an agent harness: the question was whether OpenCode offers a
+plain "API gateway + SDK" instead of the agent server.
+
+- **The local `opencode serve` is NOT a gateway.** It exposes
+  only the session/agent API; there is no plain
+  `/v1/chat/completions` proxy over the user's configured
+  providers. That exact feature was requested
+  (anomalyco/opencode#9736) and closed without commitment. The
+  community `ai-sdk-provider-opencode-sdk` package just wraps
+  agent sessions with an AI SDK facade (documented limits: no
+  temperature control, inconsistent structured output).
+- **OpenCode Zen IS a standalone gateway.** Hosted at
+  `https://opencode.ai/zen/v1` with OpenAI-compatible
+  (`/chat/completions`, `/responses`) and Anthropic-compatible
+  (`/messages`) endpoints. Works from any standard OpenAI/
+  Anthropic/AI-SDK client with a base URL — the opencode CLI is
+  not required and there is no dedicated SDK to adopt. Users
+  sign up at opencode.ai/auth, pay-as-you-go credits with
+  zero-markup token pricing, optional BYOK passthrough. 50+
+  curated models. Caveats: young product (billing-bug and
+  rate-limit anecdotes in the issue tracker, no SLA), no
+  documented structured-output guarantee, and 30-day retention
+  on OpenAI- and Anthropic-routed requests — exactly the
+  frontier models a PR-review feature would use.
+- **OpenRouter** is the mature equivalent: OpenAI-compatible API
+  + TS SDK, user-owned credits or BYOK passthrough (5% fee,
+  first 1M BYOK requests/month waived), prompts not logged by
+  default, enforceable zero-data-retention routing (global or
+  per-request `zdr` parameter), and structured outputs via
+  `response_format: json_schema` as an explicitly documented
+  feature.
+- **Vercel AI Gateway** (`https://ai-gateway.vercel.sh/v1`):
+  OpenAI/Anthropic-compatible, zero markup, BYOK with no fee —
+  but requires the end user to have a Vercel account, which is
+  awkward friction.
+- **LiteLLM proxy** is the self-run privacy ceiling (nothing
+  transits a third party) but puts real ops burden (Docker/pip,
+  config.yaml, env keys) on the user; support implicitly via
+  the base-URL field rather than as a headline path.
+
+The convergent insight: all of these — Zen, OpenRouter, Vercel
+AI Gateway, LiteLLM, and local servers like Ollama — speak the
+same OpenAI chat-completions wire format. The app therefore
+needs exactly ONE OpenAI-format HTTP client plus a base-URL +
+API-key + model settings form. The "BYOK layer" the developer
+wanted to avoid building reduces to that single client; the
+multi-provider abstraction, model routing, and billing all live
+in whichever gateway the user picks. Tradeoff to disclose: with
+any hosted gateway, PR diffs and comments transit the gateway's
+servers en route to the provider, and no gateway offers the
+subscription (Copilot/ChatGPT/Claude-plan) paths — those exist
+only through the vendor harnesses in sections 2 and 6-7.
+
 ## Recommended architecture
 
-Direction update (2026-06-11): the developer does not want to
-build or maintain a first-party BYOK/provider layer. That
-leaves two viable shapes, both keeping a single "analysis
-provider" interface in front of the rest of the app:
+Direction update (2026-06-11, second revision): the developer
+wants neither a first-party BYOK/provider layer nor an agent
+harness — a gateway + SDK shape. Per section 8, that resolves
+to a single OpenAI-compatible client pointed at a user-supplied
+base URL + key, with OpenRouter as the recommended default
+gateway (documented structured outputs, no-logging default,
+per-request ZDR), Zen/Vercel-Gateway/LiteLLM/Ollama supported
+automatically through the same field. The earlier candidate
+shapes are kept below for reference:
 
 - **OpenCode as the complete AI backend** (section 7b): spawn a
   private `opencode serve` with injected locked-down config and
