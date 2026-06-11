@@ -217,7 +217,9 @@ export function PullRequestPage() {
     updateLocalItemState(itemId, (current) => ({
       ...current,
       muted: undefined,
+      mutedAt: undefined,
       snoozed: true,
+      snoozedAt: new Date().toISOString(),
     }))
   }
 
@@ -227,7 +229,9 @@ export function PullRequestPage() {
     updateLocalItemState(itemId, (current) => {
       const next = { ...current }
       delete next.snoozed
+      delete next.snoozedAt
       delete next.muted
+      delete next.mutedAt
       return next
     })
   }
@@ -247,6 +251,7 @@ export function PullRequestPage() {
     updateLocalItemState(itemId, (current) => ({
       ...current,
       muted: true,
+      mutedAt: new Date().toISOString(),
     }))
   }
 

@@ -1,7 +1,11 @@
 export interface LocalPullRequestQueueState {
   snoozed?: boolean
+  /** When the snooze was applied; set alongside `snoozed`. */
+  snoozedAt?: string
   pinned?: boolean
   muted?: boolean
+  /** When the mute was applied; set alongside `muted`. */
+  mutedAt?: string
   bucketId?: UserBucketId
   notes?: string
 }

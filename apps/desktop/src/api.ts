@@ -60,8 +60,10 @@ export interface BoardState {
     string,
     {
       snoozed?: boolean
+      snoozedAt?: string
       pinned?: boolean
       muted?: boolean
+      mutedAt?: string
       bucketId?: string
       notes?: string
     }

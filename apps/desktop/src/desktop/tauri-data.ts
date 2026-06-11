@@ -105,7 +105,9 @@ interface LocalBoardItemStateRow {
   last_seen_at: string | null
   notes: string | null
   is_snoozed: number
+  snoozed_at: string | null
   is_muted: number
+  muted_at: string | null
   is_pinned: number
 }
 
@@ -273,7 +275,9 @@ export async function saveDesktopBoardState(
       columnId: string
       sortOrder: number
       snoozed?: boolean
+      snoozedAt?: string
       muted?: boolean
+      mutedAt?: string
       pinned?: boolean
       notes?: string
     }
@@ -306,7 +310,9 @@ export async function saveDesktopBoardState(
       columnId,
       sortOrder: current?.sortOrder ?? itemByPullRequestId.size,
       snoozed: itemState.snoozed,
+      snoozedAt: itemState.snoozed ? itemState.snoozedAt : undefined,
       muted: itemState.muted,
+      mutedAt: itemState.muted ? itemState.mutedAt : undefined,
       pinned: itemState.pinned,
       notes: itemState.notes,
     })
@@ -360,16 +366,19 @@ export async function saveDesktopBoardState(
         `
           insert into board_items (
             id, board_id, pull_request_id, column_id, sort_order,
-            notes, is_snoozed, is_muted, is_pinned, created_at, updated_at, archived_at
+            notes, is_snoozed, snoozed_at, is_muted, muted_at, is_pinned,
+            created_at, updated_at, archived_at
           )
-          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, null)
+          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, null)
           on conflict(board_id, pull_request_id)
           do update set
             column_id = excluded.column_id,
             sort_order = excluded.sort_order,
             notes = excluded.notes,
             is_snoozed = excluded.is_snoozed,
+            snoozed_at = excluded.snoozed_at,
             is_muted = excluded.is_muted,
+            muted_at = excluded.muted_at,
             is_pinned = excluded.is_pinned,
             archived_at = null,
             updated_at = excluded.updated_at
@@ -382,7 +391,9 @@ export async function saveDesktopBoardState(
           item.sortOrder,
           cleanOptionalText(item.notes),
           boolToSqlite(Boolean(item.snoozed)),
+          item.snoozed ? item.snoozedAt ?? now : null,
           boolToSqlite(Boolean(item.muted)),
+          item.muted ? item.mutedAt ?? now : null,
           boolToSqlite(Boolean(item.pinned)),
           now,
           now,
@@ -541,6 +552,7 @@ async function initializeDatabase(): Promise<SqlDatabase> {
     await db.execute(statement)
   }
   await ensureBoardItemNotesColumn(db)
+  await ensureBoardItemAttentionTimestampColumns(db)
   await ensureReviewThreadLedgerColumns(db)
   await ensurePullRequestSizeColumns(db)
   return db
@@ -1309,7 +1321,9 @@ async function loadBoardState(db: SqlDatabase): Promise<BoardState> {
     localQueueState[row.pull_request_id] = {
       bucketId: row.column_id ?? undefined,
       snoozed: row.is_snoozed ? true : undefined,
+      snoozedAt: row.is_snoozed ? row.snoozed_at ?? undefined : undefined,
       muted: row.is_muted ? true : undefined,
+      mutedAt: row.is_muted ? row.muted_at ?? undefined : undefined,
       pinned: row.is_pinned ? true : undefined,
       notes: row.notes ?? undefined,
     }
@@ -1604,7 +1618,9 @@ async function listBoardItemStateRows(
         last_seen_at,
         notes,
         is_snoozed,
+        snoozed_at,
         is_muted,
+        muted_at,
         is_pinned
       from board_items
       where board_id = $1 and archived_at is null
@@ -2178,6 +2194,21 @@ async function ensureBoardItemNotesColumn(db: SqlDatabase): Promise<void> {
   if (rows.some((row) => row.name === "notes")) return
 
   await db.execute(`alter table board_items add column notes text`)
+}
+
+async function ensureBoardItemAttentionTimestampColumns(
+  db: SqlDatabase
+): Promise<void> {
+  const rows = await db.select<Array<{ name: string }>>(
+    `pragma table_info(board_items)`
+  )
+  const columnNames = new Set(rows.map((row) => row.name))
+
+  for (const column of ["snoozed_at", "muted_at"]) {
+    if (!columnNames.has(column)) {
+      await db.execute(`alter table board_items add column ${column} text`)
+    }
+  }
 }
 
 async function ensurePullRequestSizeColumns(db: SqlDatabase): Promise<void> {
