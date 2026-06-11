@@ -1,6 +1,11 @@
 # Insights Dashboard Plan
 
-Status: researched 2026-06-11, not yet implemented.
+Status: implemented 2026-06-11 (insights 1–11, all three phases). The
+optional personal-pace stat (#12) was dropped, and CI insights remain
+deferred on F10 check-run ingestion. The data gaps below are closed:
+snoozed_at/muted_at columns exist, visitInsights records the visit
+anchor, and buildReviewerInsights in
+apps/desktop/src/reviewer/insights.ts is the projection module.
 
 ## Concept
 
