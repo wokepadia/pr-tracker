@@ -23,6 +23,12 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: false,
+      // Reads come from local SQLite and only change after local mutations
+      // or background syncs, both of which invalidate their queries
+      // explicitly. A short stale time plus a long cache keeps screen
+      // switches instant instead of refetching everything on every mount.
+      staleTime: 30_000,
+      gcTime: 30 * 60_000,
     },
     mutations: {
       retry: false,
