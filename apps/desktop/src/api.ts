@@ -49,7 +49,7 @@ export interface SyncGithubDataInput {
 }
 
 export interface SyncGithubDataResult {
-  status: "synced" | "no-credentials"
+  status: "synced" | "already-fresh" | "no-credentials"
 }
 
 export interface SyncStatus {

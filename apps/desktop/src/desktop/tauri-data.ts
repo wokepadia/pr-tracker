@@ -87,6 +87,9 @@ const githubSettingsKey = "github-settings"
 const onboardingSettingsKey = "onboarding"
 const attentionSettingsKey = "attention_thresholds"
 const insightsVisitSettingsKey = "insights-visit"
+const lastSyncSuccessSettingsKey = "github-sync-last-success"
+const githubSyncFreshnessMs = 5 * 60 * 1000
+const githubSyncFailureCooldownMs = 60 * 1000
 const closedPullRequestReadLookbackDays = 14
 const strongholdPasswordSettingsKey = "stronghold-unlock-secret"
 const githubTokenStoreKey = "github-token"
@@ -167,14 +170,32 @@ interface StrongholdSession {
   store: StrongholdStore
 }
 
+interface SyncScope {
+  pullRequestIds?: string[]
+}
+
+interface SyncSuccess {
+  finishedAtMs: number
+  scope?: SyncScope
+}
+
+interface SyncBeforeReadResult {
+  scope?: SyncScope
+  didSync: boolean
+  hasCredentials: boolean
+}
+
 let databasePromise: Promise<SqlDatabase> | undefined
 let insightsVisitAnchor: { previousVisitAt?: string } | undefined
-let lastSuccessfulSyncFingerprint: string | undefined
-let lastSuccessfulSyncScope: { pullRequestIds?: string[] } | undefined
+const lastSuccessfulSyncByFingerprint = new Map<string, SyncSuccess>()
+const lastFailedSyncByFingerprint = new Map<
+  string,
+  { failedAtMs: number; error: unknown }
+>()
 const transaction = createQueuedTransaction<SqlDatabase>()
 const syncPromiseByFingerprint = new Map<
   string,
-  Promise<{ pullRequestIds?: string[] } | undefined>
+  Promise<SyncBeforeReadResult>
 >()
 
 export async function getDesktopReviewerInbox(input?: {
@@ -185,7 +206,7 @@ export async function getDesktopReviewerInbox(input?: {
   // default inbox reads local SQLite only; syncDesktopGithubData refreshes
   // it in the background.
   const readScope = input?.githubSearchQuery
-    ? await syncBeforeRead(db, input)
+    ? (await syncBeforeRead(db, input)).scope
     : undefined
   const pullRequests = await loadPullRequests(db, {
     ids: input?.githubSearchQuery ? readScope?.pullRequestIds ?? [] : undefined,
@@ -272,21 +293,16 @@ export async function syncDesktopGithubData(input?: {
   force?: boolean
 }): Promise<SyncGithubDataResult> {
   const db = await getDatabase()
-  if (input?.force) {
-    lastSuccessfulSyncFingerprint = undefined
-    lastSuccessfulSyncScope = undefined
+  const { didSync, hasCredentials } = await syncBeforeRead(db, {
+    githubSearchQuery: input?.githubSearchQuery,
+    force: input?.force,
+  })
+  // "synced" means local data changed (a GitHub sync or sample-data seed
+  // landed); callers refresh their reads only for this status.
+  if (didSync) {
+    return { status: "synced" }
   }
-
-  const credentials = await loadLocalGithubCredentials(db)
-  if (!credentials) {
-    if (await isLocalDatabaseEmpty(db)) {
-      await seedLocalSampleData(db)
-    }
-    return { status: "no-credentials" }
-  }
-
-  await syncBeforeRead(db, { githubSearchQuery: input?.githubSearchQuery })
-  return { status: "synced" }
+  return { status: hasCredentials ? "already-fresh" : "no-credentials" }
 }
 
 export async function visitDesktopInsights(): Promise<InsightsVisit> {
@@ -521,7 +537,8 @@ export async function saveDesktopGithubSettings(
     tokenConfigured,
     tokenStorage: desktopTokenStorage,
   })
-  lastSuccessfulSyncFingerprint = undefined
+  lastSuccessfulSyncByFingerprint.clear()
+  lastFailedSyncByFingerprint.clear()
 
   return {
     repositories,
@@ -949,22 +966,45 @@ async function dropOutdatedAiSummariesTable(db: SqlDatabase): Promise<void> {
 
 async function syncBeforeRead(
   db: SqlDatabase,
-  options: { githubSearchQuery?: string } = {}
-): Promise<{ pullRequestIds?: string[] } | undefined> {
+  options: { githubSearchQuery?: string; force?: boolean } = {}
+): Promise<SyncBeforeReadResult> {
   const credentials = await loadLocalGithubCredentials(db)
   if (!credentials) {
+    // Seeding counts as a sync: it changes local data, so callers must
+    // refresh their reads just like after a real GitHub sync.
     if (await isLocalDatabaseEmpty(db)) {
       await seedLocalSampleData(db)
+      return { didSync: true, hasCredentials: false }
     }
-    return
+    return { didSync: false, hasCredentials: false }
   }
 
   const fingerprint = JSON.stringify({
     credentials: localGithubSettingsFingerprint(credentials),
     githubSearchQuery: options.githubSearchQuery ?? "",
   })
-  if (lastSuccessfulSyncFingerprint === fingerprint) {
-    return lastSuccessfulSyncScope
+  if (!options.force) {
+    const freshSuccess = await loadFreshSyncSuccess(db, fingerprint, {
+      hasSearchQuery: Boolean(options.githubSearchQuery),
+    })
+    if (freshSuccess) {
+      return {
+        scope: freshSuccess.scope,
+        didSync: false,
+        hasCredentials: true,
+      }
+    }
+
+    // After a failure, background triggers (refocus, intervals) re-throw
+    // the remembered error instead of hammering GitHub; the next real
+    // attempt happens after the cooldown or on a manual sync.
+    const lastFailure = lastFailedSyncByFingerprint.get(fingerprint)
+    if (
+      lastFailure &&
+      Date.now() - lastFailure.failedAtMs < githubSyncFailureCooldownMs
+    ) {
+      throw lastFailure.error
+    }
   }
 
   const existingSyncPromise = syncPromiseByFingerprint.get(fingerprint)
@@ -984,12 +1024,54 @@ async function syncBeforeRead(
   return syncPromise
 }
 
+/**
+ * Returns the last successful sync for this fingerprint while it is still
+ * within the freshness window. The default-scope success survives app
+ * restarts via app_settings, so reopening the desktop window shortly after
+ * a sync renders local data without kicking off another GitHub round trip.
+ */
+async function loadFreshSyncSuccess(
+  db: SqlDatabase,
+  fingerprint: string,
+  options: { hasSearchQuery: boolean }
+): Promise<SyncSuccess | undefined> {
+  const isFresh = (finishedAtMs: number) =>
+    Date.now() - finishedAtMs < githubSyncFreshnessMs
+
+  const cached = lastSuccessfulSyncByFingerprint.get(fingerprint)
+  if (cached) {
+    return isFresh(cached.finishedAtMs) ? cached : undefined
+  }
+  if (options.hasSearchQuery) return undefined
+
+  const raw = await readAppSetting(db, lastSyncSuccessSettingsKey)
+  if (!raw) return undefined
+  const persisted = JSON.parse(raw) as {
+    fingerprint?: unknown
+    finishedAt?: unknown
+  }
+  if (
+    persisted.fingerprint !== fingerprint ||
+    typeof persisted.finishedAt !== "string"
+  ) {
+    return undefined
+  }
+  const finishedAtMs = Date.parse(persisted.finishedAt)
+  if (!Number.isFinite(finishedAtMs) || !isFresh(finishedAtMs)) {
+    return undefined
+  }
+
+  const success: SyncSuccess = { finishedAtMs }
+  lastSuccessfulSyncByFingerprint.set(fingerprint, success)
+  return success
+}
+
 async function syncLocalGithubData(
   db: SqlDatabase,
   credentials: LocalGithubCredentials,
   options: { githubSearchQuery?: string },
   fingerprint: string
-): Promise<{ pullRequestIds?: string[] } | undefined> {
+): Promise<SyncBeforeReadResult> {
   const source = createGithubTokenPullRequestSource({
     token: credentials.token,
     repositories: credentials.repositories,
@@ -1033,16 +1115,27 @@ async function syncLocalGithubData(
       }
     })
     await finishLocalSyncRun(db, syncRunId, "succeeded", result)
-    lastSuccessfulSyncScope = options.githubSearchQuery
-      ? { pullRequestIds }
-      : undefined
-    lastSuccessfulSyncFingerprint = fingerprint
+    const scope = options.githubSearchQuery ? { pullRequestIds } : undefined
+    lastFailedSyncByFingerprint.delete(fingerprint)
+    lastSuccessfulSyncByFingerprint.set(fingerprint, {
+      finishedAtMs: Date.now(),
+      scope,
+    })
+    if (!options.githubSearchQuery) {
+      await writeAppSetting(db, lastSyncSuccessSettingsKey, {
+        fingerprint,
+        finishedAt: new Date().toISOString(),
+      })
+    }
+    return { scope, didSync: true, hasCredentials: true }
   } catch (error) {
     await finishLocalSyncRun(db, syncRunId, "failed", result, error)
+    lastFailedSyncByFingerprint.set(fingerprint, {
+      failedAtMs: Date.now(),
+      error,
+    })
     throw error
   }
-
-  return lastSuccessfulSyncScope
 }
 
 async function startLocalSyncRun(
