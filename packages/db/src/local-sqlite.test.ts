@@ -81,6 +81,59 @@ describe("local SQLite storage", () => {
     }
   });
 
+  it("caches one AI summary per pull request and kind", () => {
+    const local = openLocalDatabase({ path: ":memory:" });
+
+    try {
+      const insert = local.db.prepare(`
+        insert into ai_summaries
+          (pull_request_id, kind, cache_key, model, content_json, generated_at)
+        values (?, ?, ?, ?, ?, ?)
+        on conflict(pull_request_id, kind)
+        do update set
+          cache_key = excluded.cache_key,
+          model = excluded.model,
+          content_json = excluded.content_json,
+          generated_at = excluded.generated_at
+      `);
+      insert.run(
+        "pr_1",
+        "pr-summary",
+        "hash-a",
+        "anthropic/claude-sonnet-4.6",
+        '{"overview":"first"}',
+        "2026-06-11T10:00:00.000Z"
+      );
+      insert.run(
+        "pr_1",
+        "pr-summary",
+        "hash-b",
+        "anthropic/claude-sonnet-4.6",
+        '{"overview":"second"}',
+        "2026-06-11T11:00:00.000Z"
+      );
+
+      const rows = local.db
+        .prepare(
+          `select cache_key, content_json from ai_summaries
+           where pull_request_id = ? and kind = ?`
+        )
+        .all("pr_1", "pr-summary") as Array<{
+        cache_key: string;
+        content_json: string;
+      }>;
+      expect(rows).toEqual([
+        { cache_key: "hash-b", content_json: '{"overview":"second"}' }
+      ]);
+
+      expect(() =>
+        insert.run("pr_1", "unknown-kind", "x", "m", "{}", "now")
+      ).toThrow();
+    } finally {
+      local.close();
+    }
+  });
+
   it("persists local board seen state", () => {
     const local = openLocalDatabase({ path: ":memory:" });
 

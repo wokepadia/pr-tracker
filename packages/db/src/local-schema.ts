@@ -429,4 +429,20 @@ create table if not exists app_settings (
   value_json text not null,
   updated_at text not null default current_timestamp
 );
+
+-- Generated AI summaries, cached per pull request and summary kind. The
+-- cache_key is a hash of the exact input the summary was generated from, so
+-- a stored row is reused until the underlying data changes. Only AI mode
+-- touches this table. (No semicolons in this comment: the schema runner
+-- splits statements on them.)
+create table if not exists ai_summaries (
+  pull_request_id text not null,
+  kind text not null,
+  cache_key text not null,
+  model text not null,
+  content_json text not null,
+  generated_at text not null default current_timestamp,
+  primary key (pull_request_id, kind),
+  check (kind in ('pr-summary', 'catch-up-digest', 'thread-state'))
+);
 `;
