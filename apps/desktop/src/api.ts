@@ -189,7 +189,7 @@ export async function saveAiSettings(
 
 export async function getAiPrSummary(
   pullRequestId: string
-): Promise<AiGenerated<PrSummaryContent> | undefined> {
+): Promise<AiGenerated<PrSummaryContent> | null> {
   return (await getDesktopApi()).getDesktopAiPrSummary(pullRequestId)
 }
 
@@ -201,7 +201,7 @@ export async function generateAiPrSummary(
 
 export async function getAiCatchUpDigest(
   pullRequestId: string
-): Promise<AiGenerated<CatchUpDigestContent> | undefined> {
+): Promise<AiGenerated<CatchUpDigestContent> | null> {
   return (await getDesktopApi()).getDesktopAiCatchUpDigest(pullRequestId)
 }
 
@@ -213,7 +213,7 @@ export async function generateAiCatchUpDigest(
 
 export async function getAiThreadState(
   pullRequestId: string
-): Promise<AiGenerated<ThreadStateContent> | undefined> {
+): Promise<AiGenerated<ThreadStateContent> | null> {
   return (await getDesktopApi()).getDesktopAiThreadState(pullRequestId)
 }
 

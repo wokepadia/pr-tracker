@@ -162,7 +162,7 @@ export function AiPrSummaryPanel({ pullRequestId }: { pullRequestId: string }) {
       hint="Summarize what this pull request changes. Sends the title, description, and diff to OpenRouter using your key."
       generateLabel="Summarize this PR"
       staleNote="New commits since this summary"
-      result={summaryQuery.data}
+      result={summaryQuery.data ?? undefined}
       isLoadingCache={summaryQuery.isLoading}
       isGenerating={generateMutation.isPending}
       error={generateMutation.error}
@@ -231,7 +231,7 @@ export function AiCatchUpDigestPanel({
       hint="Digest what happened since you last caught up. Sends the new activity (comments, reviews, pushes) to OpenRouter using your key."
       generateLabel="Digest new activity"
       staleNote="More activity since this digest"
-      result={digestQuery.data}
+      result={digestQuery.data ?? undefined}
       isLoadingCache={digestQuery.isLoading}
       isGenerating={generateMutation.isPending}
       error={generateMutation.error}
@@ -286,7 +286,7 @@ export function AiThreadStatePanel({
       hint="Summarize where the review threads stand: who owes a reply and what is still contested. Sends the cached threads and comments to OpenRouter using your key."
       generateLabel="Summarize threads"
       staleNote="Threads changed since this summary"
-      result={threadStateQuery.data}
+      result={threadStateQuery.data ?? undefined}
       isLoadingCache={threadStateQuery.isLoading}
       isGenerating={generateMutation.isPending}
       error={generateMutation.error}

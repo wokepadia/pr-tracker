@@ -357,7 +357,7 @@ export function PullRequestPage() {
           {aiActive ? (
             <AiCatchUpDigestPanel
               pullRequestId={loadedItem.id}
-              lastSeenAt={item.lastSeenAt}
+              lastSeenAt={item.lastSeenAtIso}
               hasNewActivity={newEvents.length > 0}
             />
           ) : null}

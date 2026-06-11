@@ -621,11 +621,12 @@ export async function saveDesktopAiSettings(
 
 export async function getDesktopAiPrSummary(
   pullRequestId: string
-): Promise<AiGenerated<PrSummaryContent> | undefined> {
+): Promise<AiGenerated<PrSummaryContent> | null> {
   const db = await getDatabase()
   const row = await readAiSummaryRow(db, pullRequestId, "pr-summary")
   if (!row) {
-    return undefined
+    // null, not undefined: TanStack Query rejects undefined query data.
+    return null
   }
 
   const settings = await readLocalAiSettings(db)
@@ -704,11 +705,11 @@ export async function generateDesktopAiPrSummary(
 
 export async function getDesktopAiCatchUpDigest(
   pullRequestId: string
-): Promise<AiGenerated<CatchUpDigestContent> | undefined> {
+): Promise<AiGenerated<CatchUpDigestContent> | null> {
   const db = await getDatabase()
   const row = await readAiSummaryRow(db, pullRequestId, "catch-up-digest")
   if (!row) {
-    return undefined
+    return null
   }
 
   const settings = await readLocalAiSettings(db)
@@ -761,11 +762,11 @@ export async function generateDesktopAiCatchUpDigest(
 
 export async function getDesktopAiThreadState(
   pullRequestId: string
-): Promise<AiGenerated<ThreadStateContent> | undefined> {
+): Promise<AiGenerated<ThreadStateContent> | null> {
   const db = await getDatabase()
   const row = await readAiSummaryRow(db, pullRequestId, "thread-state")
   if (!row) {
-    return undefined
+    return null
   }
 
   const settings = await readLocalAiSettings(db)
