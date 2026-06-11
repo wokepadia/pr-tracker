@@ -10,11 +10,16 @@ import {
   Sparkles,
 } from "lucide-react"
 import {
+  generateAiCatchUpDigest,
   generateAiPrSummary,
+  getAiCatchUpDigest,
   getAiPrSummary,
   type AiGenerated,
 } from "@/api"
-import type { PrSummaryContent } from "@/ai/summaries"
+import type {
+  CatchUpDigestContent,
+  PrSummaryContent,
+} from "@/ai/summaries"
 import { Button } from "@/components/ui/button"
 import { formatRelativeTime } from "@/reviewer/view-model"
 
@@ -175,6 +180,70 @@ export function AiPrSummaryPanel({ pullRequestId }: { pullRequestId: string }) {
                     </code>{" "}
                     {change.description}
                   </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      )}
+    />
+  )
+}
+
+export function AiCatchUpDigestPanel({
+  pullRequestId,
+  lastSeenAt,
+  hasNewActivity,
+}: {
+  pullRequestId: string
+  lastSeenAt?: string
+  hasNewActivity: boolean
+}) {
+  const queryClient = useQueryClient()
+  // lastSeenAt is part of the key so marking caught-up refreshes the cached
+  // digest's staleness immediately.
+  const digestQuery = useQuery({
+    queryKey: ["ai-catch-up-digest", pullRequestId, lastSeenAt ?? null],
+    queryFn: () => getAiCatchUpDigest(pullRequestId),
+  })
+  const generateMutation = useMutation({
+    mutationFn: () => generateAiCatchUpDigest(pullRequestId),
+    onSuccess: (result) => {
+      queryClient.setQueryData(
+        ["ai-catch-up-digest", pullRequestId, lastSeenAt ?? null],
+        result
+      )
+    },
+  })
+
+  // Without new activity there is nothing to digest; only a previously
+  // generated digest is worth showing.
+  if (!hasNewActivity && !digestQuery.data) {
+    return null
+  }
+
+  return (
+    <AiPanelShell<CatchUpDigestContent>
+      title="AI catch-up"
+      hint="Digest what happened since you last caught up. Sends the new activity (comments, reviews, pushes) to OpenRouter using your key."
+      generateLabel="Digest new activity"
+      staleNote="More activity since this digest"
+      result={digestQuery.data}
+      isLoadingCache={digestQuery.isLoading}
+      isGenerating={generateMutation.isPending}
+      error={generateMutation.error}
+      onGenerate={() => generateMutation.mutate()}
+      renderContent={(content) => (
+        <div>
+          <p className="text-sm leading-6 text-foreground">
+            {content.narrative}
+          </p>
+          {content.bullets.length > 0 ? (
+            <ul className="mt-2 space-y-1.5 text-sm leading-5 text-foreground">
+              {content.bullets.map((bullet) => (
+                <li key={bullet} className="flex gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+                  <span>{bullet}</span>
                 </li>
               ))}
             </ul>

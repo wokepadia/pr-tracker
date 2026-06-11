@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  buildCatchUpDigestPrompt,
   buildPrSummaryPrompt,
+  normalizeCatchUpDigestContent,
   normalizePrSummaryContent,
   type PrSummaryPromptInput,
 } from "./summaries"
@@ -110,5 +112,89 @@ describe("normalizePrSummaryContent", () => {
       "The model response was missing the summary overview."
     )
     expect(() => normalizePrSummaryContent({ overview: "  " })).toThrow()
+  })
+})
+
+describe("buildCatchUpDigestPrompt", () => {
+  const baseInput = {
+    repository: "acme/web",
+    number: 42,
+    title: "Add webhook retries",
+    lastSeenAt: "2026-06-10T08:00:00.000Z",
+    events: [
+      {
+        type: "review",
+        actor: "sam",
+        title: "sam requested changes",
+        body: "Please add a test for the retry path.",
+        occurredAt: "2026-06-10T09:00:00.000Z",
+      },
+      {
+        type: "commit",
+        actor: "maya",
+        title: "Add retry test",
+        occurredAt: "2026-06-10T10:00:00.000Z",
+      },
+    ],
+  }
+
+  it("lists the delta with the last-seen anchor", () => {
+    const { system, user } = buildCatchUpDigestPrompt(baseInput)
+
+    expect(system).toContain("never invent events")
+    expect(user).toContain(
+      "The reviewer last caught up at 2026-06-10T08:00:00.000Z."
+    )
+    expect(user).toContain(
+      "- [2026-06-10T09:00:00.000Z] review by sam: sam requested changes"
+    )
+    expect(user).toContain("  Please add a test for the retry path.")
+    expect(user).toContain(
+      "- [2026-06-10T10:00:00.000Z] commit by maya: Add retry test"
+    )
+  })
+
+  it("notes when the reviewer never caught up before", () => {
+    const { user } = buildCatchUpDigestPrompt({
+      ...baseInput,
+      lastSeenAt: undefined,
+    })
+    expect(user).toContain(
+      "The reviewer has not caught up on this pull request before."
+    )
+  })
+
+  it("keeps only the newest events past the cap and says so", () => {
+    const events = Array.from({ length: 60 }, (_value, index) => ({
+      type: "comment",
+      actor: "ari",
+      title: `comment ${index}`,
+      occurredAt: `2026-06-10T0${index % 10}:00:00.000Z`,
+    }))
+    const { user } = buildCatchUpDigestPrompt({ ...baseInput, events })
+
+    expect(user).toContain("(10 earlier events omitted)")
+    expect(user).not.toContain("comment 9\n")
+    expect(user).toContain("comment 59")
+  })
+})
+
+describe("normalizeCatchUpDigestContent", () => {
+  it("trims bullets and caps them at six", () => {
+    expect(
+      normalizeCatchUpDigestContent({
+        narrative: " Things moved. ",
+        bullets: [" a ", "", "b", 3, "c", "d", "e", "f", "g"],
+      })
+    ).toEqual({
+      narrative: "Things moved.",
+      bullets: ["a", "b", "c", "d", "e", "f"],
+    })
+  })
+
+  it("throws when the narrative is missing", () => {
+    expect(() => normalizeCatchUpDigestContent({ bullets: [] })).toThrow(
+      "The model response was missing the digest narrative."
+    )
   })
 })

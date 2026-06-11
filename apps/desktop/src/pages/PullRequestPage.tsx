@@ -29,7 +29,10 @@ import { useGithubSync } from "@/app/use-github-sync"
 import { isAiModeActive } from "@/ai/ai-settings"
 import { Button } from "@/components/ui/button"
 import { ActivityEventLine } from "@/components/ActivityEventLine"
-import { AiPrSummaryPanel } from "@/components/AiPanels"
+import {
+  AiCatchUpDigestPanel,
+  AiPrSummaryPanel,
+} from "@/components/AiPanels"
 import { AuthorAvatar } from "@/components/AuthorAvatar"
 import { BoardItemNotes } from "@/components/BoardItemNotes"
 import { MarkdownContent } from "@/components/MarkdownContent"
@@ -350,6 +353,13 @@ export function PullRequestPage() {
             onSave={updateNotes}
             className="mb-6"
           />
+          {aiActive ? (
+            <AiCatchUpDigestPanel
+              pullRequestId={loadedItem.id}
+              lastSeenAt={item.lastSeenAt}
+              hasNewActivity={newEvents.length > 0}
+            />
+          ) : null}
           <SinceLastReviewPanel view={loadedItem.sinceLastReview} />
           <ThreadLedgerPanel item={loadedItem} />
           <div className="mb-4 text-xs text-muted-foreground">

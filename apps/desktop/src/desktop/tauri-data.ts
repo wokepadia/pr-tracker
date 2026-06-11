@@ -52,10 +52,15 @@ import {
 import { hashContent } from "@/ai/content-hash"
 import { requestStructuredCompletion } from "@/ai/openrouter"
 import {
+  buildCatchUpDigestPrompt,
   buildPrSummaryPrompt,
+  catchUpDigestSchema,
+  catchUpDigestSchemaName,
+  normalizeCatchUpDigestContent,
   normalizePrSummaryContent,
   prSummarySchema,
   prSummarySchemaName,
+  type CatchUpDigestContent,
   type PrSummaryContent,
 } from "@/ai/summaries"
 import { defaultAttentionThresholds } from "@/reviewer/view-model"
@@ -684,6 +689,63 @@ export async function generateDesktopAiPrSummary(
   const generatedAt = new Date().toISOString()
   await writeAiSummaryRow(db, pullRequestId, "pr-summary", {
     cacheKey: await prSummaryCacheKey(db, pullRequestId, config.model),
+    model: config.model,
+    contentJson: JSON.stringify(content),
+    generatedAt,
+  })
+
+  return { content, generatedAt, model: config.model, isStale: false }
+}
+
+export async function getDesktopAiCatchUpDigest(
+  pullRequestId: string
+): Promise<AiGenerated<CatchUpDigestContent> | undefined> {
+  const db = await getDatabase()
+  const row = await readAiSummaryRow(db, pullRequestId, "catch-up-digest")
+  if (!row) {
+    return undefined
+  }
+
+  const settings = await readLocalAiSettings(db)
+  const prompt = await buildCatchUpDigestPromptForPullRequest(db, pullRequestId)
+  const expectedKey = await hashContent(
+    `catch-up-digest\n${settings.model}\n${prompt?.user ?? ""}`
+  )
+
+  return {
+    content: normalizeCatchUpDigestContent(JSON.parse(row.content_json)),
+    generatedAt: row.generated_at,
+    model: row.model,
+    isStale: expectedKey !== row.cache_key,
+  }
+}
+
+export async function generateDesktopAiCatchUpDigest(
+  pullRequestId: string
+): Promise<AiGenerated<CatchUpDigestContent>> {
+  const db = await getDatabase()
+  const config = await requireActiveAiConfig(db)
+  const prompt = await buildCatchUpDigestPromptForPullRequest(db, pullRequestId)
+  if (!prompt) {
+    throw new Error("Nothing new has happened since you last caught up.")
+  }
+
+  const content = normalizeCatchUpDigestContent(
+    await requestStructuredCompletion<CatchUpDigestContent>({
+      apiKey: config.apiKey,
+      model: config.model,
+      system: prompt.system,
+      user: prompt.user,
+      schemaName: catchUpDigestSchemaName,
+      schema: catchUpDigestSchema,
+    })
+  )
+
+  const generatedAt = new Date().toISOString()
+  await writeAiSummaryRow(db, pullRequestId, "catch-up-digest", {
+    cacheKey: await hashContent(
+      `catch-up-digest\n${config.model}\n${prompt.user}`
+    ),
     model: config.model,
     contentJson: JSON.stringify(content),
     generatedAt,
@@ -2105,6 +2167,52 @@ async function writeAiSummaryRow(
       input.generatedAt,
     ]
   )
+}
+
+/**
+ * The digest covers the deterministic delta the page already computes: all
+ * cached activity after the board item's last-seen marker. Returns
+ * undefined when there is nothing new to digest.
+ */
+async function buildCatchUpDigestPromptForPullRequest(
+  db: SqlDatabase,
+  pullRequestId: string
+): Promise<{ system: string; user: string } | undefined> {
+  const pullRequest = (await listPullRequestRows(db, { id: pullRequestId }))[0]
+  if (!pullRequest) {
+    throw new Error("Pull request not found.")
+  }
+
+  const lastSeenAt = (
+    await db.select<Array<{ last_seen_at: string | null }>>(
+      `
+        select last_seen_at from board_items
+        where board_id = $1 and pull_request_id = $2
+      `,
+      [defaultLocalBoardId, pullRequestId]
+    )
+  )[0]?.last_seen_at
+
+  const events = (await listActivityEventRows(db, pullRequestId)).filter(
+    (event) => !lastSeenAt || event.occurred_at > lastSeenAt
+  )
+  if (events.length === 0) {
+    return undefined
+  }
+
+  return buildCatchUpDigestPrompt({
+    repository: pullRequest.repository_full_name,
+    number: pullRequest.number,
+    title: pullRequest.title,
+    lastSeenAt: lastSeenAt ?? undefined,
+    events: events.map((event) => ({
+      type: event.event_type,
+      actor: event.actor_login,
+      title: event.title,
+      body: event.body ?? undefined,
+      occurredAt: event.occurred_at,
+    })),
+  })
 }
 
 /**

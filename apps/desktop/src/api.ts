@@ -3,7 +3,10 @@ import type {
   ClassifiedPullRequest,
   ReviewerInbox,
 } from "@pr-tracker/reviewer-workflow"
-import type { PrSummaryContent } from "@/ai/summaries"
+import type {
+  CatchUpDigestContent,
+  PrSummaryContent,
+} from "@/ai/summaries"
 
 export interface PullRequestDetailResponse {
   viewer: Actor
@@ -193,6 +196,18 @@ export async function generateAiPrSummary(
   pullRequestId: string
 ): Promise<AiGenerated<PrSummaryContent>> {
   return (await getDesktopApi()).generateDesktopAiPrSummary(pullRequestId)
+}
+
+export async function getAiCatchUpDigest(
+  pullRequestId: string
+): Promise<AiGenerated<CatchUpDigestContent> | undefined> {
+  return (await getDesktopApi()).getDesktopAiCatchUpDigest(pullRequestId)
+}
+
+export async function generateAiCatchUpDigest(
+  pullRequestId: string
+): Promise<AiGenerated<CatchUpDigestContent>> {
+  return (await getDesktopApi()).generateDesktopAiCatchUpDigest(pullRequestId)
 }
 
 export async function getOnboardingState(): Promise<OnboardingState> {

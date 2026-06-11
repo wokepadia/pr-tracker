@@ -177,6 +177,123 @@ export function normalizePrSummaryContent(value: unknown): PrSummaryContent {
   return { overview: parsed.overview.trim(), keyChanges }
 }
 
+export interface CatchUpDigestContent {
+  narrative: string
+  bullets: string[]
+}
+
+export interface CatchUpEventInput {
+  type: string
+  actor: string
+  title: string
+  body?: string
+  occurredAt: string
+}
+
+export interface CatchUpDigestPromptInput {
+  repository: string
+  number: number
+  title: string
+  lastSeenAt?: string
+  events: CatchUpEventInput[]
+}
+
+export const catchUpDigestSchemaName = "catch_up_digest"
+
+export const catchUpDigestSchema: Record<string, unknown> = {
+  type: "object",
+  additionalProperties: false,
+  required: ["narrative", "bullets"],
+  properties: {
+    narrative: {
+      type: "string",
+      description:
+        "Two to four plain sentences describing what happened on the pull request since the reviewer last caught up.",
+    },
+    bullets: {
+      type: "array",
+      maxItems: 6,
+      description:
+        "The individual highlights worth knowing, most important first.",
+      items: { type: "string" },
+    },
+  },
+}
+
+const maxDigestEvents = 50
+const maxEventBodyChars = 800
+
+export function buildCatchUpDigestPrompt(input: CatchUpDigestPromptInput): {
+  system: string
+  user: string
+} {
+  const system = [
+    "You help a code reviewer catch up on a GitHub pull request.",
+    "Describe only the activity listed below; never invent events, opinions, or outcomes.",
+    "Attribute every statement to the logins provided.",
+    "Be brief and concrete. Do not assess risk, quality, or priority.",
+  ].join(" ")
+
+  const lines: string[] = [
+    `Repository: ${input.repository}`,
+    `Pull request #${input.number}: ${input.title}`,
+    input.lastSeenAt
+      ? `The reviewer last caught up at ${input.lastSeenAt}.`
+      : "The reviewer has not caught up on this pull request before.",
+    "",
+    "Activity since then, oldest first:",
+  ]
+
+  const events = input.events.slice(-maxDigestEvents)
+  const omitted = input.events.length - events.length
+  if (omitted > 0) {
+    lines.push(`(${omitted} earlier events omitted)`)
+  }
+
+  for (const event of events) {
+    lines.push(
+      "",
+      `- [${event.occurredAt}] ${event.type} by ${event.actor}: ${event.title}`
+    )
+    if (event.body) {
+      lines.push(indentBlock(truncateText(event.body, maxEventBodyChars)))
+    }
+  }
+
+  lines.push(
+    "",
+    "Write a short narrative of what happened, then up to six bullet highlights."
+  )
+
+  return { system, user: lines.join("\n") }
+}
+
+export function normalizeCatchUpDigestContent(
+  value: unknown
+): CatchUpDigestContent {
+  const parsed = (value ?? {}) as { narrative?: unknown; bullets?: unknown }
+  if (typeof parsed.narrative !== "string" || parsed.narrative.trim() === "") {
+    throw new Error("The model response was missing the digest narrative.")
+  }
+
+  const bullets = Array.isArray(parsed.bullets)
+    ? parsed.bullets
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry !== "")
+        .slice(0, 6)
+    : []
+
+  return { narrative: parsed.narrative.trim(), bullets }
+}
+
+function indentBlock(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => `  ${line}`)
+    .join("\n")
+}
+
 function truncateText(text: string, maxChars: number): string {
   if (text.length <= maxChars) {
     return text
