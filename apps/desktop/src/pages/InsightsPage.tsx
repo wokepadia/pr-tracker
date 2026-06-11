@@ -184,7 +184,7 @@ export function InsightsPage() {
         ) : null}
 
         {!insights ? (
-          <div className="h-64" aria-busy="true" />
+          <InsightsLoadingSkeleton />
         ) : insights.totalCount === 0 ? (
           <AllCaughtUp />
         ) : (
@@ -199,6 +199,19 @@ export function InsightsPage() {
           ))
         )}
       </div>
+    </div>
+  )
+}
+
+function InsightsLoadingSkeleton() {
+  return (
+    <div aria-busy="true" className="flex flex-col gap-5">
+      {insightSections.map((section) => (
+        <section key={section.id} aria-hidden="true">
+          <div className="mb-2 h-4 w-48 animate-pulse rounded bg-muted/60" />
+          <div className="h-12 animate-pulse rounded-md border border-border bg-muted/40" />
+        </section>
+      ))}
     </div>
   )
 }
