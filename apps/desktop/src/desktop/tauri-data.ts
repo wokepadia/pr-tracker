@@ -935,9 +935,13 @@ async function getDatabase(): Promise<SqlDatabase> {
 
 async function initializeDatabase(): Promise<SqlDatabase> {
   const db = await Database.load(databaseUrl)
-  await db.execute("pragma busy_timeout = 10000")
+  // The SQL plugin hands statements to a pool of connections, so a pragma
+  // executed here only configures whichever connection runs it. Per-
+  // connection settings (busy_timeout = 5s, foreign_keys = on) come from
+  // sqlx defaults applied to every pooled connection. journal_mode is a
+  // property of the database file itself, so setting it once here is
+  // enough: WAL lets readers proceed while another window writes.
   await db.execute("pragma journal_mode = wal")
-  await db.execute("pragma foreign_keys = on")
   await dropOutdatedAiSummariesTable(db)
   for (const statement of splitSqlStatements(localDesktopSchemaSql)) {
     await db.execute(statement)
@@ -1024,6 +1028,10 @@ async function syncBeforeRead(
  * within the freshness window. The default-scope success survives app
  * restarts via app_settings, so reopening the desktop window shortly after
  * a sync renders local data without kicking off another GitHub round trip.
+ * The persisted success is also how concurrently open app instances learn
+ * about each other's syncs, so it is consulted whenever the in-memory
+ * entry is stale, not just at startup; otherwise every instance re-syncs
+ * on its own interval and they contend for the database write lock.
  */
 async function loadFreshSyncSuccess(
   db: SqlDatabase,
@@ -1034,8 +1042,8 @@ async function loadFreshSyncSuccess(
     Date.now() - finishedAtMs < githubSyncFreshnessMs
 
   const cached = lastSuccessfulSyncByFingerprint.get(fingerprint)
-  if (cached) {
-    return isFresh(cached.finishedAtMs) ? cached : undefined
+  if (cached && isFresh(cached.finishedAtMs)) {
+    return cached
   }
   if (options.hasSearchQuery) return undefined
 
@@ -1215,8 +1223,17 @@ async function upsertLocalPullRequestSnapshot(
   const githubNodeId = githubNodeIdFromSnapshot(snapshot)
   const incomingUpdatedAt = pullRequest.updatedAt
   const current = (
-    await db.select<Array<{ id: string; github_updated_at: string | null }>>(
-      `select id, github_updated_at from pull_requests where github_node_id = $1`,
+    await db.select<
+      Array<{
+        id: string
+        github_updated_at: string | null
+        raw_payload_json: string | null
+      }>
+    >(
+      `
+        select id, github_updated_at, raw_payload_json
+        from pull_requests where github_node_id = $1
+      `,
       [githubNodeId]
     )
   )[0]
@@ -1225,6 +1242,13 @@ async function upsertLocalPullRequestSnapshot(
     current?.github_updated_at &&
     Date.parse(incomingUpdatedAt) < Date.parse(current.github_updated_at)
   ) {
+    return { pullRequestId: current.id, isFreshEnough: false }
+  }
+
+  // An identical snapshot means this sync found nothing new for the pull
+  // request. Skipping the rewrite keeps steady-state syncs read-only, so
+  // the write lock stays free for other windows sharing the database.
+  if (current && current.raw_payload_json === JSON.stringify(snapshot)) {
     return { pullRequestId: current.id, isFreshEnough: false }
   }
 

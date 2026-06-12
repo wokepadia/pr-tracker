@@ -31,7 +31,9 @@ real GitHub round trip:
 - The default-scope success is persisted in `app_settings`
   (`github-sync-last-success`), so reopening the app shortly after a
   sync renders local data without re-syncing. Search-scoped successes
-  stay session-only.
+  stay session-only. The persisted success is re-read whenever the
+  in-memory entry goes stale, so concurrently open app instances see
+  each other's syncs instead of each re-syncing on its own interval.
 - Failures are remembered for sixty seconds and re-throw the same error
   instead of retrying, so refocusing the window while GitHub is down
   does not hammer the API. The error banner stays accurate because the
@@ -44,6 +46,23 @@ The sync result reports whether local data actually changed: `"synced"`
 (a GitHub sync or sample-data seed landed) versus `"already-fresh"`.
 Query invalidation only happens for `"synced"`, so skipped syncs never
 churn the UI.
+
+## Database locking (storage layer)
+
+The desktop SQLite file may be shared by several open windows of the
+app, so writes are kept rare and short:
+
+- The database runs in WAL mode (set once at startup; it persists in
+  the file), so readers never block on a writer. Per-connection
+  settings such as `busy_timeout` (5s) and `foreign_keys` come from
+  sqlx defaults on every pooled plugin connection; pragmas issued
+  through the plugin only reach one pooled connection and are not used
+  for per-connection settings.
+- Ingestion skips pull requests whose snapshot is byte-identical to
+  the stored payload, so a steady-state sync is effectively read-only
+  and does not contend for the write lock.
+- The shared persisted sync success (above) keeps multiple instances
+  from running duplicate syncs in the same freshness window.
 
 ## Loading rules (UI layer)
 
