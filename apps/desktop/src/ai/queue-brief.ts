@@ -48,7 +48,10 @@ const sectionLabels: Array<{
 ]
 
 /**
- * Builds the deterministic rollup input. Ordering is deliberate: long-input
+ * Builds the deterministic rollup input. The items array is the scope
+ * universe — callers pass board-scoped items only, and insight rows
+ * referencing pull requests outside it are dropped, so nothing off the
+ * user's board ever reaches the prompt. Ordering is deliberate: long-input
  * summarization is most faithful at the edges of the input, so the
  * needs-you-now items lead and the might-be-missing contradictions close,
  * with lower-stakes rows in the middle.
@@ -83,7 +86,9 @@ export function buildQueueBriefInput(
 
   for (const section of sectionLabels) {
     for (const row of insights[section.key]) {
-      record(row.item).chips.push(`${section.label}: ${row.whyChip}`)
+      const item = itemById.get(row.item.id)
+      if (!item) continue
+      record(item).chips.push(`${section.label}: ${row.whyChip}`)
     }
   }
 

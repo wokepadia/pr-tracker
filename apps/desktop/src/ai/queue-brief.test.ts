@@ -83,6 +83,22 @@ describe("buildQueueBriefInput", () => {
     expect(input.omittedCount).toBe(0)
   })
 
+  it("drops insight rows for pull requests outside the scope universe", () => {
+    const onBoard = makeItem({ id: "pr_on_board" })
+    const offBoard = makeItem({ id: "pr_off_board" })
+    const insights = makeInsights({
+      needsYouNow: [
+        makeRow(onBoard, "Your turn for 4d"),
+        makeRow(offBoard, "Your turn for 9d"),
+      ],
+    })
+
+    const input = buildQueueBriefInput(insights, [onBoard])
+
+    expect(input.items.map((item) => item.id)).toEqual(["pr_on_board"])
+    expect(input.omittedCount).toBe(0)
+  })
+
   it("keeps the edges when the queue exceeds the cap", () => {
     const urgent = Array.from({ length: 45 }, (_value, index) =>
       makeItem({ id: `pr_u${index}` })

@@ -8,12 +8,14 @@ import { Link } from "@tanstack/react-router"
 import {
   generateAiQueueBrief,
   getAiQueueBrief,
+  getBoardState,
 } from "@/api"
 import {
   buildQueueBriefInput,
   type QueueBriefContent,
 } from "@/ai/queue-brief"
 import { AiPanelShell } from "@/components/AiPanels"
+import { selectBoardScopedItems } from "@/reviewer/board-scope"
 import type { ReviewerInsightsView } from "@/reviewer/insights"
 import type { ReviewQueueItemView } from "@/reviewer/view-model"
 
@@ -21,7 +23,8 @@ import type { ReviewQueueItemView } from "@/reviewer/view-model"
  * The AI layer of the insights page: one user-triggered brief that narrates
  * the deterministic sections below it. Titles and links always render from
  * local data; the model contributes only the headline and the per-PR why
- * and note strings, restricted to pull requests in the rollup input.
+ * and note strings, restricted to pull requests in the rollup input — which
+ * is itself restricted to items on the user's board.
  */
 export function AiQueueBriefPanel({
   insights,
@@ -31,9 +34,18 @@ export function AiQueueBriefPanel({
   allItems: ReviewQueueItemView[]
 }) {
   const queryClient = useQueryClient()
+  const boardStateQuery = useQuery({
+    queryKey: ["board-state"],
+    queryFn: getBoardState,
+  })
+  const localQueueState = boardStateQuery.data?.localQueueState
   const input = useMemo(
-    () => buildQueueBriefInput(insights, allItems),
-    [insights, allItems]
+    () =>
+      buildQueueBriefInput(
+        insights,
+        selectBoardScopedItems(allItems, localQueueState ?? {})
+      ),
+    [insights, allItems, localQueueState]
   )
   // The serialized input doubles as the cache identity: any queue change
   // produces a new key, which re-reads the stored brief and recomputes its
@@ -53,6 +65,12 @@ export function AiQueueBriefPanel({
       queryClient.setQueryData(["ai-queue-brief", inputKey], result)
     },
   })
+
+  // Until the board rows load, the scope filter would report an empty
+  // queue; wait instead of flashing the wrong state.
+  if (!localQueueState) {
+    return null
+  }
 
   if (input.items.length === 0 && !briefQuery.data) {
     return null
