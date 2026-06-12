@@ -18,14 +18,11 @@ import {
   X,
   Clock3,
   ExternalLink,
-  FileDiff,
   FileText,
   GitCompareArrows,
   MessagesSquare,
   Pin,
   RotateCcw,
-  ShieldAlert,
-  Sparkles,
 } from "lucide-react"
 import { isAiModeActive } from "@/ai/ai-settings"
 import { Button } from "@/components/ui/button"
@@ -64,7 +61,6 @@ import {
   type ActivityEventView,
   type ReviewQueueItemView,
   type SinceLastReviewView,
-  type SizeChipView,
 } from "@/reviewer/view-model"
 import {
   bucketIdForLocalQueueItem,
@@ -634,8 +630,6 @@ function DetailHeader({
   item: ReviewQueueItemView
   onRequestClose?: () => void
 }) {
-  const tone = detailToneForItem(item)
-
   return (
     <header className="grid grid-cols-1 gap-5 border-b border-border px-7 py-6 lg:grid-cols-[auto_1fr_auto]">
       {onRequestClose ? (
@@ -694,66 +688,11 @@ function DetailHeader({
           >
             {detailQueueLabel(item)} · {item.waitingAge}
           </span>
-          {item.approvalStale ? (
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-medium",
-                detailToneClasses.hot
-              )}
-            >
-              <ShieldAlert className="h-3.5 w-3.5" />
-              Approved, then the author pushed
-            </span>
-          ) : null}
-          {item.unseenEventCount > 0 ? (
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-medium",
-                detailToneClasses.changed
-              )}
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              {formatCount(item.unseenEventCount, "unseen event")} since{" "}
-              {item.lastSeenAt}
-            </span>
-          ) : null}
-          {item.totalThreadCount > 0 ? (
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/30 px-2.5 py-1 text-muted-foreground",
-                detailThreadsAwaitingReplyCount(item) > 0 &&
-                  "font-medium text-foreground"
-              )}
-            >
-              {item.unresolvedThreadCount} of{" "}
-              {formatCount(item.totalThreadCount, "thread")} unresolved
-            </span>
-          ) : null}
-          {item.size ? (
-            <span
-              aria-label={detailSizeLabel(item.size)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/30 px-2.5 py-1 text-muted-foreground"
-            >
-              <FileDiff className="h-3.5 w-3.5" />
-              {item.size.bucket} · {item.size.lineCount} lines
-              {item.size.fileCount !== undefined
-                ? ` · ${formatCount(item.size.fileCount, "file")}`
-                : ""}
-            </span>
-          ) : null}
-          <span className="text-muted-foreground">
-            Updated {item.updatedAt}
-          </span>
         </div>
         <PullRequestLabels labels={item.labels} className="mt-3" />
-        <PullRequestPeopleSummary item={item} className="mt-3" />
       </div>
 
-      <div className="flex min-w-[190px] flex-col items-stretch gap-3">
-        <div className="rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-foreground">
-          <span className={cn("mr-2 inline-block h-2 w-2 rounded-full", detailDotClasses[tone])} />
-          {userReviewStanding(item.userLastReviewDecision)}
-        </div>
+      <div className="flex min-w-[190px] flex-col items-stretch">
         <Button asChild className="h-9">
           <a href={item.url} {...externalLinkProps}>
             Open in GitHub
@@ -1158,89 +1097,6 @@ function PullRequestLabels({
   )
 }
 
-function PullRequestPeopleSummary({
-  item,
-  className,
-}: {
-  item: ReviewQueueItemView
-  className?: string
-}) {
-  return (
-    <div
-      className={cn(
-        "flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs",
-        className
-      )}
-    >
-      <PeopleField
-        label="Author"
-        people={[{ login: item.authorLogin, avatarUrl: item.authorAvatarUrl }]}
-      />
-      <PeopleField label="Assignee" people={item.assignees} empty="none" />
-      <PeopleField
-        label="Reviewer"
-        people={reviewerPeople(item)}
-        empty="none"
-      />
-    </div>
-  )
-}
-
-function reviewerPeople(
-  item: ReviewQueueItemView
-): Array<{ login: string; avatarUrl?: string; detail?: string }> {
-  return [
-    ...(item.waitingOn === "you" || item.userLastReviewDecision !== "pending"
-      ? [{ login: "you", detail: reviewDecisionLabel(item.userLastReviewDecision) }]
-      : []),
-    ...item.otherReviewers.map((reviewer) => ({
-      login: reviewer.login,
-      avatarUrl: reviewer.avatarUrl,
-      detail: reviewDecisionLabel(reviewer.decision),
-    })),
-  ]
-}
-
-function PeopleField({
-  label,
-  people,
-  empty,
-}: {
-  label: string
-  people: Array<{ login: string; avatarUrl?: string; detail?: string }>
-  empty?: string
-}) {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground">
-      <span className="font-medium text-foreground/70">{label}</span>
-      {people.length > 0 ? (
-        <span className="inline-flex min-w-0 flex-wrap items-center gap-1">
-          {people.map((person) => (
-            <span
-              key={`${label}:${person.login}`}
-              className="inline-flex min-w-0 items-center gap-1 rounded-[4px] border border-border bg-card px-1.5 py-[1px]"
-            >
-              <AuthorAvatar
-                login={person.login}
-                avatarUrl={person.avatarUrl}
-                className="h-3.5 w-3.5 text-[7px]"
-              />
-              <span className="max-w-[120px] truncate text-foreground">
-                {person.login}
-              </span>
-              {person.detail ? (
-                <span className="text-muted-foreground">· {person.detail}</span>
-              ) : null}
-            </span>
-          ))}
-        </span>
-      ) : (
-        <span className="text-muted-foreground">{empty ?? "none"}</span>
-      )}
-    </span>
-  )
-}
-
 function PersonInline({
   login,
   avatarUrl,
@@ -1298,28 +1154,6 @@ function githubLabelTextColor(color: string): string {
 
 function reviewDecisionLabel(decision: ReviewDecision | "pending"): string {
   return decision === "pending" ? "pending" : reviewDecisionLabels[decision]
-}
-
-function userReviewStanding(decision: ReviewDecision | "pending"): string {
-  if (decision === "approved") return "You approved"
-  if (decision === "changes_requested") return "You requested changes"
-  if (decision === "commented") return "You commented"
-  return "No review yet"
-}
-
-const detailSizeBucketNames: Record<SizeChipView["bucket"], string> = {
-  S: "Small",
-  M: "Medium",
-  L: "Large",
-  XL: "Very large",
-}
-
-function detailSizeLabel(size: SizeChipView): string {
-  return `${detailSizeBucketNames[size.bucket]} change`
-}
-
-function detailThreadsAwaitingReplyCount(item: ReviewQueueItemView): number {
-  return item.reviewThreads.filter((thread) => thread.awaitingYourReply).length
 }
 
 function detailQueueLabel(item: ReviewQueueItemView): string {
