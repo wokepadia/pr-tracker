@@ -10,6 +10,7 @@ import {
   createGithubTokenPullRequestSource,
   getGithubClosedLookbackDays,
   parseGithubRepositories,
+  type GitHubIssueCommentSnapshot,
   type GitHubPullRequestSnapshot,
   type GitHubReviewSnapshot,
   type GitHubReviewThreadSnapshot,
@@ -78,6 +79,7 @@ import {
   type CatchUpDigestContent,
   type PrSummaryContent,
   type ThreadStateContent,
+  type ThreadStateCommentInput,
 } from "@/ai/summaries"
 import { defaultAttentionThresholds } from "@/reviewer/view-model"
 import { localDesktopSchemaSql } from "../../../../packages/db/src/local-schema"
@@ -178,6 +180,47 @@ interface LocalBoardColumnRow {
   name: string
   sort_order: number
   width_px: number
+}
+
+interface LocalReviewCommentRow {
+  id: string
+  review_thread_id: string | null
+  pull_request_id: string
+  author_login: string
+  body: string
+  file_path: string | null
+  line: number | null
+  created_at_github: string
+  updated_at_github: string | null
+  url: string | null
+}
+
+interface LocalIssueCommentRow {
+  id: string
+  pull_request_id: string
+  author_login: string
+  body: string
+  created_at_github: string
+  updated_at_github: string | null
+  url: string | null
+}
+
+interface ReviewCommentInput {
+  id: string
+  reviewThreadId?: string
+  githubNodeId: string
+  authorLogin: string
+  body: string
+  filePath?: string
+  line?: number
+  createdAt: string
+  updatedAt?: string | null
+  url?: string | null
+  rawPayload: unknown
+}
+
+type DiscussionCommentInput = ThreadStateCommentInput & {
+  source: "issue_comment" | "review_comment" | "review"
 }
 
 interface StrongholdSession {
@@ -874,7 +917,8 @@ export async function getDesktopAiInsights(
   }
 
   const settings = await readLocalAiSettings(db)
-  const prompt = buildAiInsightsPrompt(input)
+  const enrichedInput = await enrichAiInsightsInputWithComments(db, input)
+  const prompt = buildAiInsightsPrompt(enrichedInput)
   const expectedKey = await hashContent(
     `ai-insights\n${settings.model}\n${prompt.user}`
   )
@@ -882,7 +926,7 @@ export async function getDesktopAiInsights(
   return {
     content: normalizeAiInsightsContent(
       JSON.parse(row.content_json),
-      input.items.map((item) => item.id)
+      enrichedInput.items.map((item) => item.id)
     ),
     generatedAt: row.generated_at,
     model: row.model,
@@ -899,7 +943,8 @@ export async function generateDesktopAiInsights(
     throw new Error("There are no insights to brief right now.")
   }
 
-  const prompt = buildAiInsightsPrompt(input)
+  const enrichedInput = await enrichAiInsightsInputWithComments(db, input)
+  const prompt = buildAiInsightsPrompt(enrichedInput)
   const content = normalizeAiInsightsContent(
     await runStructuredAiCompletion<AiInsightsContent>(config, {
       system: prompt.system,
@@ -907,7 +952,7 @@ export async function generateDesktopAiInsights(
       schemaName: aiInsightsSchemaName,
       schema: aiInsightsSchema,
     }),
-    input.items.map((item) => item.id)
+    enrichedInput.items.map((item) => item.id)
   )
 
   const generatedAt = new Date().toISOString()
@@ -1276,6 +1321,10 @@ async function upsertLocalPullRequestSnapshot(
     githubNodeId,
     rawPayload: snapshot,
     skipThreads: snapshot.review_threads === undefined,
+    reviewComments: reviewCommentsFromSnapshot(snapshot),
+    skipReviewComments: snapshot.review_threads === undefined,
+    issueComments: snapshot.issue_comments,
+    skipIssueComments: snapshot.issue_comments === undefined,
   })
   await storeSnapshotAvatarUrls(db, snapshot, now)
   await ensureDefaultBoardItem(db, storedPullRequestId, now)
@@ -1330,6 +1379,12 @@ async function upsertPullRequestItem(
     rawPayload?: unknown
     /** Keep existing thread rows when the snapshot had no thread data. */
     skipThreads?: boolean
+    reviewComments?: ReviewCommentInput[]
+    /** Keep existing review comment rows when thread/comment data was unavailable. */
+    skipReviewComments?: boolean
+    issueComments?: GitHubIssueCommentSnapshot[]
+    /** Keep existing issue comment rows when the issue comments fetch was unavailable. */
+    skipIssueComments?: boolean
   } = {}
 ): Promise<string> {
   const [owner = "unknown", repoName = pullRequest.repository] =
@@ -1469,6 +1524,22 @@ async function upsertPullRequestItem(
   await replaceReviews(db, storedPullRequest.reviews, storedPullRequest.id, now)
   if (!options.skipThreads) {
     await replaceThreads(db, storedPullRequest.threads, storedPullRequest.id, now)
+  }
+  if (!options.skipReviewComments) {
+    await replaceReviewComments(
+      db,
+      options.reviewComments ?? [],
+      storedPullRequest.id,
+      now
+    )
+  }
+  if (!options.skipIssueComments) {
+    await replaceIssueComments(
+      db,
+      options.issueComments ?? [],
+      storedPullRequest.id,
+      now
+    )
   }
   await replaceActivity(db, storedPullRequest.activity, storedPullRequest.id, now)
 
@@ -1801,6 +1872,94 @@ async function replaceThreads(
         ]
       )
     }
+  }
+}
+
+async function replaceReviewComments(
+  db: SqlDatabase,
+  comments: ReviewCommentInput[],
+  pullRequestId: string,
+  now: string
+): Promise<void> {
+  await db.execute(`delete from review_comments where pull_request_id = $1`, [
+    pullRequestId,
+  ])
+
+  for (const comment of comments) {
+    const authorAccountId = await upsertGithubAccount(db, {
+      login: comment.authorLogin,
+      accountType: "user",
+      now,
+    })
+    await db.execute(
+      `
+        insert into review_comments (
+          id, review_thread_id, pull_request_id, github_node_id,
+          author_account_id, body, file_path, line, created_at_github,
+          updated_at_github, raw_payload_json, created_at, updated_at
+        )
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      `,
+      [
+        comment.id,
+        comment.reviewThreadId ?? null,
+        pullRequestId,
+        comment.githubNodeId,
+        authorAccountId,
+        comment.body,
+        comment.filePath ?? null,
+        comment.line ?? null,
+        comment.createdAt,
+        comment.updatedAt ?? null,
+        JSON.stringify(comment.rawPayload),
+        now,
+        now,
+      ]
+    )
+  }
+}
+
+async function replaceIssueComments(
+  db: SqlDatabase,
+  comments: GitHubIssueCommentSnapshot[],
+  pullRequestId: string,
+  now: string
+): Promise<void> {
+  await db.execute(`delete from issue_comments where pull_request_id = $1`, [
+    pullRequestId,
+  ])
+
+  for (const comment of comments) {
+    const body = comment.body.trim()
+    if (!body) continue
+
+    const authorAccountId = await upsertGithubAccount(db, {
+      login: comment.author?.login ?? "unknown",
+      accountType: "user",
+      now,
+    })
+    await db.execute(
+      `
+        insert into issue_comments (
+          id, pull_request_id, github_node_id, author_account_id, body,
+          created_at_github, updated_at_github, raw_payload_json, created_at,
+          updated_at
+        )
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `,
+      [
+        deterministicUuid(`issue-comment:${comment.id}`),
+        pullRequestId,
+        comment.id,
+        authorAccountId,
+        body,
+        comment.created_at,
+        comment.updated_at ?? null,
+        JSON.stringify(comment),
+        now,
+        now,
+      ]
+    )
   }
 }
 
@@ -2205,6 +2364,55 @@ async function listReviewThreadParticipantRows(
       order by participant.id asc
     `,
     threadIds
+  )
+}
+
+async function listReviewCommentRows(
+  db: SqlDatabase,
+  pullRequestId: string
+): Promise<LocalReviewCommentRow[]> {
+  return db.select<LocalReviewCommentRow[]>(
+    `
+      select
+        comment.id,
+        comment.review_thread_id,
+        comment.pull_request_id,
+        coalesce(author.login, 'unknown') as author_login,
+        comment.body,
+        comment.file_path,
+        comment.line,
+        comment.created_at_github,
+        comment.updated_at_github,
+        json_extract(comment.raw_payload_json, '$.url') as url
+      from review_comments comment
+      left join github_accounts author on author.id = comment.author_account_id
+      where comment.pull_request_id = $1
+      order by comment.created_at_github asc
+    `,
+    [pullRequestId]
+  )
+}
+
+async function listIssueCommentRows(
+  db: SqlDatabase,
+  pullRequestId: string
+): Promise<LocalIssueCommentRow[]> {
+  return db.select<LocalIssueCommentRow[]>(
+    `
+      select
+        comment.id,
+        comment.pull_request_id,
+        coalesce(author.login, 'unknown') as author_login,
+        comment.body,
+        comment.created_at_github,
+        comment.updated_at_github,
+        json_extract(comment.raw_payload_json, '$.url') as url
+      from issue_comments comment
+      left join github_accounts author on author.id = comment.author_account_id
+      where comment.pull_request_id = $1
+      order by comment.created_at_github asc
+    `,
+    [pullRequestId]
   )
 }
 
@@ -2631,7 +2839,10 @@ async function buildCatchUpDigestPromptForPullRequest(
   const events = (await listActivityEventRows(db, pullRequestId)).filter(
     (event) => !lastSeenAt || event.occurred_at > lastSeenAt
   )
-  if (events.length === 0) {
+  const comments = (await listDiscussionComments(db, pullRequestId)).filter(
+    (comment) => !lastSeenAt || comment.occurredAt > lastSeenAt
+  )
+  if (events.length === 0 && comments.length === 0) {
     return undefined
   }
 
@@ -2640,13 +2851,24 @@ async function buildCatchUpDigestPromptForPullRequest(
     number: pullRequest.number,
     title: pullRequest.title,
     lastSeenAt: lastSeenAt ?? undefined,
-    events: events.map((event) => ({
-      type: event.event_type,
-      actor: event.actor_login,
-      title: event.title,
-      body: event.body ?? undefined,
-      occurredAt: event.occurred_at,
-    })),
+    events: [
+      ...events.map((event) => ({
+        type: event.event_type,
+        actor: event.actor_login,
+        title: event.title,
+        body: event.body ?? undefined,
+        occurredAt: event.occurred_at,
+      })),
+      ...comments.map((comment) => ({
+        type: comment.source,
+        actor: comment.actor,
+        title: comment.filePath
+          ? `Commented on ${comment.filePath}${comment.line ? `:${comment.line}` : ""}`
+          : "Commented on the pull request",
+        body: comment.body,
+        occurredAt: comment.occurredAt,
+      })),
+    ].sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt)),
   })
 }
 
@@ -2686,10 +2908,7 @@ async function buildThreadStateInputForPullRequest(
     participantsByThreadId.set(participant.review_thread_id, logins)
   }
 
-  const comments = (await listActivityEventRows(db, pullRequestId)).filter(
-    (event) =>
-      ["comment", "review"].includes(event.event_type) && event.body
-  )
+  const comments = await listDiscussionComments(db, pullRequestId)
 
   const prompt = buildThreadStatePrompt({
     repository: pullRequest.repository_full_name,
@@ -2705,17 +2924,68 @@ async function buildThreadStateInputForPullRequest(
       lastActorLogin: thread.last_actor_login ?? undefined,
       lastActivityAt: thread.last_activity_at,
     })),
-    comments: comments.map((comment) => ({
-      actor: comment.actor_login,
-      body: comment.body ?? "",
-      occurredAt: comment.occurred_at,
-    })),
+    comments,
   })
 
   return {
     prompt,
     allowedFiles: threads.flatMap((thread) =>
       thread.file_path ? [thread.file_path] : []
+    ),
+  }
+}
+
+async function listDiscussionComments(
+  db: SqlDatabase,
+  pullRequestId: string
+): Promise<DiscussionCommentInput[]> {
+  const [reviewComments, issueComments, reviewEvents] = await Promise.all([
+    listReviewCommentRows(db, pullRequestId),
+    listIssueCommentRows(db, pullRequestId),
+    listReviewEventRows(db, pullRequestId),
+  ])
+
+  return [
+    ...issueComments.map((comment) => ({
+      actor: comment.author_login,
+      body: comment.body,
+      occurredAt: comment.created_at_github,
+      source: "issue_comment" as const,
+    })),
+    ...reviewComments.map((comment) => ({
+      actor: comment.author_login,
+      body: comment.body,
+      occurredAt: comment.created_at_github,
+      source: "review_comment" as const,
+      filePath: comment.file_path ?? undefined,
+      line: comment.line ?? undefined,
+    })),
+    ...reviewEvents.flatMap((review) =>
+      review.body
+        ? [
+            {
+              actor: review.reviewer_login,
+              body: review.body,
+              occurredAt: review.submitted_at,
+              source: "review" as const,
+            },
+          ]
+        : []
+    ),
+  ].sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt))
+}
+
+async function enrichAiInsightsInputWithComments(
+  db: SqlDatabase,
+  input: AiInsightsInput
+): Promise<AiInsightsInput> {
+  return {
+    ...input,
+    items: await Promise.all(
+      input.items.map(async (item) => ({
+        ...item,
+        discussionExcerpts: (await listDiscussionComments(db, item.id)).slice(-5),
+      }))
     ),
   }
 }
@@ -2988,6 +3258,37 @@ function mapSnapshotReviewThread(
     line: thread.line ?? undefined,
     lastActivityAt: lastComment?.created_at ?? fallbackTimestamp,
   }
+}
+
+function reviewCommentsFromSnapshot(
+  snapshot: GitHubPullRequestSnapshot
+): ReviewCommentInput[] {
+  const comments: ReviewCommentInput[] = []
+
+  for (const thread of snapshot.review_threads ?? []) {
+    for (const comment of thread.comments ?? []) {
+      const githubNodeId = comment.id
+      const body = comment.body?.trim()
+      const createdAt = comment.created_at
+      if (!githubNodeId || !body || !createdAt) continue
+
+      comments.push({
+        id: deterministicUuid(`review-comment:${githubNodeId}`),
+        reviewThreadId: thread.id,
+        githubNodeId,
+        authorLogin: comment.author?.login ?? "unknown",
+        body,
+        filePath: comment.path ?? thread.path ?? undefined,
+        line: comment.line ?? thread.line ?? undefined,
+        createdAt,
+        updatedAt: comment.updated_at,
+        url: comment.url,
+        rawPayload: { ...comment, review_thread_id: thread.id },
+      })
+    }
+  }
+
+  return comments
 }
 
 function buildActors(

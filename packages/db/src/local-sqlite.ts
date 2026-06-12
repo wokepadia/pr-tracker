@@ -13,6 +13,7 @@ import {
   type ReviewThread
 } from "@pr-tracker/core";
 import type {
+  GitHubIssueCommentSnapshot,
   GitHubPullRequestSnapshot,
   GitHubReviewSnapshot,
   GitHubReviewThreadSnapshot
@@ -102,6 +103,29 @@ export interface LocalReviewThreadParticipantRow {
   login: string;
 }
 
+export interface LocalReviewCommentRow {
+  id: string;
+  review_thread_id: string | null;
+  pull_request_id: string;
+  author_login: string;
+  body: string;
+  file_path: string | null;
+  line: number | null;
+  created_at_github: string;
+  updated_at_github: string | null;
+  url: string | null;
+}
+
+export interface LocalIssueCommentRow {
+  id: string;
+  pull_request_id: string;
+  author_login: string;
+  body: string;
+  created_at_github: string;
+  updated_at_github: string | null;
+  url: string | null;
+}
+
 export interface LocalActivityEventRow {
   id: string;
   pull_request_id: string;
@@ -112,6 +136,20 @@ export interface LocalActivityEventRow {
   body: string | null;
   url: string | null;
   diff_url: string | null;
+}
+
+interface ReviewCommentInput {
+  id: string;
+  reviewThreadId?: string;
+  githubNodeId: string;
+  authorLogin: string;
+  body: string;
+  filePath?: string;
+  line?: number;
+  createdAt: string;
+  updatedAt?: string | null;
+  url?: string | null;
+  rawPayload: unknown;
 }
 
 export interface LocalBoardItemStateRow {
@@ -395,7 +433,11 @@ export function upsertLocalPullRequestSnapshot(
       storedPullRequestId = upsertLocalPullRequest(db, pullRequest, now, {
         githubNodeId,
         rawPayload: snapshot,
-        skipThreads: snapshot.review_threads === undefined
+        skipThreads: snapshot.review_threads === undefined,
+        reviewComments: reviewCommentsFromSnapshot(snapshot),
+        skipReviewComments: snapshot.review_threads === undefined,
+        issueComments: snapshot.issue_comments,
+        skipIssueComments: snapshot.issue_comments === undefined
       });
       ensureDefaultBoardItem(db, { ...pullRequest, id: storedPullRequestId }, now);
     }
@@ -581,6 +623,57 @@ export function listLocalReviewThreadParticipantRows(
       `
     )
     .all(...threadIds) as unknown as LocalReviewThreadParticipantRow[];
+}
+
+export function listLocalReviewCommentRows(
+  db: DatabaseSync,
+  pullRequestId: string
+): LocalReviewCommentRow[] {
+  return db
+    .prepare(
+      `
+        select
+          comment.id,
+          comment.review_thread_id,
+          comment.pull_request_id,
+          coalesce(author.login, 'unknown') as author_login,
+          comment.body,
+          comment.file_path,
+          comment.line,
+          comment.created_at_github,
+          comment.updated_at_github,
+          json_extract(comment.raw_payload_json, '$.url') as url
+        from review_comments comment
+        left join github_accounts author on author.id = comment.author_account_id
+        where comment.pull_request_id = ?
+        order by comment.created_at_github asc
+      `
+    )
+    .all(pullRequestId) as unknown as LocalReviewCommentRow[];
+}
+
+export function listLocalIssueCommentRows(
+  db: DatabaseSync,
+  pullRequestId: string
+): LocalIssueCommentRow[] {
+  return db
+    .prepare(
+      `
+        select
+          comment.id,
+          comment.pull_request_id,
+          coalesce(author.login, 'unknown') as author_login,
+          comment.body,
+          comment.created_at_github,
+          comment.updated_at_github,
+          json_extract(comment.raw_payload_json, '$.url') as url
+        from issue_comments comment
+        left join github_accounts author on author.id = comment.author_account_id
+        where comment.pull_request_id = ?
+        order by comment.created_at_github asc
+      `
+    )
+    .all(pullRequestId) as unknown as LocalIssueCommentRow[];
 }
 
 export function listLocalActivityEventRows(
@@ -871,6 +964,12 @@ function upsertLocalPullRequest(
     rawPayload?: unknown;
     /** Keep existing thread rows when the snapshot had no thread data. */
     skipThreads?: boolean;
+    reviewComments?: ReviewCommentInput[];
+    /** Keep existing review comment rows when thread/comment data was unavailable. */
+    skipReviewComments?: boolean;
+    issueComments?: GitHubIssueCommentSnapshot[];
+    /** Keep existing issue comment rows when the issue comments fetch was unavailable. */
+    skipIssueComments?: boolean;
   } = {}
 ): string {
   const [owner, repoName = pullRequest.repository] = pullRequest.repository.split("/");
@@ -1025,6 +1124,22 @@ function upsertLocalPullRequest(
   if (!options.skipThreads) {
     replaceLocalThreads(db, storedPullRequest.threads, storedPullRequest.id, now);
   }
+  if (!options.skipReviewComments) {
+    replaceLocalReviewComments(
+      db,
+      options.reviewComments ?? [],
+      storedPullRequest.id,
+      now
+    );
+  }
+  if (!options.skipIssueComments) {
+    replaceLocalIssueComments(
+      db,
+      options.issueComments ?? [],
+      storedPullRequest.id,
+      now
+    );
+  }
   replaceLocalActivity(db, storedPullRequest.activity, storedPullRequest.id, now);
 
   return storedPullRequestId;
@@ -1116,6 +1231,39 @@ function mapSnapshotReviewThread(
     line: thread.line ?? undefined,
     lastActivityAt: lastComment?.created_at ?? fallbackTimestamp
   };
+}
+
+function reviewCommentsFromSnapshot(
+  snapshot: GitHubPullRequestSnapshot
+): ReviewCommentInput[] {
+  const comments: ReviewCommentInput[] = [];
+
+  for (const thread of snapshot.review_threads ?? []) {
+    for (const comment of thread.comments ?? []) {
+      const githubNodeId = comment.id;
+      const body = comment.body?.trim();
+      const createdAt = comment.created_at;
+      if (!githubNodeId || !body || !createdAt) {
+        continue;
+      }
+
+      comments.push({
+        id: deterministicUuid(`review-comment:${githubNodeId}`),
+        reviewThreadId: thread.id,
+        githubNodeId,
+        authorLogin: comment.author?.login ?? "unknown",
+        body,
+        filePath: comment.path ?? thread.path ?? undefined,
+        line: comment.line ?? thread.line ?? undefined,
+        createdAt,
+        updatedAt: comment.updated_at,
+        url: comment.url,
+        rawPayload: { ...comment, review_thread_id: thread.id }
+      });
+    }
+  }
+
+  return comments;
 }
 
 function cleanPullRequestDescription(value: string | null | undefined): string | undefined {
@@ -1687,6 +1835,113 @@ function replaceLocalThreads(
         now
       );
     }
+  }
+}
+
+function replaceLocalReviewComments(
+  db: DatabaseSync,
+  comments: ReviewCommentInput[],
+  pullRequestId: string,
+  now: string
+): void {
+  db.prepare(`delete from review_comments where pull_request_id = ?`).run(
+    pullRequestId
+  );
+
+  for (const comment of comments) {
+    const authorAccountId = upsertGithubAccount(db, {
+      login: comment.authorLogin,
+      accountType: "user",
+      now
+    });
+
+    db.prepare(
+      `
+        insert into review_comments (
+          id,
+          review_thread_id,
+          pull_request_id,
+          github_node_id,
+          author_account_id,
+          body,
+          file_path,
+          line,
+          created_at_github,
+          updated_at_github,
+          raw_payload_json,
+          created_at,
+          updated_at
+        )
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      comment.id,
+      comment.reviewThreadId ?? null,
+      pullRequestId,
+      comment.githubNodeId,
+      authorAccountId,
+      comment.body,
+      comment.filePath ?? null,
+      comment.line ?? null,
+      comment.createdAt,
+      comment.updatedAt ?? null,
+      JSON.stringify(comment.rawPayload),
+      now,
+      now
+    );
+  }
+}
+
+function replaceLocalIssueComments(
+  db: DatabaseSync,
+  comments: GitHubIssueCommentSnapshot[],
+  pullRequestId: string,
+  now: string
+): void {
+  db.prepare(`delete from issue_comments where pull_request_id = ?`).run(
+    pullRequestId
+  );
+
+  for (const comment of comments) {
+    const body = comment.body.trim();
+    if (!body) {
+      continue;
+    }
+
+    const authorAccountId = upsertGithubAccount(db, {
+      login: comment.author?.login ?? "unknown",
+      accountType: "user",
+      now
+    });
+
+    db.prepare(
+      `
+        insert into issue_comments (
+          id,
+          pull_request_id,
+          github_node_id,
+          author_account_id,
+          body,
+          created_at_github,
+          updated_at_github,
+          raw_payload_json,
+          created_at,
+          updated_at
+        )
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      deterministicUuid(`issue-comment:${comment.id}`),
+      pullRequestId,
+      comment.id,
+      authorAccountId,
+      body,
+      comment.created_at,
+      comment.updated_at ?? null,
+      JSON.stringify(comment),
+      now,
+      now
+    );
   }
 }
 

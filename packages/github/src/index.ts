@@ -82,6 +82,11 @@ export interface GitHubPullRequestSnapshot {
    */
   review_threads?: GitHubReviewThreadSnapshot[];
   /**
+   * Top-level pull request conversation comments, fetched from the issue
+   * comments endpoint. Undefined means the fetch was unavailable.
+   */
+  issue_comments?: GitHubIssueCommentSnapshot[];
+  /**
    * Combined check/status rollup for the head commit, fetched via GraphQL.
    * Undefined means the rollup was unavailable or the commit has no checks.
    */
@@ -110,9 +115,24 @@ export interface GitHubReviewThreadSnapshot {
   path?: string | null;
   line?: number | null;
   comments?: Array<{
+    id?: string;
     author?: { login?: string };
+    body?: string;
+    path?: string | null;
+    line?: number | null;
     created_at?: string;
+    updated_at?: string | null;
+    url?: string | null;
   }>;
+}
+
+export interface GitHubIssueCommentSnapshot {
+  id: string;
+  author?: { login?: string };
+  body: string;
+  created_at: string;
+  updated_at?: string | null;
+  url?: string | null;
 }
 
 export interface GitHubPullRequestLookupInput {
@@ -205,6 +225,16 @@ interface GitHubReviewFromApi {
   body?: string | null;
   submitted_at?: string;
   commit_id?: string;
+  user?: { login?: string; avatar_url?: string };
+}
+
+interface GitHubIssueCommentFromApi {
+  id: number;
+  node_id?: string;
+  body?: string | null;
+  html_url?: string;
+  created_at?: string;
+  updated_at?: string | null;
   user?: { login?: string; avatar_url?: string };
 }
 
@@ -381,9 +411,10 @@ async function listConfiguredRepositoryPullRequests(
       pullRequests,
       8,
       async (pullRequest) => {
-        const [reviews, graphqlFacts] = await Promise.all([
+        const [reviews, graphqlFacts, issueComments] = await Promise.all([
           listPullRequestReviews(octokit, owner, name, pullRequest.number),
-          fetchPullRequestGraphqlFacts(octokit, owner, name, pullRequest.number)
+          fetchPullRequestGraphqlFacts(octokit, owner, name, pullRequest.number),
+          listIssueComments(octokit, owner, name, pullRequest.number)
         ]);
 
         return {
@@ -398,6 +429,7 @@ async function listConfiguredRepositoryPullRequests(
           },
           reviews: stripReviewBodies(reviews),
           review_threads: graphqlFacts.reviewThreads,
+          issue_comments: issueComments,
           status_check_rollup: graphqlFacts.statusCheckRollup
         };
       }
@@ -636,6 +668,64 @@ function stripReviewBodies(
   return reviews.map((review) => ({ ...review, body: undefined }));
 }
 
+const maxIssueCommentPages = 10;
+
+async function listIssueComments(
+  octokit: RequestingOctokit,
+  owner: string,
+  repo: string,
+  issueNumber: number
+): Promise<GitHubIssueCommentSnapshot[] | undefined> {
+  try {
+    const comments: GitHubIssueCommentSnapshot[] = [];
+
+    for (let page = 1; page <= maxIssueCommentPages; page += 1) {
+      const response = await octokit.request<GitHubIssueCommentFromApi[]>(
+        "GET /repos/{owner}/{repo}/issues/{issue_number}/comments",
+        {
+          owner,
+          repo,
+          issue_number: issueNumber,
+          per_page: 100,
+          page
+        }
+      );
+
+      comments.push(
+        ...response.data.flatMap((comment) => {
+          const id = comment.node_id ?? String(comment.id);
+          const body = comment.body?.trim();
+          const createdAt = comment.created_at;
+          if (!id || !body || !createdAt) {
+            return [];
+          }
+
+          return [
+            {
+              id,
+              author: comment.user?.login
+                ? { login: comment.user.login }
+                : undefined,
+              body,
+              created_at: createdAt,
+              updated_at: comment.updated_at,
+              url: comment.html_url
+            }
+          ];
+        })
+      );
+
+      if (response.data.length < 100) {
+        break;
+      }
+    }
+
+    return comments;
+  } catch {
+    return undefined;
+  }
+}
+
 async function getTokenPullRequest(
   octokit: RequestingOctokit,
   lookup: GitHubPullRequestLookupInput,
@@ -655,9 +745,10 @@ async function getTokenPullRequest(
         pull_number: lookup.number
       }
     );
-    const [reviews, graphqlFacts] = await Promise.all([
+    const [reviews, graphqlFacts, issueComments] = await Promise.all([
       listPullRequestReviews(octokit, owner, repo, response.data.number),
-      fetchPullRequestGraphqlFacts(octokit, owner, repo, response.data.number)
+      fetchPullRequestGraphqlFacts(octokit, owner, repo, response.data.number),
+      listIssueComments(octokit, owner, repo, response.data.number)
     ]);
 
     return {
@@ -672,6 +763,7 @@ async function getTokenPullRequest(
       },
       reviews: options.stripReviewBodies ? stripReviewBodies(reviews) : reviews,
       review_threads: graphqlFacts.reviewThreads,
+      issue_comments: issueComments,
       status_check_rollup: graphqlFacts.statusCheckRollup
     };
   } catch (error) {
@@ -785,8 +877,14 @@ const reviewThreadsGraphqlQuery = `
             line
             comments(last: 50) {
               nodes {
+                id
                 author { login }
+                body
+                path
+                line
                 createdAt
+                updatedAt
+                url
               }
             }
           }
@@ -826,8 +924,14 @@ interface GitHubReviewThreadsGraphqlResponse {
             line?: number | null;
             comments?: {
               nodes?: Array<{
+                id?: string;
                 author?: { login?: string } | null;
+                body?: string;
+                path?: string | null;
+                line?: number | null;
                 createdAt?: string;
+                updatedAt?: string | null;
+                url?: string | null;
               } | null>;
             };
           } | null>;
@@ -922,10 +1026,16 @@ async function fetchPullRequestGraphqlFacts(
                 Boolean(comment)
               )
               .map((comment) => ({
+                id: comment.id,
                 author: comment.author?.login
                   ? { login: comment.author.login }
                   : undefined,
-                created_at: comment.createdAt
+                body: comment.body,
+                path: comment.path,
+                line: comment.line,
+                created_at: comment.createdAt,
+                updated_at: comment.updatedAt,
+                url: comment.url
               }))
           }))
       );

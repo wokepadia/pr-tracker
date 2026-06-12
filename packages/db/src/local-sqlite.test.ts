@@ -9,9 +9,11 @@ import {
   listLocalActivityEventRows,
   listLocalBoardItemStateRows,
   listLocalBoardColumnRows,
+  listLocalIssueCommentRows,
   listLocalPullRequestAssigneeRows,
   listLocalPullRequestLabelRows,
   listLocalPullRequestRows,
+  listLocalReviewCommentRows,
   listLocalReviewEventRows,
   listLocalReviewRequestRows,
   listLocalReviewThreadParticipantRows,
@@ -630,6 +632,116 @@ describe("local SQLite storage", () => {
       expect(
         listLocalReviewThreadRows(local.db, "github:acme~web:55")
       ).toMatchObject([{ id: "RT_55_1", last_actor_login: "author" }]);
+    } finally {
+      local.close();
+    }
+  });
+
+  it("ingests PR comment bodies and preserves them when a later fetch lacks comment data", async () => {
+    const local = openLocalDatabase({ path: ":memory:" });
+    const basePullRequest = {
+      id: 56,
+      node_id: "PR_kw_comments_56",
+      number: 56,
+      title: "Comment body ingestion",
+      html_url: "https://github.com/acme/web/pull/56",
+      state: "open",
+      created_at: "2026-06-01T08:00:00.000Z",
+      user: { login: "author" }
+    };
+
+    try {
+      await syncPullRequestsToLocalSqlite(local.db, {
+        async listPullRequests() {
+          return [
+            {
+              repository: { full_name: "acme/web" },
+              pull_request: {
+                ...basePullRequest,
+                updated_at: "2026-06-01T09:00:00.000Z"
+              },
+              review_threads: [
+                {
+                  id: "RT_56_1",
+                  is_resolved: false,
+                  path: "src/comments.ts",
+                  line: 22,
+                  comments: [
+                    {
+                      id: "PRRC_kw_1",
+                      author: { login: "reviewer" },
+                      body: "Could this branch explain the retry state?",
+                      path: "src/comments.ts",
+                      line: 22,
+                      created_at: "2026-06-01T08:30:00.000Z",
+                      updated_at: "2026-06-01T08:31:00.000Z",
+                      url: "https://github.com/acme/web/pull/56#discussion_r1"
+                    }
+                  ]
+                }
+              ],
+              issue_comments: [
+                {
+                  id: "IC_kw_1",
+                  author: { login: "author" },
+                  body: "I pushed the retry-state follow-up.",
+                  created_at: "2026-06-01T08:45:00.000Z",
+                  updated_at: "2026-06-01T08:45:30.000Z",
+                  url: "https://github.com/acme/web/pull/56#issuecomment-1"
+                }
+              ]
+            }
+          ];
+        }
+      });
+
+      expect(
+        listLocalReviewCommentRows(local.db, "github:acme~web:56")
+      ).toMatchObject([
+        {
+          review_thread_id: "RT_56_1",
+          author_login: "reviewer",
+          body: "Could this branch explain the retry state?",
+          file_path: "src/comments.ts",
+          line: 22,
+          created_at_github: "2026-06-01T08:30:00.000Z",
+          updated_at_github: "2026-06-01T08:31:00.000Z",
+          url: "https://github.com/acme/web/pull/56#discussion_r1"
+        }
+      ]);
+      expect(
+        listLocalIssueCommentRows(local.db, "github:acme~web:56")
+      ).toMatchObject([
+        {
+          author_login: "author",
+          body: "I pushed the retry-state follow-up.",
+          created_at_github: "2026-06-01T08:45:00.000Z",
+          updated_at_github: "2026-06-01T08:45:30.000Z",
+          url: "https://github.com/acme/web/pull/56#issuecomment-1"
+        }
+      ]);
+
+      await syncPullRequestsToLocalSqlite(local.db, {
+        async listPullRequests() {
+          return [
+            {
+              repository: { full_name: "acme/web" },
+              pull_request: {
+                ...basePullRequest,
+                updated_at: "2026-06-01T10:00:00.000Z"
+              }
+              // review_threads and issue_comments intentionally absent.
+            }
+          ];
+        }
+      });
+
+      expect(
+        listLocalReviewCommentRows(local.db, "github:acme~web:56")
+      ).toHaveLength(1);
+      expect(
+        listLocalIssueCommentRows(local.db, "github:acme~web:56")
+      ).toHaveLength(1);
     } finally {
       local.close();
     }

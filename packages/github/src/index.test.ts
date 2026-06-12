@@ -83,12 +83,24 @@ describe("GitHub token pull request source", () => {
                           comments: {
                             nodes: [
                               {
+                                id: "PRRC_kw_1",
                                 author: { login: "viewer" },
-                                createdAt: "2026-06-01T08:30:00.000Z"
+                                body: "Could this retry only 5xx responses?",
+                                path: "src/webhooks.ts",
+                                line: 44,
+                                createdAt: "2026-06-01T08:30:00.000Z",
+                                updatedAt: "2026-06-01T08:31:00.000Z",
+                                url: "https://github.com/acme/web/pull/42#discussion_r1"
                               },
                               {
+                                id: "PRRC_kw_2",
                                 author: { login: "author" },
-                                createdAt: "2026-06-01T09:00:00.000Z"
+                                body: "I narrowed it to 5xx.",
+                                path: "src/webhooks.ts",
+                                line: 44,
+                                createdAt: "2026-06-01T09:00:00.000Z",
+                                updatedAt: "2026-06-01T09:01:00.000Z",
+                                url: "https://github.com/acme/web/pull/42#discussion_r2"
                               }
                             ]
                           }
@@ -99,6 +111,22 @@ describe("GitHub token pull request source", () => {
                 }
               }
             } as T
+          };
+        }
+
+        if (route === "GET /repos/{owner}/{repo}/issues/{issue_number}/comments") {
+          return {
+            data: [
+              {
+                id: 1001,
+                node_id: "IC_kw_1001",
+                body: "Top-level context for the reviewer.",
+                html_url: "https://github.com/acme/web/pull/42#issuecomment-1001",
+                created_at: "2026-06-01T08:45:00.000Z",
+                updated_at: "2026-06-01T08:46:00.000Z",
+                user: { login: "author" }
+              }
+            ] as T
           };
         }
 
@@ -142,14 +170,36 @@ describe("GitHub token pull request source", () => {
         line: 44,
         comments: [
           {
+            id: "PRRC_kw_1",
             author: { login: "viewer" },
-            created_at: "2026-06-01T08:30:00.000Z"
+            body: "Could this retry only 5xx responses?",
+            path: "src/webhooks.ts",
+            line: 44,
+            created_at: "2026-06-01T08:30:00.000Z",
+            updated_at: "2026-06-01T08:31:00.000Z",
+            url: "https://github.com/acme/web/pull/42#discussion_r1"
           },
           {
+            id: "PRRC_kw_2",
             author: { login: "author" },
-            created_at: "2026-06-01T09:00:00.000Z"
+            body: "I narrowed it to 5xx.",
+            path: "src/webhooks.ts",
+            line: 44,
+            created_at: "2026-06-01T09:00:00.000Z",
+            updated_at: "2026-06-01T09:01:00.000Z",
+            url: "https://github.com/acme/web/pull/42#discussion_r2"
           }
         ]
+      }
+    ]);
+    expect(snapshots[0]?.issue_comments).toEqual([
+      {
+        id: "IC_kw_1001",
+        author: { login: "author" },
+        body: "Top-level context for the reviewer.",
+        created_at: "2026-06-01T08:45:00.000Z",
+        updated_at: "2026-06-01T08:46:00.000Z",
+        url: "https://github.com/acme/web/pull/42#issuecomment-1001"
       }
     ]);
     const graphqlCall = calls.find((call) => call.route === "POST /graphql");

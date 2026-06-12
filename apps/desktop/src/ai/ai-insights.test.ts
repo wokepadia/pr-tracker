@@ -134,6 +134,20 @@ describe("buildAiInsightsPrompt", () => {
       needsYouNow: [makeRow(item, "Your turn for 4d")],
     })
     const input = buildAiInsightsInput(insights, [item])
+    const promptItem = input.items[0]
+    if (!promptItem) {
+      throw new Error("Expected AI insights input item.")
+    }
+    promptItem.discussionExcerpts = [
+      {
+        actor: "maya",
+        body: "The webhook retry state now matches the queue transition.",
+        occurredAt: "2026-06-10T09:00:00.000Z",
+        source: "review_comment",
+        filePath: "src/webhooks.ts",
+        line: 44,
+      },
+    ]
 
     const { system, user } = buildAiInsightsPrompt(input)
 
@@ -142,6 +156,10 @@ describe("buildAiInsightsPrompt", () => {
     expect(user).toContain("- id pr_1 | acme/api#142 | Normalize webhooks")
     expect(user).toContain("waiting on: you for 4d")
     expect(user).toContain("flag — needs you now: Your turn for 4d")
+    expect(user).toContain(
+      "discussion — [2026-06-10T09:00:00.000Z] review_comment on src/webhooks.ts:44 by maya:"
+    )
+    expect(user).toContain("The webhook retry state now matches")
     expect(user).toContain("sweep notes grouping the pull requests")
   })
 

@@ -23,6 +23,15 @@ export interface AiInsightsPrInput {
   chips: string[]
   /** Unseen activity lines, capped per pull request. */
   unseenEvents: string[]
+  /** Recent cached discussion excerpts for AI grounding; not rendered directly. */
+  discussionExcerpts?: Array<{
+    actor: string
+    body: string
+    occurredAt: string
+    source: "issue_comment" | "review_comment" | "review"
+    filePath?: string
+    line?: number
+  }>
 }
 
 export interface AiInsightsInput {
@@ -39,6 +48,8 @@ export interface AiInsightsContent {
 
 const maxInputItems = 40
 const maxUnseenEventsPerItem = 5
+const maxDiscussionExcerptsPerItem = 5
+const maxDiscussionExcerptChars = 500
 const maxReadingOrderEntries = 8
 const maxWhileAwayEntries = 6
 const maxSweepEntries = 4
@@ -253,6 +264,17 @@ export function buildAiInsightsPrompt(input: AiInsightsInput): {
     if (item.unseenEvents.length > 0) {
       lines.push(`  new since last seen: ${item.unseenEvents.join("; ")}`)
     }
+    for (const excerpt of (item.discussionExcerpts ?? []).slice(
+      -maxDiscussionExcerptsPerItem
+    )) {
+      const location = excerpt.filePath
+        ? ` on ${excerpt.filePath}${excerpt.line ? `:${excerpt.line}` : ""}`
+        : ""
+      lines.push(
+        `  discussion — [${excerpt.occurredAt}] ${excerpt.source}${location} by ${excerpt.actor}:`,
+        indentBlock(truncateText(excerpt.body, maxDiscussionExcerptChars))
+      )
+    }
   }
 
   if (input.omittedCount > 0) {
@@ -265,6 +287,18 @@ export function buildAiInsightsPrompt(input: AiInsightsInput): {
   )
 
   return { system, user: lines.join("\n") }
+}
+
+function indentBlock(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => `  ${line}`)
+    .join("\n")
+}
+
+function truncateText(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text
+  return `${text.slice(0, maxChars)}\n(truncated)`
 }
 
 /**

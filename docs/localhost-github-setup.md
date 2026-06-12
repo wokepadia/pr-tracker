@@ -63,8 +63,9 @@ API environments.
 
 ## Current Local Behavior
 
-The GitHub sync path reads pull requests, requested reviewers, and submitted
-reviews into SQLite. The reviewer workflow states are derived locally from the
+The GitHub sync path reads pull requests, requested reviewers, submitted
+reviews, review-thread comments, and top-level pull request conversation
+comments into SQLite. The reviewer workflow states are derived locally from the
 cached deterministic data.
 
 The "mark seen" action and board state are stored in SQLite and survive desktop

@@ -321,6 +321,9 @@ export interface ThreadStateCommentInput {
   actor: string
   body: string
   occurredAt: string
+  source?: "issue_comment" | "review_comment" | "review"
+  filePath?: string
+  line?: number
 }
 
 export interface ThreadStatePromptInput {
@@ -411,9 +414,13 @@ export function buildThreadStatePrompt(input: ThreadStatePromptInput): {
     lines.push("(no comment text cached locally)")
   }
   for (const comment of input.comments.slice(-maxThreadStateComments)) {
+    const source = comment.source ? `${comment.source} ` : ""
+    const location = comment.filePath
+      ? ` on ${comment.filePath}${comment.line ? `:${comment.line}` : ""}`
+      : ""
     lines.push(
       "",
-      `- [${comment.occurredAt}] ${comment.actor}:`,
+      `- [${comment.occurredAt}] ${source}by ${comment.actor}${location}:`,
       indentBlock(truncateText(comment.body, maxThreadStateBodyChars))
     )
   }

@@ -230,6 +230,9 @@ describe("buildThreadStatePrompt", () => {
           actor: "sam",
           body: "Should this retry on 5xx only?",
           occurredAt: "2026-06-10T09:00:00.000Z",
+          source: "review_comment",
+          filePath: "src/webhooks.ts",
+          line: 44,
         },
       ],
     })
@@ -240,6 +243,9 @@ describe("buildThreadStatePrompt", () => {
       "- src/webhooks.ts:44 — unresolved, outdated by new commits, participants: viewer, sam, last reply by sam at 2026-06-10T09:00:00.000Z"
     )
     expect(user).toContain("- (no file recorded) — resolved")
+    expect(user).toContain(
+      "- [2026-06-10T09:00:00.000Z] review_comment by sam on src/webhooks.ts:44:"
+    )
     expect(user).toContain("Should this retry on 5xx only?")
   })
 
