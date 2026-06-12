@@ -12,6 +12,7 @@ import {
   EyeOff,
   ExternalLink,
   History,
+  MessageSquareReply,
   RotateCcw,
   Sparkles,
   Timer,
@@ -38,7 +39,12 @@ import {
 const SECTION_ROW_CAP = 5
 
 interface InsightSectionDefinition {
-  id: "needsYouNow" | "mightBeMissing" | "whileAway" | "hygiene"
+  id:
+    | "needsYouNow"
+    | "mightBeMissing"
+    | "stalledOnYou"
+    | "whileAway"
+    | "hygiene"
   title: string
   caption: string
   emptyLine: string
@@ -65,6 +71,15 @@ const insightSections: InsightSectionDefinition[] = [
     icon: EyeOff,
     accentClassName: "bg-sky-500",
     chipClassName: "border-sky-200 bg-sky-50 text-sky-900",
+  },
+  {
+    id: "stalledOnYou",
+    title: "Stalled on you",
+    caption: "Aged threads where someone else spoke last",
+    emptyLine: "No quiet threads are waiting on your reply.",
+    icon: MessageSquareReply,
+    accentClassName: "bg-rose-500",
+    chipClassName: "border-rose-200 bg-rose-50 text-rose-900",
   },
   {
     id: "whileAway",

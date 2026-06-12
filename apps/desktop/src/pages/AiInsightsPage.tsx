@@ -7,6 +7,7 @@ import {
 import { Link, useNavigate } from "@tanstack/react-router"
 import {
   ExternalLink,
+  Info,
   Loader2,
   RefreshCw,
   RotateCcw,
@@ -30,6 +31,11 @@ import { useReviewerInsights } from "@/app/use-reviewer-insights"
 import { AuthorAvatar } from "@/components/AuthorAvatar"
 import { Button } from "@/components/ui/button"
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import {
   buildAiDashboardStats,
   type AiDashboardAuthorRow,
   type AiDashboardHotspotRow,
@@ -41,7 +47,18 @@ import {
 } from "@/reviewer/view-model"
 import { formatSyncStatusLabel } from "./inbox-helpers"
 import { cn, externalLinkProps } from "@/lib/utils"
-import type { ReviewerInsightsView } from "@/reviewer/insights"
+import type { InsightRowView, ReviewerInsightsView } from "@/reviewer/insights"
+
+const aiSectionInfo = {
+  readingOrder:
+    'Shows overdue reviews, pull requests returned to you after your review, and stale approvals; quiet reply stalls appear under "Stalled on you" unless already overdue for review. The AI only groups and restates these facts; it never picks the items.',
+  stalledOnYou:
+    'Shows open PRs with no activity past your stall threshold where someone else spoke last, meaning the next reply is yours; overdue reviews stay under "What needs you". The AI only groups and restates these facts; it never picks the items.',
+  whileAway:
+    "Shows pull requests in your board scope that changed or concluded inside the away window since your last Insights visit. The AI only groups and restates these facts; it never picks the items.",
+  sweep:
+    "Shows author-stalled pull requests, no-conversation stalls, and review ping-pong that are better handled in a cleanup pass; stalled replies you owe appear under Stalled on you instead. The AI only groups and restates these facts; it never picks the items.",
+} as const
 
 /**
  * The AI insights view is a deterministic dashboard with narrow AI slots.
@@ -151,6 +168,15 @@ function AiInsightsBody({
     () => new Map(allItems.map((item) => [item.id, item])),
     [allItems]
   )
+  const deterministicEntries = useMemo(
+    () => ({
+      readingOrder: insightRowsToEntries(insights.needsYouNow),
+      stalledOnYou: insightRowsToEntries(insights.stalledOnYou),
+      whileAway: insightRowsToEntries(insights.whileAway),
+      sweep: insightRowsToEntries(insights.hygiene),
+    }),
+    [insights]
+  )
   const insightsQuery = useQuery({
     queryKey: ["ai-insights", inputKey],
     queryFn: () => getAiInsights(input),
@@ -219,45 +245,89 @@ function AiInsightsBody({
 
       <div className="grid grid-cols-12 gap-4">
         <div className="col-span-8 flex flex-col gap-4">
-          <DashboardCard id="ai-reading-order" className="min-h-[300px]">
-            {result ? (
-              <AiInsightSection
-                title="What needs you"
-                caption="A suggested reading order, most pressing first"
-                emptyLine="The model had nothing waiting on you."
-                entries={result.content.readingOrder.map((entry) => ({
-                  pullRequestId: entry.pullRequestId,
-                  text: entry.why,
-                }))}
-                itemById={itemById}
-                ordered
-              />
-            ) : (
-              <AiSlotPlaceholder
-                title="What needs you"
-                caption="A suggested reading order, most pressing first"
-              />
-            )}
+          <DashboardCard
+            id="ai-reading-order"
+            className="min-h-[300px]"
+            title="What needs you"
+            caption="A suggested reading order, most pressing first"
+            info={aiSectionInfo.readingOrder}
+          >
+            <AiInsightSection
+              title="What needs you"
+              caption="A suggested reading order, most pressing first"
+              emptyLine={
+                result
+                  ? "The model had nothing waiting on you."
+                  : "Nothing is waiting on you."
+              }
+              entries={
+                result
+                  ? result.content.readingOrder.map((entry) => ({
+                      pullRequestId: entry.pullRequestId,
+                      text: entry.why,
+                    }))
+                  : deterministicEntries.readingOrder
+              }
+              itemById={itemById}
+              ordered
+              showHeader={false}
+            />
           </DashboardCard>
 
-          <DashboardCard id="ai-while-away" className="min-h-[240px]">
-            {result ? (
-              <AiInsightSection
-                title="While you were away"
-                caption="What concluded or changed without you"
-                emptyLine="Nothing finished without you."
-                entries={result.content.whileAway.map((entry) => ({
-                  pullRequestId: entry.pullRequestId,
-                  text: entry.note,
-                }))}
-                itemById={itemById}
-              />
-            ) : (
-              <AiSlotPlaceholder
-                title="While you were away"
-                caption="What concluded or changed without you"
-              />
-            )}
+          <DashboardCard
+            id="ai-stalled-on-you"
+            className="min-h-[220px]"
+            title="Stalled on you"
+            caption="Quiet threads where someone else spoke last"
+            info={aiSectionInfo.stalledOnYou}
+          >
+            <AiInsightSection
+              title="Stalled on you"
+              caption="Quiet threads where someone else spoke last"
+              emptyLine={
+                result
+                  ? "The model had nothing stalled on you."
+                  : "No quiet threads are waiting on your reply."
+              }
+              entries={
+                result
+                  ? result.content.stalledOnYou.map((entry) => ({
+                      pullRequestId: entry.pullRequestId,
+                      text: entry.note,
+                    }))
+                  : deterministicEntries.stalledOnYou
+              }
+              itemById={itemById}
+              showHeader={false}
+            />
+          </DashboardCard>
+
+          <DashboardCard
+            id="ai-while-away"
+            className="min-h-[240px]"
+            title="While you were away"
+            caption="What concluded or changed without you"
+            info={aiSectionInfo.whileAway}
+          >
+            <AiInsightSection
+              title="While you were away"
+              caption="What concluded or changed without you"
+              emptyLine={
+                result
+                  ? "Nothing finished without you."
+                  : "Nothing finished without you."
+              }
+              entries={
+                result
+                  ? result.content.whileAway.map((entry) => ({
+                      pullRequestId: entry.pullRequestId,
+                      text: entry.note,
+                    }))
+                  : deterministicEntries.whileAway
+              }
+              itemById={itemById}
+              showHeader={false}
+            />
           </DashboardCard>
         </div>
 
@@ -272,24 +342,32 @@ function AiInsightsBody({
       </div>
 
       <div className="grid grid-cols-12 gap-4">
-        <DashboardCard id="ai-sweep" className="col-span-4 min-h-[220px]">
-          {result ? (
-            <AiInsightSection
-              title="Worth a sweep"
-              caption="The aging and stuck items, grouped"
-              emptyLine="Nothing is gathering dust."
-              entries={result.content.sweep.map((entry) => ({
-                pullRequestId: entry.pullRequestId,
-                text: entry.note,
-              }))}
-              itemById={itemById}
-            />
-          ) : (
-            <AiSlotPlaceholder
-              title="Worth a sweep"
-              caption="The aging and stuck items, grouped"
-            />
-          )}
+        <DashboardCard
+          id="ai-sweep"
+          className="col-span-4 min-h-[220px]"
+          title="Worth a sweep"
+          caption="The aging and stuck items, grouped"
+          info={aiSectionInfo.sweep}
+        >
+          <AiInsightSection
+            title="Worth a sweep"
+            caption="The aging and stuck items, grouped"
+            emptyLine={
+              result
+                ? "Nothing is gathering dust."
+                : "Nothing is gathering dust."
+            }
+            entries={
+              result
+                ? result.content.sweep.map((entry) => ({
+                    pullRequestId: entry.pullRequestId,
+                    text: entry.note,
+                  }))
+                : deterministicEntries.sweep
+            }
+            itemById={itemById}
+            showHeader={false}
+          />
         </DashboardCard>
 
         <DiscussionHotspotsCard rows={stats.discussionHotspots} />
@@ -458,26 +536,6 @@ function AiHeadlineSlot({
   )
 }
 
-function AiSlotPlaceholder({
-  title,
-  caption,
-}: {
-  title: string
-  caption: string
-}) {
-  return (
-    <section aria-label={title}>
-      <div className="mb-2 flex items-baseline gap-2">
-        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-        <span className="text-xs text-muted-foreground/70">· {caption}</span>
-      </div>
-      <div className="rounded-md border border-dashed border-border px-4 py-3 text-sm text-muted-foreground">
-        Generate to fill this AI slot.
-      </div>
-    </section>
-  )
-}
-
 function RepositoryBreakdownCard({
   rows,
   remainingCount,
@@ -573,11 +631,15 @@ function AuthorsWaitingCard({ rows }: { rows: AiDashboardAuthorRow[] }) {
 
 function DashboardCard({
   title,
+  caption,
+  info,
   id,
   className,
   children,
 }: {
   title?: string
+  caption?: string
+  info?: string
   id?: string
   className?: string
   children: React.ReactNode
@@ -588,10 +650,38 @@ function DashboardCard({
       className={cn("rounded-md border border-border bg-card p-4", className)}
     >
       {title ? (
-        <h2 className="mb-3 text-sm font-semibold text-foreground">{title}</h2>
+        <div className="mb-3 flex items-baseline gap-2">
+          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+          {caption ? (
+            <span className="text-xs text-muted-foreground/70">· {caption}</span>
+          ) : null}
+          {info ? <InfoTip label={title} text={info} /> : null}
+        </div>
       ) : null}
       {children}
     </section>
+  )
+}
+
+function InfoTip({ label, text }: { label: string; text: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={`About ${label}`}
+          className="inline-flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        className="max-w-sm items-start rounded-md px-3 py-2 text-left leading-5"
+      >
+        {text}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -610,6 +700,7 @@ function AiInsightSection({
   entries,
   itemById,
   ordered = false,
+  showHeader = true,
 }: {
   title: string
   caption: string
@@ -617,6 +708,7 @@ function AiInsightSection({
   entries: Array<{ pullRequestId: string; text: string }>
   itemById: Map<string, ReviewQueueItemView>
   ordered?: boolean
+  showHeader?: boolean
 }) {
   const linkable = entries.flatMap((entry) => {
     const item = itemById.get(entry.pullRequestId)
@@ -625,15 +717,17 @@ function AiInsightSection({
 
   return (
     <section aria-label={title}>
-      <div className="mb-2 flex items-baseline gap-2">
-        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
-        {linkable.length > 0 ? (
-          <span className="text-xs font-medium text-muted-foreground">
-            {linkable.length}
-          </span>
-        ) : null}
-        <span className="text-xs text-muted-foreground/70">· {caption}</span>
-      </div>
+      {showHeader ? (
+        <div className="mb-2 flex items-baseline gap-2">
+          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+          {linkable.length > 0 ? (
+            <span className="text-xs font-medium text-muted-foreground">
+              {linkable.length}
+            </span>
+          ) : null}
+          <span className="text-xs text-muted-foreground/70">· {caption}</span>
+        </div>
+      ) : null}
       {linkable.length === 0 ? (
         <div className="rounded-md border border-dashed border-border px-4 py-2.5 text-sm text-muted-foreground">
           {emptyLine}
@@ -653,6 +747,15 @@ function AiInsightSection({
       )}
     </section>
   )
+}
+
+function insightRowsToEntries(
+  rows: InsightRowView[]
+): Array<{ pullRequestId: string; text: string }> {
+  return rows.map((row) => ({
+    pullRequestId: row.id,
+    text: row.whyChip,
+  }))
 }
 
 function AiInsightRow({
