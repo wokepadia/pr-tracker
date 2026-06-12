@@ -2729,6 +2729,16 @@ async function listKnownOpenPullRequestSnapshots(
     const snapshot = await source.getPullRequest({
       repository: row.repository,
       number: row.number,
+    }).catch((error: unknown) => {
+      if (isTransientGithubDetailRefreshError(error)) {
+        console.warn(
+          `Skipping refresh for known pull request ${row.repository}#${row.number}:`,
+          error
+        )
+        return undefined
+      }
+
+      throw error
     })
     if (!snapshot) continue
     snapshots.push(snapshot)
@@ -2736,6 +2746,11 @@ async function listKnownOpenPullRequestSnapshots(
   }
 
   return snapshots
+}
+
+function isTransientGithubDetailRefreshError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /timed out|failed to fetch|load failed|network/i.test(message)
 }
 
 async function listPullRequestSnapshots(

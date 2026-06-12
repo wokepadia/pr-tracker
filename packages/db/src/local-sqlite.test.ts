@@ -1,7 +1,7 @@
 import { mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createLocalDatabaseBackup,
   defaultLocalBoardId,
@@ -612,6 +612,63 @@ describe("local SQLite storage", () => {
         }
       ]);
     } finally {
+      local.close();
+    }
+  });
+
+  it("keeps the inbox usable when a known pull request refresh times out", async () => {
+    const local = openLocalDatabase({ path: ":memory:" });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    try {
+      await syncPullRequestsToLocalSqlite(local.db, {
+        async listPullRequests() {
+          return [
+            {
+              repository: { full_name: "acme/api" },
+              pull_request: {
+                id: 8,
+                node_id: "PR_kw_sync_8",
+                number: 8,
+                title: "Slow known PR",
+                html_url: "https://github.com/acme/api/pull/8",
+                state: "open",
+                created_at: "2026-06-01T08:00:00.000Z",
+                updated_at: "2026-06-01T09:00:00.000Z",
+                user: { login: "author" },
+                head: { sha: "cached-sha" }
+              }
+            }
+          ];
+        }
+      });
+
+      const result = await syncPullRequestsToLocalSqlite(local.db, {
+        async listPullRequests() {
+          return [];
+        },
+        async getPullRequest(input) {
+          expect(input).toEqual({ repository: "acme/api", number: 8 });
+          throw new Error(
+            "GitHub API request timed out for GET /repos/{owner}/{repo}/pulls/{pull_number}"
+          );
+        }
+      });
+
+      expect(result).toMatchObject({
+        scannedPullRequests: 0,
+        ingestedPullRequests: 0
+      });
+      expect(
+        listLocalPullRequestRows(local.db, { id: "github:acme~api:8" })
+      ).toMatchObject([
+        {
+          state: "open",
+          latest_commit_sha: "cached-sha"
+        }
+      ]);
+    } finally {
+      warnSpy.mockRestore();
       local.close();
     }
   });

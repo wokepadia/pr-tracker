@@ -134,6 +134,16 @@ async function listKnownOpenPullRequestSnapshots(
     const snapshot = await source.getPullRequest({
       repository: pullRequest.repository,
       number: pullRequest.number
+    }).catch((error: unknown) => {
+      if (isTransientGithubDetailRefreshError(error)) {
+        console.warn(
+          `Skipping refresh for known pull request ${pullRequest.repository}#${pullRequest.number}:`,
+          error
+        );
+        return undefined;
+      }
+
+      throw error;
     });
 
     if (snapshot) {
@@ -159,6 +169,11 @@ function listKnownOpenPullRequests(db: DatabaseSync): KnownOpenPullRequest[] {
       `
     )
     .all() as unknown as KnownOpenPullRequest[];
+}
+
+function isTransientGithubDetailRefreshError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /timed out|failed to fetch|load failed|network/i.test(message);
 }
 
 function pullRequestKey(
