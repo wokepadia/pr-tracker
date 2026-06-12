@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import {
   createLocalDatabaseBackup,
+  removeLocalSampleData,
   defaultLocalBoardId,
   listLocalActivityEventRows,
   listLocalBoardItemStateRows,
@@ -139,6 +140,62 @@ describe("local SQLite storage", () => {
         '{"headline":"calm"}',
         "2026-06-11T12:00:00.000Z"
       );
+    } finally {
+      local.close();
+    }
+  });
+
+  it("purges seeded sample data without touching real rows", () => {
+    const local = openLocalDatabase({ path: ":memory:" });
+
+    try {
+      seedLocalSampleData(local.db);
+      // A live row alongside the samples must survive the purge.
+      local.db
+        .prepare(
+          `insert into github_repositories (id, github_node_id, full_name, name, html_url)
+           values ('repo_live', 'repo_live_node', 'octo/live', 'live', 'https://github.com/octo/live')`
+        )
+        .run();
+      local.db
+        .prepare(
+          `insert into pull_requests (
+             id, repository_id, github_node_id, number, title, url, state
+           ) values (
+             'github:octo~live:1', 'repo_live', 'live_node_1', 1, 'Real PR',
+             'https://github.com/octo/live/pull/1', 'open'
+           )`
+        )
+        .run();
+
+      const { removedPullRequests } = removeLocalSampleData(local.db);
+      expect(removedPullRequests).toBe(3);
+
+      const count = (table: string) =>
+        (
+          local.db
+            .prepare(`select count(*) as n from ${table}`)
+            .get() as { n: number }
+        ).n;
+      expect(listLocalPullRequestRows(local.db).map((row) => row.id)).toEqual([
+        "github:octo~live:1"
+      ]);
+      expect(count("board_items")).toBe(0);
+      expect(count("activity_events")).toBe(0);
+      expect(count("review_threads")).toBe(0);
+      expect(count("review_thread_participants")).toBe(0);
+      expect(count("review_events")).toBe(0);
+      expect(count("pull_request_review_requests")).toBe(0);
+      expect(
+        (
+          local.db
+            .prepare(`select full_name from github_repositories order by full_name`)
+            .all() as Array<{ full_name: string }>
+        ).map((row) => row.full_name)
+      ).toEqual(["octo/live"]);
+
+      // Purging again is a no-op.
+      expect(removeLocalSampleData(local.db).removedPullRequests).toBe(0);
     } finally {
       local.close();
     }
@@ -373,6 +430,83 @@ describe("local SQLite storage", () => {
           pull_request_id: "github:acme~web:42",
           column_id: "inbox"
         }
+      ]);
+    } finally {
+      local.close();
+    }
+  });
+
+  it("skips rewriting pull requests when a re-synced snapshot is unchanged", async () => {
+    const local = openLocalDatabase({ path: ":memory:" });
+    const buildSnapshot = () => ({
+      repository: {
+        full_name: "acme/web",
+        html_url: "https://github.com/acme/web",
+        owner: { login: "acme" }
+      },
+      pull_request: {
+        id: 42,
+        node_id: "PR_kw_unchanged_42",
+        number: 42,
+        title: "Ship local cache sync",
+        html_url: "https://github.com/acme/web/pull/42",
+        state: "open",
+        draft: false,
+        created_at: "2026-06-01T08:00:00.000Z",
+        updated_at: "2026-06-01T09:00:00.000Z",
+        user: { login: "author" },
+        head: { sha: "head-sha" }
+      },
+      reviews: [
+        {
+          id: 9,
+          node_id: "PRR_kw_unchanged_9",
+          state: "APPROVED",
+          submitted_at: "2026-06-01T08:45:00.000Z",
+          user: { login: "reviewer" }
+        }
+      ]
+    });
+
+    try {
+      const source = {
+        async listPullRequests() {
+          return [buildSnapshot()];
+        }
+      };
+      await syncPullRequestsToLocalSqlite(local.db, source, {
+        viewerLogin: "viewer"
+      });
+
+      const second = await syncPullRequestsToLocalSqlite(local.db, source, {
+        viewerLogin: "viewer"
+      });
+
+      expect(second).toEqual({
+        scannedPullRequests: 1,
+        ingestedPullRequests: 0,
+        ingestedReviews: 0,
+        ignoredPullRequests: 1,
+        pullRequestIds: ["github:acme~web:42"]
+      });
+
+      // A changed payload with the same updated_at must still be written;
+      // only byte-identical snapshots skip the rewrite.
+      const changedSnapshot = buildSnapshot();
+      changedSnapshot.pull_request.title = "Ship local cache sync, take two";
+      const third = await syncPullRequestsToLocalSqlite(
+        local.db,
+        {
+          async listPullRequests() {
+            return [changedSnapshot];
+          }
+        },
+        { viewerLogin: "viewer" }
+      );
+
+      expect(third.ingestedPullRequests).toBe(1);
+      expect(listLocalPullRequestRows(local.db)).toMatchObject([
+        { title: "Ship local cache sync, take two" }
       ]);
     } finally {
       local.close();

@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import {
+  sampleAvatarUrlsByLogin,
   sampleLastSeenAtByPullRequestId,
   samplePullRequests,
   type PullRequestActivity,
@@ -238,6 +239,110 @@ export function seedLocalSampleData(
   });
 }
 
+/**
+ * Removes everything seedLocalSampleData (or the desktop app's historical
+ * in-app seeding) put into the database, leaving real data untouched. Live
+ * pull requests use github:owner~repo:number ids, so the seeded pr_* ids
+ * can never collide. Child rows are deleted explicitly rather than via
+ * foreign-key cascade so the purge works regardless of the connection's
+ * foreign_keys pragma. Sample repositories and accounts are dropped only
+ * when nothing else references them.
+ */
+export function removeLocalSampleData(db: DatabaseSync): {
+  removedPullRequests: number;
+} {
+  const pullRequestIds = samplePullRequests.map((pullRequest) => pullRequest.id);
+  const idPlaceholders = pullRequestIds.map(() => "?").join(", ");
+  let removedPullRequests = 0;
+
+  transaction(db, () => {
+    db.prepare(
+      `delete from review_thread_participants
+       where review_thread_id in (
+         select id from review_threads where pull_request_id in (${idPlaceholders})
+       )`
+    ).run(...pullRequestIds);
+
+    const childTables = [
+      "pull_request_labels",
+      "pull_request_assignees",
+      "pull_request_review_requests",
+      "review_events",
+      "pull_request_check_runs",
+      "review_comments",
+      "issue_comments",
+      "review_threads",
+      "activity_events",
+      "board_items",
+      "ai_summaries"
+    ];
+    for (const table of childTables) {
+      db.prepare(
+        `delete from ${table} where pull_request_id in (${idPlaceholders})`
+      ).run(...pullRequestIds);
+    }
+
+    const result = db
+      .prepare(`delete from pull_requests where id in (${idPlaceholders})`)
+      .run(...pullRequestIds);
+    removedPullRequests = Number(result.changes);
+
+    const repositories = [
+      ...new Set(samplePullRequests.map((pullRequest) => pullRequest.repository))
+    ];
+    const repositoryPlaceholders = repositories.map(() => "?").join(", ");
+    db.prepare(
+      `delete from tracked_repositories
+       where repository_id in (
+         select id from github_repositories
+         where full_name in (${repositoryPlaceholders})
+           and not exists (
+             select 1 from pull_requests
+             where pull_requests.repository_id = github_repositories.id
+           )
+       )`
+    ).run(...repositories);
+    db.prepare(
+      `delete from github_repositories
+       where full_name in (${repositoryPlaceholders})
+         and not exists (
+           select 1 from pull_requests
+           where pull_requests.repository_id = github_repositories.id
+         )`
+    ).run(...repositories);
+
+    const sampleLogins = [
+      ...new Set([
+        ...Object.keys(sampleAvatarUrlsByLogin),
+        "viewer",
+        // Owner accounts auto-created for the sample repositories.
+        ...repositories.map((fullName) => fullName.split("/")[0] ?? "")
+      ])
+    ].filter((login) => login !== "");
+    const loginPlaceholders = sampleLogins.map(() => "?").join(", ");
+    const accountReferences = [
+      "select 1 from pull_requests where pull_requests.author_account_id = github_accounts.id",
+      "select 1 from review_events where review_events.reviewer_account_id = github_accounts.id",
+      "select 1 from review_comments where review_comments.author_account_id = github_accounts.id",
+      "select 1 from issue_comments where issue_comments.author_account_id = github_accounts.id",
+      "select 1 from activity_events where activity_events.actor_account_id = github_accounts.id",
+      "select 1 from review_thread_participants where review_thread_participants.account_id = github_accounts.id",
+      "select 1 from pull_request_assignees where pull_request_assignees.account_id = github_accounts.id",
+      "select 1 from pull_request_review_requests where pull_request_review_requests.account_id = github_accounts.id",
+      "select 1 from github_repositories where github_repositories.owner_account_id = github_accounts.id"
+    ];
+    db.prepare(
+      `delete from github_accounts
+       where login in (${loginPlaceholders})
+         and ${accountReferences
+           .map((reference) => `not exists (${reference})`)
+           .join("\n         and ")}`
+    ).run(...sampleLogins);
+  });
+
+  return { removedPullRequests };
+}
+
 export function upsertLocalPullRequestSnapshot(
   db: DatabaseSync,
   snapshot: GitHubPullRequestSnapshot,
@@ -253,10 +358,11 @@ export function upsertLocalPullRequestSnapshot(
     db,
     githubNodeId
   );
-  const isFreshEnough = isFreshEnoughLocalPullRequestPayload(
+  const isFreshEnough = shouldWriteLocalPullRequestPayload(
     db,
     githubNodeId,
-    incomingUpdatedAt
+    incomingUpdatedAt,
+    JSON.stringify(snapshot)
   );
   const now = new Date().toISOString();
   const profileId = options.profileId ?? defaultLocalProfileId;
@@ -1155,20 +1261,35 @@ function githubNodeIdFromSnapshot(snapshot: GitHubPullRequestSnapshot): string {
   return `pull-request:${snapshot.repository.full_name}:${pullRequest.number ?? 0}`;
 }
 
-function isFreshEnoughLocalPullRequestPayload(
+function shouldWriteLocalPullRequestPayload(
   db: DatabaseSync,
   githubNodeId: string,
-  incomingUpdatedAt: string
+  incomingUpdatedAt: string,
+  incomingRawPayloadJson: string
 ): boolean {
   const current = db
-    .prepare(`select github_updated_at from pull_requests where github_node_id = ?`)
-    .get(githubNodeId) as { github_updated_at: string | null } | undefined;
+    .prepare(
+      `
+        select github_updated_at, raw_payload_json
+        from pull_requests where github_node_id = ?
+      `
+    )
+    .get(githubNodeId) as
+    | { github_updated_at: string | null; raw_payload_json: string | null }
+    | undefined;
 
   if (!current?.github_updated_at) {
     return true;
   }
 
-  return Date.parse(incomingUpdatedAt) >= Date.parse(current.github_updated_at);
+  if (Date.parse(incomingUpdatedAt) < Date.parse(current.github_updated_at)) {
+    return false;
+  }
+
+  // An identical snapshot means the sync found nothing new for this pull
+  // request. Skipping the rewrite keeps steady-state syncs read-only
+  // instead of holding the write lock to re-store the same rows.
+  return current.raw_payload_json !== incomingRawPayloadJson;
 }
 
 function getLocalPullRequestIdByGithubNodeId(

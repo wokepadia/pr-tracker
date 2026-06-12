@@ -9,11 +9,13 @@
     "dev:desktop": "pnpm build:packages && pnpm --filter @pr-tracker/desktop desktop:dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "sample-data": "tsx scripts/sample-data.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.29",
     "tsup": "^8.5.0",
+    "tsx": "^4.22.4",
     "typescript": "^5.8.3",
     "vitest": "^3.2.1"
   }
