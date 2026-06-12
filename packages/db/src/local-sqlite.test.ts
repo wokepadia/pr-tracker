@@ -131,10 +131,10 @@ describe("local SQLite storage", () => {
         insert.run("pr_1", "unknown-kind", "x", "m", "{}", "now")
       ).toThrow();
 
-      // Queue-level summaries use a sentinel id with the insights-brief kind.
+      // Queue-level summaries use a sentinel id with the ai-insights kind.
       insert.run(
         "queue",
-        "insights-brief",
+        "ai-insights",
         "hash-q",
         "anthropic/claude-sonnet-4.6",
         '{"headline":"calm"}',
