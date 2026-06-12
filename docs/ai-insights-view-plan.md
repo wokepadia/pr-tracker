@@ -1,5 +1,11 @@
 # AI Insights View Plan
 
+Status: the page-design section below is superseded by
+[ai-insights-dashboard-spec.md](ai-insights-dashboard-spec.md)
+(2026-06-12), which re-houses the four AI sections inside a
+deterministic dashboard grid; the scope contract, section catalog,
+and generation architecture here remain authoritative.
+
 Status: phases 1–2 implemented 2026-06-12 (board-scope contract via
 selectBoardScopedItems, the four-section generation in
 apps/desktop/src/ai/ai-insights.ts, and the /ai-insights route gated
