@@ -28,6 +28,7 @@ import {
   useMemo,
   useState,
   type ComponentType,
+  type CSSProperties,
   type FormEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -2086,6 +2087,7 @@ function QueueCard({
       <h4 className="mt-2 line-clamp-2 pl-1 text-sm font-semibold leading-5 text-foreground">
         {item.title}
       </h4>
+      <PullRequestLabels labels={item.labels} className="mt-2 pl-1" />
       <div className="mt-3 border-t border-border pt-3">
         <div className="flex flex-wrap items-center gap-1.5">
           <Tooltip>
@@ -2150,6 +2152,7 @@ function QueueCard({
             />
           ) : null}
         </div>
+        <PullRequestPeopleSummary item={item} className="mt-3" />
         <div className="mt-3 flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             <span className="truncate">{item.authorLogin}</span>
@@ -2419,6 +2422,8 @@ function QueueRow({
             />
           ) : null}
         </span>
+        <PullRequestLabels labels={item.labels} className="mt-2" />
+        <PullRequestPeopleSummary item={item} className="mt-2" />
       </span>
       <span className="flex shrink-0 items-center gap-2">
         <Tooltip>
@@ -2548,6 +2553,136 @@ function FactChip({
   )
 }
 
+function PullRequestLabels({
+  labels,
+  className,
+}: {
+  labels: ReviewQueueItemView["labels"]
+  className?: string
+}) {
+  if (labels.length === 0) return null
+
+  return (
+    <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
+      {labels.map((label) => (
+        <Tooltip key={label.name}>
+          <TooltipTrigger asChild>
+            <span
+              aria-label={
+                label.description
+                  ? `${label.name}: ${label.description}`
+                  : `GitHub label: ${label.name}`
+              }
+              className={cn(
+                "inline-flex max-w-full items-center rounded-full border px-2 py-[1px] text-[11px] font-medium leading-4",
+                !label.color && "border-border bg-muted text-muted-foreground"
+              )}
+              style={githubLabelStyle(label.color)}
+            >
+              <span className="truncate">{label.name}</span>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>
+            {label.description ? `${label.name}: ${label.description}` : label.name}
+          </TooltipContent>
+        </Tooltip>
+      ))}
+    </div>
+  )
+}
+
+function PullRequestPeopleSummary({
+  item,
+  className,
+}: {
+  item: ReviewQueueItemView
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        "flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs",
+        className
+      )}
+    >
+      <PeopleField
+        label="Author"
+        people={[{ login: item.authorLogin, avatarUrl: item.authorAvatarUrl }]}
+      />
+      <PeopleField label="Assignee" people={item.assignees} empty="none" />
+      <ReviewerField item={item} />
+    </div>
+  )
+}
+
+function ReviewerField({ item }: { item: ReviewQueueItemView }) {
+  const people = [
+    ...(item.waitingOn === "you" || item.userLastReviewDecision !== "pending"
+      ? [
+          {
+            login: "you",
+            detail: reviewerDecisionLabel(item.userLastReviewDecision),
+          },
+        ]
+      : []),
+    ...item.otherReviewers.map((reviewer) => ({
+      login: reviewer.login,
+      avatarUrl: reviewer.avatarUrl,
+      detail: reviewerDecisionLabel(reviewer.decision),
+    })),
+  ]
+
+  return <PeopleField label="Reviewer" people={people} empty="none" />
+}
+
+function reviewerDecisionLabel(
+  decision: ReviewQueueItemView["otherReviewers"][number]["decision"]
+): string {
+  if (decision === "pending") return "pending"
+  if (decision === "changes_requested") return "changes req."
+  return decision
+}
+
+function PeopleField({
+  label,
+  people,
+  empty,
+}: {
+  label: string
+  people: Array<{ login: string; avatarUrl?: string; detail?: string }>
+  empty?: string
+}) {
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground">
+      <span className="font-medium text-foreground/70">{label}</span>
+      {people.length > 0 ? (
+        <span className="inline-flex min-w-0 flex-wrap items-center gap-1">
+          {people.map((person) => (
+            <span
+              key={`${label}:${person.login}`}
+              className="inline-flex min-w-0 items-center gap-1 rounded-[4px] border border-border bg-card px-1.5 py-[1px]"
+            >
+              <AuthorAvatar
+                login={person.login}
+                avatarUrl={person.avatarUrl}
+                className="h-3.5 w-3.5 text-[7px]"
+              />
+              <span className="max-w-[120px] truncate text-foreground">
+                {person.login}
+              </span>
+              {person.detail ? (
+                <span className="text-muted-foreground">· {person.detail}</span>
+              ) : null}
+            </span>
+          ))}
+        </span>
+      ) : (
+        <span className="text-muted-foreground">{empty ?? "none"}</span>
+      )}
+    </span>
+  )
+}
+
 function queuePillLabel(item: ReviewQueueItemView): string {
   if (item.waitingOn === "you") return "you"
   if (item.waitingOn === "author") return "author"
@@ -2564,6 +2699,28 @@ function queuePillTooltip(item: ReviewQueueItemView): string {
   if (item.laneId === "caught_up") return "You are caught up on this PR"
   if (item.laneId === "stale") return "No recent activity on this PR"
   return "You are watching this PR"
+}
+
+function githubLabelStyle(color: string | undefined): CSSProperties | undefined {
+  if (!color) return undefined
+
+  const normalized = color.replace(/^#/, "")
+  if (!/^[0-9a-f]{6}$/i.test(normalized)) return undefined
+
+  const backgroundColor = `#${normalized}`
+  return {
+    backgroundColor,
+    borderColor: backgroundColor,
+    color: githubLabelTextColor(normalized),
+  }
+}
+
+function githubLabelTextColor(color: string): string {
+  const red = Number.parseInt(color.slice(0, 2), 16)
+  const green = Number.parseInt(color.slice(2, 4), 16)
+  const blue = Number.parseInt(color.slice(4, 6), 16)
+  const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255
+  return luminance > 0.58 ? "#24292f" : "#ffffff"
 }
 
 const sizeBucketNames: Record<SizeChipView["bucket"], string> = {

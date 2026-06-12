@@ -134,6 +134,11 @@ describe("reviewer view model", () => {
           createdAt: "2026-05-30T08:00:00.000Z",
           updatedAt: "2026-06-02T11:00:00.000Z",
           latestCommitSha: "c3",
+          labels: [
+            { name: "bug", color: "d73a4a" },
+            { name: "frontend", color: "a2eeef" },
+          ],
+          assigneeIds: ["triage"],
           requestedReviewerIds: [],
           reviews: [],
           threads: [],
@@ -150,6 +155,14 @@ describe("reviewer view model", () => {
             avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
           },
         ],
+        [
+          "triage",
+          {
+            id: "triage",
+            login: "triage",
+            avatarUrl: "https://avatars.githubusercontent.com/u/2?v=4",
+          },
+        ],
       ]),
       "viewer"
     )
@@ -157,6 +170,16 @@ describe("reviewer view model", () => {
     expect(view).toMatchObject({
       authorLogin: "maya",
       authorAvatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
+      labels: [
+        { name: "bug", color: "d73a4a" },
+        { name: "frontend", color: "a2eeef" },
+      ],
+      assignees: [
+        {
+          login: "triage",
+          avatarUrl: "https://avatars.githubusercontent.com/u/2?v=4",
+        },
+      ],
       description: "Adds avatars beside each pull request author.",
     })
   })

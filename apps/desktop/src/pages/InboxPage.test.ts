@@ -247,6 +247,8 @@ function makeQueueItem(
     number: overrides.number,
     title: overrides.title,
     authorLogin: overrides.authorLogin,
+    labels: [],
+    assignees: [],
     url: "https://github.com/acme/repo/pull/1",
     state: "open",
     workflowState: "needs_review",

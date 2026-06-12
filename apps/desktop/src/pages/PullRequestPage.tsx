@@ -7,6 +7,7 @@ import {
 import {
   useEffect,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react"
 import {
@@ -703,6 +704,8 @@ function DetailHeader({
             Updated {item.updatedAt}
           </span>
         </div>
+        <PullRequestLabels labels={item.labels} className="mt-3" />
+        <PullRequestPeopleSummary item={item} className="mt-3" />
       </div>
 
       <div className="flex min-w-[190px] flex-col items-stretch gap-3">
@@ -991,6 +994,25 @@ function DetailSideRail({
 
       <RailCard title="Where it stands">
         <RailKeyValue
+          label="author"
+          value={
+            <PersonInline
+              login={item.authorLogin}
+              avatarUrl={item.authorAvatarUrl}
+            />
+          }
+        />
+        <RailKeyValue
+          label="assignee"
+          value={
+            item.assignees.length > 0 ? (
+              <PeopleInline people={item.assignees} />
+            ) : (
+              "none"
+            )
+          }
+        />
+        <RailKeyValue
           label="your review"
           value={reviewDecisionLabel(item.userLastReviewDecision)}
         />
@@ -1050,7 +1072,7 @@ function RailCard({
   )
 }
 
-function RailKeyValue({ label, value }: { label: ReactNode; value: string }) {
+function RailKeyValue({ label, value }: { label: ReactNode; value: ReactNode }) {
   return (
     <>
       <div className="flex items-center justify-between gap-4 py-2 text-xs">
@@ -1060,6 +1082,177 @@ function RailKeyValue({ label, value }: { label: ReactNode; value: string }) {
       <Separator className="bg-border last:hidden" />
     </>
   )
+}
+
+function PullRequestLabels({
+  labels,
+  className,
+}: {
+  labels: ReviewQueueItemView["labels"]
+  className?: string
+}) {
+  if (labels.length === 0) return null
+
+  return (
+    <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
+      {labels.map((label) => (
+        <span
+          key={label.name}
+          title={label.description ? `${label.name}: ${label.description}` : label.name}
+          aria-label={
+            label.description
+              ? `${label.name}: ${label.description}`
+              : `GitHub label: ${label.name}`
+          }
+          className={cn(
+            "inline-flex max-w-full items-center rounded-full border px-2 py-[1px] text-[11px] font-medium leading-4",
+            !label.color && "border-border bg-muted text-muted-foreground"
+          )}
+          style={githubLabelStyle(label.color)}
+        >
+          <span className="truncate">{label.name}</span>
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function PullRequestPeopleSummary({
+  item,
+  className,
+}: {
+  item: ReviewQueueItemView
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        "flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs",
+        className
+      )}
+    >
+      <PeopleField
+        label="Author"
+        people={[{ login: item.authorLogin, avatarUrl: item.authorAvatarUrl }]}
+      />
+      <PeopleField label="Assignee" people={item.assignees} empty="none" />
+      <PeopleField
+        label="Reviewer"
+        people={reviewerPeople(item)}
+        empty="none"
+      />
+    </div>
+  )
+}
+
+function reviewerPeople(
+  item: ReviewQueueItemView
+): Array<{ login: string; avatarUrl?: string; detail?: string }> {
+  return [
+    ...(item.waitingOn === "you" || item.userLastReviewDecision !== "pending"
+      ? [{ login: "you", detail: reviewDecisionLabel(item.userLastReviewDecision) }]
+      : []),
+    ...item.otherReviewers.map((reviewer) => ({
+      login: reviewer.login,
+      avatarUrl: reviewer.avatarUrl,
+      detail: reviewDecisionLabel(reviewer.decision),
+    })),
+  ]
+}
+
+function PeopleField({
+  label,
+  people,
+  empty,
+}: {
+  label: string
+  people: Array<{ login: string; avatarUrl?: string; detail?: string }>
+  empty?: string
+}) {
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground">
+      <span className="font-medium text-foreground/70">{label}</span>
+      {people.length > 0 ? (
+        <span className="inline-flex min-w-0 flex-wrap items-center gap-1">
+          {people.map((person) => (
+            <span
+              key={`${label}:${person.login}`}
+              className="inline-flex min-w-0 items-center gap-1 rounded-[4px] border border-border bg-card px-1.5 py-[1px]"
+            >
+              <AuthorAvatar
+                login={person.login}
+                avatarUrl={person.avatarUrl}
+                className="h-3.5 w-3.5 text-[7px]"
+              />
+              <span className="max-w-[120px] truncate text-foreground">
+                {person.login}
+              </span>
+              {person.detail ? (
+                <span className="text-muted-foreground">· {person.detail}</span>
+              ) : null}
+            </span>
+          ))}
+        </span>
+      ) : (
+        <span className="text-muted-foreground">{empty ?? "none"}</span>
+      )}
+    </span>
+  )
+}
+
+function PersonInline({
+  login,
+  avatarUrl,
+}: {
+  login: string
+  avatarUrl?: string
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <AuthorAvatar login={login} avatarUrl={avatarUrl} className="h-4 w-4 text-[8px]" />
+      {login}
+    </span>
+  )
+}
+
+function PeopleInline({
+  people,
+}: {
+  people: Array<{ login: string; avatarUrl?: string }>
+}) {
+  return (
+    <span className="inline-flex flex-wrap justify-end gap-1.5">
+      {people.map((person) => (
+        <PersonInline
+          key={person.login}
+          login={person.login}
+          avatarUrl={person.avatarUrl}
+        />
+      ))}
+    </span>
+  )
+}
+
+function githubLabelStyle(color: string | undefined): CSSProperties | undefined {
+  if (!color) return undefined
+
+  const normalized = color.replace(/^#/, "")
+  if (!/^[0-9a-f]{6}$/i.test(normalized)) return undefined
+
+  const backgroundColor = `#${normalized}`
+  return {
+    backgroundColor,
+    borderColor: backgroundColor,
+    color: githubLabelTextColor(normalized),
+  }
+}
+
+function githubLabelTextColor(color: string): string {
+  const red = Number.parseInt(color.slice(0, 2), 16)
+  const green = Number.parseInt(color.slice(2, 4), 16)
+  const blue = Number.parseInt(color.slice(4, 6), 16)
+  const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255
+  return luminance > 0.58 ? "#24292f" : "#ffffff"
 }
 
 function reviewDecisionLabel(decision: ReviewDecision | "pending"): string {

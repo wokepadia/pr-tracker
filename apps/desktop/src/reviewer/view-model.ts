@@ -68,6 +68,17 @@ export interface ReviewerState {
   decision: ReviewDecision | "pending"
 }
 
+export interface PullRequestLabelView {
+  name: string
+  color?: string
+  description?: string
+}
+
+export interface PullRequestPersonView {
+  login: string
+  avatarUrl?: string
+}
+
 export interface ReviewThreadView {
   id: string
   author: string
@@ -104,6 +115,8 @@ export interface ReviewQueueItemView {
   description?: string
   authorLogin: string
   authorAvatarUrl?: string
+  labels: PullRequestLabelView[]
+  assignees: PullRequestPersonView[]
   url: string
   state: PullRequestState
   workflowState: WorkflowState
@@ -238,6 +251,11 @@ export function toReviewQueueItemView(
     description: pullRequest.description,
     authorLogin,
     authorAvatarUrl,
+    labels: pullRequest.labels ?? [],
+    assignees: (pullRequest.assigneeIds ?? []).map((assigneeId) => ({
+      login: actorLogin(actorById, assigneeId),
+      avatarUrl: actorById.get(assigneeId)?.avatarUrl,
+    })),
     url: pullRequest.url,
     state: pullRequest.state,
     workflowState: item.workflowState,

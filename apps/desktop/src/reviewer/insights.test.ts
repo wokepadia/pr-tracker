@@ -31,6 +31,8 @@ function makeItem(
     number: 7,
     title: "Improve webhook handling",
     authorLogin: "maya",
+    labels: [],
+    assignees: [],
     url: "https://github.com/acme/api/pull/7",
     state: "open",
     workflowState: "needs_review",
