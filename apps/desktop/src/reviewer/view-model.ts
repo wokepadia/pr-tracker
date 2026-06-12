@@ -49,7 +49,12 @@ export interface SinceLastReviewView {
   reviewedAt: string
   /** Commit activity observed after the review; may be empty when commit
    * events were not ingested even though the head moved. */
-  commits: Array<{ id: string; title: string; occurredAt: string }>
+  commits: Array<{
+    id: string
+    title: string
+    occurredAt: string
+    occurredAtIso?: string
+  }>
   replyCount: number
   threadsResolvedCount: number
   compareUrl?: string
@@ -89,6 +94,7 @@ export interface ReviewThreadView {
   awaitingYourReply: boolean
   isOutdated: boolean
   lastActorLogin?: string
+  lastActivityAtIso?: string
 }
 
 export interface ActivityEventView {
@@ -125,6 +131,7 @@ export interface ReviewQueueItemView {
   evidence: EvidenceLineView[]
   waitingOn: WaitingOn
   waitingAge: string
+  waitingSinceAtIso?: string
   waitingUrgency: WaitingUrgency
   updatedAt: string
   updatedAtIso: string
@@ -133,6 +140,7 @@ export interface ReviewQueueItemView {
   lastSeenAtIso?: string
   userLastReviewDecision: ReviewDecision | "pending"
   userLastReviewAt?: string
+  userLastReviewAtIso?: string
   sinceLastReview?: SinceLastReviewView
   approvalStale: boolean
   /** Completed changes-requested → push cycles; high counts mean stuck. */
@@ -266,6 +274,7 @@ export function toReviewQueueItemView(
     ),
     waitingOn,
     waitingAge: formatDurationSince(waitingSinceAt),
+    waitingSinceAtIso: waitingSinceAt,
     waitingUrgency: getWaitingUrgency(waitingOn, waitingSinceAt, thresholds),
     updatedAt: formatRelativeTime(pullRequest.updatedAt),
     updatedAtIso: pullRequest.updatedAt,
@@ -276,6 +285,7 @@ export function toReviewQueueItemView(
     userLastReviewAt: latestViewerReview
       ? formatRelativeTime(latestViewerReview.submittedAt)
       : undefined,
+    userLastReviewAtIso: latestViewerReview?.submittedAt,
     sinceLastReview: latestViewerReview
       ? buildSinceLastReview(pullRequest, latestViewerReview, reviewedHeadMoved)
       : undefined,
@@ -312,6 +322,7 @@ export function toReviewQueueItemView(
         lastActorLogin: thread.lastActorId
           ? actorLogin(actorById, thread.lastActorId)
           : undefined,
+        lastActivityAtIso: thread.lastActivityAt,
       }))
       .sort(
         (a, b) =>
@@ -452,6 +463,7 @@ function buildSinceLastReview(
       id: event.id,
       title: event.title,
       occurredAt: formatRelativeTime(event.occurredAt),
+      occurredAtIso: event.occurredAt,
     }))
   const replyCount = activitySinceReview.filter(
     (event) =>
