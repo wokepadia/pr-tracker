@@ -59,13 +59,13 @@ import {
 import { hashContent } from "@/ai/content-hash"
 import { requestStructuredCompletion } from "@/ai/openrouter"
 import {
-  buildQueueBriefPrompt,
-  normalizeQueueBriefContent,
-  queueBriefSchema,
-  queueBriefSchemaName,
-  type QueueBriefContent,
-  type QueueBriefInput,
-} from "@/ai/queue-brief"
+  aiInsightsSchema,
+  aiInsightsSchemaName,
+  buildAiInsightsPrompt,
+  normalizeAiInsightsContent,
+  type AiInsightsContent,
+  type AiInsightsInput,
+} from "@/ai/ai-insights"
 import {
   buildCatchUpDigestPrompt,
   buildPrSummaryPrompt,
@@ -854,25 +854,25 @@ export async function generateDesktopAiThreadState(
   return { content, generatedAt, model: config.model, isStale: false }
 }
 
-const queueBriefSentinelId = "queue"
+const aiInsightsSentinelId = "queue"
 
-export async function getDesktopAiQueueBrief(
-  input: QueueBriefInput
-): Promise<AiGenerated<QueueBriefContent> | null> {
+export async function getDesktopAiInsights(
+  input: AiInsightsInput
+): Promise<AiGenerated<AiInsightsContent> | null> {
   const db = await getDatabase()
-  const row = await readAiSummaryRow(db, queueBriefSentinelId, "insights-brief")
+  const row = await readAiSummaryRow(db, aiInsightsSentinelId, "ai-insights")
   if (!row) {
     return null
   }
 
   const settings = await readLocalAiSettings(db)
-  const prompt = buildQueueBriefPrompt(input)
+  const prompt = buildAiInsightsPrompt(input)
   const expectedKey = await hashContent(
-    `insights-brief\n${settings.model}\n${prompt.user}`
+    `ai-insights\n${settings.model}\n${prompt.user}`
   )
 
   return {
-    content: normalizeQueueBriefContent(
+    content: normalizeAiInsightsContent(
       JSON.parse(row.content_json),
       input.items.map((item) => item.id)
     ),
@@ -882,30 +882,30 @@ export async function getDesktopAiQueueBrief(
   }
 }
 
-export async function generateDesktopAiQueueBrief(
-  input: QueueBriefInput
-): Promise<AiGenerated<QueueBriefContent>> {
+export async function generateDesktopAiInsights(
+  input: AiInsightsInput
+): Promise<AiGenerated<AiInsightsContent>> {
   const db = await getDatabase()
   const config = await requireActiveAiConfig(db)
   if (input.items.length === 0) {
     throw new Error("There are no insights to brief right now.")
   }
 
-  const prompt = buildQueueBriefPrompt(input)
-  const content = normalizeQueueBriefContent(
-    await runStructuredAiCompletion<QueueBriefContent>(config, {
+  const prompt = buildAiInsightsPrompt(input)
+  const content = normalizeAiInsightsContent(
+    await runStructuredAiCompletion<AiInsightsContent>(config, {
       system: prompt.system,
       user: prompt.user,
-      schemaName: queueBriefSchemaName,
-      schema: queueBriefSchema,
+      schemaName: aiInsightsSchemaName,
+      schema: aiInsightsSchema,
     }),
     input.items.map((item) => item.id)
   )
 
   const generatedAt = new Date().toISOString()
-  await writeAiSummaryRow(db, queueBriefSentinelId, "insights-brief", {
+  await writeAiSummaryRow(db, aiInsightsSentinelId, "ai-insights", {
     cacheKey: await hashContent(
-      `insights-brief\n${config.model}\n${prompt.user}`
+      `ai-insights\n${config.model}\n${prompt.user}`
     ),
     model: config.model,
     contentJson: JSON.stringify(content),
@@ -965,7 +965,7 @@ async function dropOutdatedAiSummariesTable(db: SqlDatabase): Promise<void> {
     `select sql from sqlite_master where type = 'table' and name = 'ai_summaries'`
   )
   const createSql = rows[0]?.sql
-  if (createSql && !createSql.includes("'insights-brief'")) {
+  if (createSql && !createSql.includes("'ai-insights'")) {
     await db.execute(`drop table ai_summaries`)
   }
 }
@@ -2355,7 +2355,7 @@ type AiSummaryKind =
   | "pr-summary"
   | "catch-up-digest"
   | "thread-state"
-  | "insights-brief"
+  | "ai-insights"
 
 interface AiSummaryRow {
   cache_key: string

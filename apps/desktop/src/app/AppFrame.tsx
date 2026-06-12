@@ -11,9 +11,11 @@ import {
   Settings,
 } from "lucide-react"
 import {
+  getAiSettings,
   getGithubSettingsStatus,
   getOnboardingState,
 } from "@/api"
+import { isAiModeActive } from "@/ai/ai-settings"
 import { AppLogo } from "@/components/AppLogo"
 import { Button } from "@/components/ui/button"
 import { shouldRedirectToOnboarding } from "./onboarding-gate"
@@ -34,6 +36,13 @@ export function AppFrame() {
     queryKey: ["github-settings"],
     queryFn: getGithubSettingsStatus,
   })
+  const aiSettingsQuery = useQuery({
+    queryKey: ["ai-settings"],
+    queryFn: getAiSettings,
+  })
+  // The AI Insights view exists only while AI mode is active; with it off
+  // the app frame is unchanged.
+  const aiActive = isAiModeActive(aiSettingsQuery.data)
   const { insights } = useReviewerInsights()
   const needsYouNowCount = insights?.needsYouNow.length ?? 0
   const gateError = onboardingQuery.error ?? settingsQuery.error
@@ -79,6 +88,13 @@ export function AppFrame() {
             active={pathname.startsWith("/insights")}
             badgeCount={needsYouNowCount}
           />
+          {aiActive ? (
+            <HeaderNavLink
+              to="/ai-insights"
+              label="AI Insights"
+              active={pathname.startsWith("/ai-insights")}
+            />
+          ) : null}
         </nav>
         <Link
           to="/settings"

@@ -1,8 +1,12 @@
 # AI Insights View Plan
 
-Status: planned 2026-06-12. Supersedes the single embedded
-`AiQueueBriefPanel` on the deterministic Insights page; that panel
-graduates into a dedicated AI Insights page. Grounded in
+Status: phases 1–2 implemented 2026-06-12 (board-scope contract via
+selectBoardScopedItems, the four-section generation in
+apps/desktop/src/ai/ai-insights.ts, and the /ai-insights route gated
+by AI mode). Phase 3 extras (the cached-notes index, per-section
+regeneration, any cadence) remain open questions. Supersedes the
+single embedded `AiQueueBriefPanel` on the deterministic Insights
+page; that panel graduated into the dedicated page. Grounded in
 [ai-insights-research.md](ai-insights-research.md) and
 [ai-mode-feature-research.md](ai-mode-feature-research.md); section
 admission below cites the relevant findings.

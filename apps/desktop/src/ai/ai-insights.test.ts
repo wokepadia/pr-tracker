@@ -3,10 +3,10 @@ import { describe, expect, it } from "vitest"
 import type { ReviewerInsightsView, InsightRowView } from "@/reviewer/insights"
 import type { ReviewQueueItemView } from "@/reviewer/view-model"
 import {
-  buildQueueBriefInput,
-  buildQueueBriefPrompt,
-  normalizeQueueBriefContent,
-} from "./queue-brief"
+  buildAiInsightsInput,
+  buildAiInsightsPrompt,
+  normalizeAiInsightsContent,
+} from "./ai-insights"
 
 function makeItem(
   overrides: Partial<ReviewQueueItemView> & { id: string }
@@ -40,7 +40,7 @@ function makeInsights(
   }
 }
 
-describe("buildQueueBriefInput", () => {
+describe("buildAiInsightsInput", () => {
   it("orders sections edges-first and aggregates chips per pull request", () => {
     const urgent = makeItem({ id: "pr_urgent" })
     const aging = makeItem({ id: "pr_aging", waitingOn: "author" })
@@ -62,7 +62,7 @@ describe("buildQueueBriefInput", () => {
       mightBeMissing: [makeRow(missing, "Snoozed, but 4 events arrived")],
     })
 
-    const input = buildQueueBriefInput(insights, [
+    const input = buildAiInsightsInput(insights, [
       urgent,
       aging,
       missing,
@@ -93,7 +93,7 @@ describe("buildQueueBriefInput", () => {
       ],
     })
 
-    const input = buildQueueBriefInput(insights, [onBoard])
+    const input = buildAiInsightsInput(insights, [onBoard])
 
     expect(input.items.map((item) => item.id)).toEqual(["pr_on_board"])
     expect(input.omittedCount).toBe(0)
@@ -111,7 +111,7 @@ describe("buildQueueBriefInput", () => {
       mightBeMissing: missing.map((item) => makeRow(item, "missing")),
     })
 
-    const input = buildQueueBriefInput(insights, [...urgent, ...missing])
+    const input = buildAiInsightsInput(insights, [...urgent, ...missing])
 
     expect(input.items).toHaveLength(40)
     expect(input.omittedCount).toBe(10)
@@ -122,7 +122,7 @@ describe("buildQueueBriefInput", () => {
   })
 })
 
-describe("buildQueueBriefPrompt", () => {
+describe("buildAiInsightsPrompt", () => {
   it("lists records with flags and unseen activity", () => {
     const item = makeItem({
       id: "pr_1",
@@ -133,15 +133,16 @@ describe("buildQueueBriefPrompt", () => {
     const insights = makeInsights({
       needsYouNow: [makeRow(item, "Your turn for 4d")],
     })
-    const input = buildQueueBriefInput(insights, [item])
+    const input = buildAiInsightsInput(insights, [item])
 
-    const { system, user } = buildQueueBriefPrompt(input)
+    const { system, user } = buildAiInsightsPrompt(input)
 
     expect(system).toContain("never invent pull requests")
     expect(system).toContain("never re-judge")
     expect(user).toContain("- id pr_1 | acme/api#142 | Normalize webhooks")
     expect(user).toContain("waiting on: you for 4d")
     expect(user).toContain("flag — needs you now: Your turn for 4d")
+    expect(user).toContain("sweep notes grouping the pull requests")
   })
 
   it("is deterministic and notes omissions", () => {
@@ -151,41 +152,66 @@ describe("buildQueueBriefPrompt", () => {
     const insights = makeInsights({
       needsYouNow: items.map((item) => makeRow(item, "urgent")),
     })
-    const input = buildQueueBriefInput(insights, items)
+    const input = buildAiInsightsInput(insights, items)
 
-    expect(buildQueueBriefPrompt(input)).toEqual(buildQueueBriefPrompt(input))
-    expect(buildQueueBriefPrompt(input).user).toContain(
+    expect(buildAiInsightsPrompt(input)).toEqual(buildAiInsightsPrompt(input))
+    expect(buildAiInsightsPrompt(input).user).toContain(
       "(5 lower-priority pull requests omitted)"
     )
   })
 })
 
-describe("normalizeQueueBriefContent", () => {
-  it("drops unknown ids, dedupes, and trims", () => {
+describe("normalizeAiInsightsContent", () => {
+  it("drops unknown ids, dedupes, and trims across all sections", () => {
     expect(
-      normalizeQueueBriefContent(
+      normalizeAiInsightsContent(
         {
           headline: " Two PRs need you. ",
-          needsYou: [
+          readingOrder: [
             { pullRequestId: "pr_1", why: " Overdue 4d. " },
             { pullRequestId: "pr_1", why: "duplicate" },
             { pullRequestId: "pr_invented", why: "hallucinated" },
             { pullRequestId: "pr_2", why: "" },
           ],
           whileAway: [{ pullRequestId: "pr_2", note: "Merged without you." }],
+          sweep: [
+            { pullRequestId: "pr_3", note: " Stalled for 11d. " },
+            { pullRequestId: "pr_invented", note: "hallucinated" },
+          ],
         },
-        ["pr_1", "pr_2"]
+        ["pr_1", "pr_2", "pr_3"]
       )
     ).toEqual({
       headline: "Two PRs need you.",
-      needsYou: [{ pullRequestId: "pr_1", why: "Overdue 4d." }],
+      readingOrder: [{ pullRequestId: "pr_1", why: "Overdue 4d." }],
       whileAway: [{ pullRequestId: "pr_2", note: "Merged without you." }],
+      sweep: [{ pullRequestId: "pr_3", note: "Stalled for 11d." }],
     })
+  })
+
+  it("caps the sweep section at four notes", () => {
+    const ids = ["pr_1", "pr_2", "pr_3", "pr_4", "pr_5"]
+    const content = normalizeAiInsightsContent(
+      {
+        headline: "Sweep day.",
+        readingOrder: [],
+        whileAway: [],
+        sweep: ids.map((id) => ({ pullRequestId: id, note: `Note ${id}` })),
+      },
+      ids
+    )
+
+    expect(content.sweep.map((entry) => entry.pullRequestId)).toEqual([
+      "pr_1",
+      "pr_2",
+      "pr_3",
+      "pr_4",
+    ])
   })
 
   it("throws without a headline", () => {
     expect(() =>
-      normalizeQueueBriefContent({ needsYou: [], whileAway: [] }, [])
-    ).toThrow("The model response was missing the brief headline.")
+      normalizeAiInsightsContent({ readingOrder: [], whileAway: [] }, [])
+    ).toThrow("The model response was missing the insights headline.")
   })
 })

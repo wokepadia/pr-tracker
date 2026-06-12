@@ -26,7 +26,6 @@ import {
 import { isAiModeActive } from "@/ai/ai-settings"
 import { useGithubSync } from "@/app/use-github-sync"
 import { useReviewerInsights } from "@/app/use-reviewer-insights"
-import { AiQueueBriefPanel } from "@/components/AiQueueBriefPanel"
 import { AuthorAvatar } from "@/components/AuthorAvatar"
 import { Button } from "@/components/ui/button"
 import { formatSyncStatusLabel } from "./inbox-helpers"
@@ -110,7 +109,7 @@ export function InsightsPage() {
     },
   })
 
-  const { insights: computedInsights, allItems } = useReviewerInsights({
+  const { insights: computedInsights } = useReviewerInsights({
     previousVisitAt: visitQuery.data?.previousVisitAt,
   })
   const insights = visitQuery.isLoading ? undefined : computedInsights
@@ -179,9 +178,7 @@ export function InsightsPage() {
 
         {insights?.digest ? <DigestStrip digest={insights.digest} /> : null}
 
-        {aiActive && insights && allItems ? (
-          <AiQueueBriefPanel insights={insights} allItems={allItems} />
-        ) : null}
+        {aiActive ? <AiInsightsLinkRow /> : null}
 
         {!insights ? (
           <InsightsLoadingSkeleton />
@@ -200,6 +197,22 @@ export function InsightsPage() {
         )}
       </div>
     </div>
+  )
+}
+
+function AiInsightsLinkRow() {
+  return (
+    <Link
+      to="/ai-insights"
+      className="flex items-center gap-2 rounded-md border border-border bg-card px-4 py-2.5 text-sm text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+    >
+      <Sparkles className="h-4 w-4 text-muted-foreground" />
+      <span>
+        Want this as a short reading plan? The AI Insights view narrates the
+        board.
+      </span>
+      <span className="ml-auto text-xs font-medium">AI Insights →</span>
+    </Link>
   )
 }
 

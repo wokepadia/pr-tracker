@@ -2,16 +2,17 @@ import type { ReviewerInsightsView } from "@/reviewer/insights"
 import type { ReviewQueueItemView } from "@/reviewer/view-model"
 
 /**
- * The AI queue brief narrates the deterministic insights — it never
+ * The AI insights generation narrates the deterministic insights — it never
  * re-derives urgency or ranks the queue. The map stage is fully
  * deterministic: each relevant pull request becomes a structured record
  * built from the already-computed insight rows and unseen activity, and one
- * LLM call reduces those records into a short brief. The model may only
+ * LLM call reduces those records into four short sections (headline,
+ * reading order, while-away notes, sweep notes). The model may only
  * reference pull request ids it was given; titles and links render from
  * local data.
  */
 
-export interface QueueBriefPrInput {
+export interface AiInsightsPrInput {
   id: string
   repository: string
   number: number
@@ -24,19 +25,23 @@ export interface QueueBriefPrInput {
   unseenEvents: string[]
 }
 
-export interface QueueBriefInput {
-  items: QueueBriefPrInput[]
+export interface AiInsightsInput {
+  items: AiInsightsPrInput[]
   omittedCount: number
 }
 
-export interface QueueBriefContent {
+export interface AiInsightsContent {
   headline: string
-  needsYou: Array<{ pullRequestId: string; why: string }>
+  readingOrder: Array<{ pullRequestId: string; why: string }>
   whileAway: Array<{ pullRequestId: string; note: string }>
+  sweep: Array<{ pullRequestId: string; note: string }>
 }
 
-const maxBriefItems = 40
+const maxInputItems = 40
 const maxUnseenEventsPerItem = 5
+const maxReadingOrderEntries = 8
+const maxWhileAwayEntries = 6
+const maxSweepEntries = 4
 const sectionLabels: Array<{
   key: "needsYouNow" | "mightBeMissing" | "whileAway" | "hygiene"
   label: string
@@ -56,18 +61,18 @@ const sectionLabels: Array<{
  * needs-you-now items lead and the might-be-missing contradictions close,
  * with lower-stakes rows in the middle.
  */
-export function buildQueueBriefInput(
+export function buildAiInsightsInput(
   insights: ReviewerInsightsView,
   items: ReviewQueueItemView[]
-): QueueBriefInput {
-  const recordById = new Map<string, QueueBriefPrInput>()
+): AiInsightsInput {
+  const recordById = new Map<string, AiInsightsPrInput>()
   const itemById = new Map(items.map((item) => [item.id, item]))
 
-  const record = (item: ReviewQueueItemView): QueueBriefPrInput => {
+  const record = (item: ReviewQueueItemView): AiInsightsPrInput => {
     const existing = recordById.get(item.id)
     if (existing) return existing
 
-    const created: QueueBriefPrInput = {
+    const created: AiInsightsPrInput = {
       id: item.id,
       repository: item.repository,
       number: item.number,
@@ -93,7 +98,7 @@ export function buildQueueBriefInput(
   }
 
   // Pull requests with unseen activity but no insight row still matter for
-  // the while-away half of the brief.
+  // the while-away section.
   for (const item of items) {
     if (item.unseenEventCount > 0 && !recordById.has(item.id)) {
       record(item)
@@ -123,9 +128,9 @@ export function buildQueueBriefInput(
   ])
   // Over the cap, keep the edges (the most important rows live there).
   const within =
-    ordered.length <= maxBriefItems
+    ordered.length <= maxInputItems
       ? ordered
-      : [...ordered.slice(0, maxBriefItems - 10), ...ordered.slice(-10)]
+      : [...ordered.slice(0, maxInputItems - 10), ...ordered.slice(-10)]
 
   return {
     items: within,
@@ -133,7 +138,7 @@ export function buildQueueBriefInput(
   }
 }
 
-function dedupeById(entries: QueueBriefPrInput[]): QueueBriefPrInput[] {
+function dedupeById(entries: AiInsightsPrInput[]): AiInsightsPrInput[] {
   const seen = new Set<string>()
   return entries.filter((entry) => {
     if (seen.has(entry.id)) return false
@@ -142,21 +147,21 @@ function dedupeById(entries: QueueBriefPrInput[]): QueueBriefPrInput[] {
   })
 }
 
-export const queueBriefSchemaName = "queue_brief"
+export const aiInsightsSchemaName = "ai_insights"
 
-export const queueBriefSchema: Record<string, unknown> = {
+export const aiInsightsSchema: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
-  required: ["headline", "needsYou", "whileAway"],
+  required: ["headline", "readingOrder", "whileAway", "sweep"],
   properties: {
     headline: {
       type: "string",
       description:
         "One or two plain sentences: the single most useful takeaway about the queue right now.",
     },
-    needsYou: {
+    readingOrder: {
       type: "array",
-      maxItems: 8,
+      maxItems: maxReadingOrderEntries,
       description:
         "A suggested reading order over the pull requests waiting on the reviewer, most pressing first.",
       items: {
@@ -178,9 +183,27 @@ export const queueBriefSchema: Record<string, unknown> = {
     },
     whileAway: {
       type: "array",
-      maxItems: 6,
+      maxItems: maxWhileAwayEntries,
       description:
         "Short notes on what concluded or changed without the reviewer.",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["pullRequestId", "note"],
+        properties: {
+          pullRequestId: {
+            type: "string",
+            description: "A pull request id exactly as listed.",
+          },
+          note: { type: "string" },
+        },
+      },
+    },
+    sweep: {
+      type: "array",
+      maxItems: maxSweepEntries,
+      description:
+        "Short notes grouping the pull requests with aging flags — restate the listed facts only, never advice about code or people.",
       items: {
         type: "object",
         additionalProperties: false,
@@ -197,7 +220,7 @@ export const queueBriefSchema: Record<string, unknown> = {
   },
 }
 
-export function buildQueueBriefPrompt(input: QueueBriefInput): {
+export function buildAiInsightsPrompt(input: AiInsightsInput): {
   system: string
   user: string
 } {
@@ -238,7 +261,7 @@ export function buildQueueBriefPrompt(input: QueueBriefInput): {
 
   lines.push(
     "",
-    "Write the headline, then the needs-you reading order, then the while-away notes. Only reference listed ids; leave a list empty when nothing fits it."
+    "Write the headline, then the needs-you reading order, then the while-away notes, then sweep notes grouping the pull requests with aging flags. Only reference listed ids; leave a list empty when nothing fits it."
   )
 
   return { system, user: lines.join("\n") }
@@ -246,20 +269,21 @@ export function buildQueueBriefPrompt(input: QueueBriefInput): {
 
 /**
  * Grounding guard: entries survive only when their pull request id was part
- * of the rollup input, so the brief can never point at a pull request the
- * app cannot link. Duplicate ids keep their first entry.
+ * of the rollup input, so the sections can never point at a pull request
+ * the app cannot link. Duplicate ids keep their first entry.
  */
-export function normalizeQueueBriefContent(
+export function normalizeAiInsightsContent(
   value: unknown,
   allowedIds: string[]
-): QueueBriefContent {
+): AiInsightsContent {
   const parsed = (value ?? {}) as {
     headline?: unknown
-    needsYou?: unknown
+    readingOrder?: unknown
     whileAway?: unknown
+    sweep?: unknown
   }
   if (typeof parsed.headline !== "string" || parsed.headline.trim() === "") {
-    throw new Error("The model response was missing the brief headline.")
+    throw new Error("The model response was missing the insights headline.")
   }
 
   const allowed = new Set(allowedIds)
@@ -291,11 +315,19 @@ export function normalizeQueueBriefContent(
 
   return {
     headline: parsed.headline.trim(),
-    needsYou: pick(parsed.needsYou, "why", 8).map((entry) => ({
-      pullRequestId: entry.pullRequestId,
-      why: entry.text,
-    })),
-    whileAway: pick(parsed.whileAway, "note", 6).map((entry) => ({
+    readingOrder: pick(parsed.readingOrder, "why", maxReadingOrderEntries).map(
+      (entry) => ({
+        pullRequestId: entry.pullRequestId,
+        why: entry.text,
+      })
+    ),
+    whileAway: pick(parsed.whileAway, "note", maxWhileAwayEntries).map(
+      (entry) => ({
+        pullRequestId: entry.pullRequestId,
+        note: entry.text,
+      })
+    ),
+    sweep: pick(parsed.sweep, "note", maxSweepEntries).map((entry) => ({
       pullRequestId: entry.pullRequestId,
       note: entry.text,
     })),
