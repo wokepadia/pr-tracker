@@ -3,7 +3,6 @@ import {
   bucketDropId,
   filterQueueItems,
   formatSyncStatusLabel,
-  getEmptyPeekCopy,
   moveItemInBucketItemOrder,
   resolveKanbanDropTarget,
   resolveVisibleQueueItem,
@@ -87,37 +86,6 @@ describe("inbox queue selection", () => {
     expect(resolveVisibleQueueItem(items, "missing")).toBeUndefined()
     expect(resolveVisibleQueueItem(items, "")).toBeUndefined()
     expect(resolveVisibleQueueItem([], "pr_1")).toBeUndefined()
-  })
-})
-
-describe("inbox empty state copy", () => {
-  it("uses active review copy for the unselected action view", () => {
-    expect(getEmptyPeekCopy("action", "")).toEqual({
-      title: "No active review items",
-      detail: "There are no active review items in the current view.",
-    })
-  })
-
-  it("keeps stashed empty states specific to the selected view", () => {
-    expect(getEmptyPeekCopy("pinned", "")).toEqual({
-      title: "No pinned PRs",
-      detail: "Nothing is pinned right now.",
-    })
-    expect(getEmptyPeekCopy("snoozed", "")).toEqual({
-      title: "No snoozed PRs",
-      detail: "Nothing is snoozed right now.",
-    })
-    expect(getEmptyPeekCopy("muted", "")).toEqual({
-      title: "No muted PRs",
-      detail: "Nothing is muted right now.",
-    })
-  })
-
-  it("uses search copy before view-specific empty copy", () => {
-    expect(getEmptyPeekCopy("pinned", "author")).toEqual({
-      title: "No matching review items",
-      detail: "No items match the current search in this view.",
-    })
   })
 })
 

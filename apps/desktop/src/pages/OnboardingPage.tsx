@@ -431,11 +431,11 @@ function SlidePreview({
         </div>
       </div>
       <div className="mt-4 rounded-md border border-border p-3 text-sm">
-        <div className="font-medium">Quick peek</div>
+        <div className="font-medium">Detail overlay</div>
         <div className="mt-2 text-xs leading-5 text-muted-foreground">
           Why this needs attention
           <br />
-          What changed recently
+          Full PR activity
           <br />
           Open in GitHub
         </div>

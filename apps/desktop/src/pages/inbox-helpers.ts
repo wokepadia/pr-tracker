@@ -104,51 +104,6 @@ export function moveItemInBucketItemOrder({
   return next
 }
 
-export function getEmptyPeekCopy(
-  groupMode: QueueGroupMode,
-  searchQuery: string
-): { title: string; detail: string } {
-  if (searchQuery.trim().length > 0) {
-    return {
-      title: "No matching review items",
-      detail: "No items match the current search in this view.",
-    }
-  }
-
-  if (groupMode === "pinned") {
-    return {
-      title: "No pinned PRs",
-      detail: "Nothing is pinned right now.",
-    }
-  }
-
-  if (groupMode === "snoozed") {
-    return {
-      title: "No snoozed PRs",
-      detail: "Nothing is snoozed right now.",
-    }
-  }
-
-  if (groupMode === "muted") {
-    return {
-      title: "No muted PRs",
-      detail: "Nothing is muted right now.",
-    }
-  }
-
-  if (groupMode === "repository") {
-    return {
-      title: "No repository groups",
-      detail: "No repository groups are visible in this view.",
-    }
-  }
-
-  return {
-    title: "No active review items",
-    detail: "There are no active review items in the current view.",
-  }
-}
-
 function buildSearchTextForItem(item: ReviewQueueItemView): string {
   return normalizeSearchText(
     [

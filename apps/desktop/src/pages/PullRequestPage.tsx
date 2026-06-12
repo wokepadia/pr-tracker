@@ -14,6 +14,7 @@ import {
   BellOff,
   Check,
   ChevronDown,
+  X,
   Clock3,
   ExternalLink,
   FileDiff,
@@ -115,6 +116,17 @@ const detailBucketToneClasses: Partial<Record<UserBucketId, DetailTone>> = {
 
 export function PullRequestPage() {
   const { pullRequestId } = useParams({ from: "/pull-requests/$pullRequestId" })
+
+  return <PullRequestDetailSurface pullRequestId={pullRequestId} />
+}
+
+export function PullRequestDetailSurface({
+  pullRequestId,
+  onRequestClose,
+}: {
+  pullRequestId: string
+  onRequestClose?: () => void
+}) {
   const queryClient = useQueryClient()
   const [caughtUpError, setCaughtUpError] = useState(false)
   const [localQueueState, setLocalQueueState] =
@@ -340,7 +352,7 @@ export function PullRequestPage() {
 
   return (
     <div className="min-h-[760px] bg-background">
-      <DetailHeader item={loadedItem} />
+      <DetailHeader item={loadedItem} onRequestClose={onRequestClose} />
       <div className="grid grid-cols-1 gap-0 border-t border-border xl:grid-cols-[62fr_38fr]">
         <main className="min-w-0 px-7 py-6">
           <DescriptionPanel description={loadedItem.description} />
@@ -573,22 +585,42 @@ function DetailStatusPanel({
   )
 }
 
-function DetailHeader({ item }: { item: ReviewQueueItemView }) {
+function DetailHeader({
+  item,
+  onRequestClose,
+}: {
+  item: ReviewQueueItemView
+  onRequestClose?: () => void
+}) {
   const tone = detailToneForItem(item)
 
   return (
     <header className="grid grid-cols-1 gap-5 border-b border-border px-7 py-6 lg:grid-cols-[auto_1fr_auto]">
-      <Button
-        asChild
-        variant="ghost"
-        size="sm"
-        className="mt-1 h-8 w-fit justify-self-start text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-      >
-        <Link to="/">
-          <ArrowLeft className="h-4 w-4" />
-          Inbox
-        </Link>
-      </Button>
+      {onRequestClose ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-label="Close pull request details"
+          onClick={onRequestClose}
+          className="mt-1 h-8 w-fit justify-self-start text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+        >
+          <X className="h-4 w-4" />
+          Close
+        </Button>
+      ) : (
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="mt-1 h-8 w-fit justify-self-start text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+        >
+          <Link to="/">
+            <ArrowLeft className="h-4 w-4" />
+            Inbox
+          </Link>
+        </Button>
+      )}
 
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
@@ -1096,5 +1128,3 @@ function bucketIdForAvailableBucketId(
     ? bucketId
     : userBuckets[0]?.id ?? bucketId
 }
-
-

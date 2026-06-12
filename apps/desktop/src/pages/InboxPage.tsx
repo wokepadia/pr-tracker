@@ -22,7 +22,6 @@ import { CSS } from "@dnd-kit/utilities"
 import {
   useMutation,
   useQuery,
-  useQueryClient,
 } from "@tanstack/react-query"
 import {
   useEffect,
@@ -35,45 +34,30 @@ import {
 } from "react"
 import { Link } from "@tanstack/react-router"
 import {
-  Group as ResizablePanelGroup,
-  Panel as ResizablePanel,
-  Separator as ResizablePanelResizeHandle,
-} from "react-resizable-panels"
-import {
-  Check,
   ChevronDown,
   ChevronRight,
   ChevronUp,
   ChevronsLeftRight,
-  Clock3,
   Edit3,
-  ExternalLink,
   Eye,
-  BellOff,
   FileDiff,
   Maximize2,
-  GitCompareArrows,
   GitCommitHorizontal,
   GitPullRequest,
   GripVertical,
   Inbox,
   LoaderCircle,
   MessageSquareText,
-  PanelRight,
-  Pin,
   Plus,
   RotateCcw,
   Search,
   ShieldAlert,
-  Sparkles,
   Trash2,
   X,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ActivityEventLine } from "@/components/ActivityEventLine"
 import { AuthorAvatar } from "@/components/AuthorAvatar"
-import { BoardItemNotes } from "@/components/BoardItemNotes"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -83,8 +67,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-import { MarkdownContent } from "@/components/MarkdownContent"
-import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Tooltip,
@@ -95,7 +77,6 @@ import {
 import {
   getBoardState,
   getGithubSettingsStatus,
-  markPullRequestSeen,
   getAttentionSettings,
   saveBoardState,
 } from "@/api"
@@ -107,20 +88,16 @@ import { useBoardInbox } from "@/app/use-board-inbox"
 import { useGithubSync } from "@/app/use-github-sync"
 import { formatCount } from "@/lib/copy"
 import { describeGithubSyncError } from "@/lib/sync-error"
-import { cn, externalLinkProps } from "@/lib/utils"
+import { cn } from "@/lib/utils"
+import { PullRequestDetailSurface } from "./PullRequestPage"
 import {
   buildInboxView,
-  canMarkReviewItemCaughtUp,
   defaultAttentionThresholds,
   type ReviewQueueItemView,
-  type SinceLastReviewView,
   type SizeChipView,
 } from "@/reviewer/view-model"
 import {
   bucketIdForLocalQueueItem,
-  canMuteLocalQueueItem,
-  canPinLocalQueueItem,
-  canSnoozeLocalQueueItem,
   applyUserBucketItemOrder,
   createUserBucket,
   createEmptyUserBucketItemOrder,
@@ -139,7 +116,6 @@ import {
   filterQueueItems,
   formatSyncStatusLabel,
   moveItemInBucketItemOrder,
-  resolveVisibleQueueItem,
   resolveKanbanDropTarget,
   type QueueGroupMode,
 } from "./inbox-helpers"
@@ -148,10 +124,6 @@ type LaneId = UserBucketId
 type ActionQueueTabId = "home" | "new_activity" | LaneId
 
 const REVIEW_QUEUE_MIN_WIDTH = 680
-const QUICK_PEEK_MIN_WIDTH = 320
-const REVIEW_SPLIT_HANDLE_WIDTH = 8
-const REVIEW_WORKSPACE_MIN_WIDTH =
-  REVIEW_QUEUE_MIN_WIDTH + QUICK_PEEK_MIN_WIDTH + REVIEW_SPLIT_HANDLE_WIDTH
 const REVIEW_SIDEBAR_WIDTH = 212
 const DEFAULT_BUCKET_COLUMN_WIDTH = 232
 const MIN_BUCKET_COLUMN_WIDTH = 200
@@ -243,7 +215,6 @@ const rowSelectedToneClasses: Record<LaneDefinition["tone"], string> = {
 }
 
 export function InboxPage() {
-  const queryClient = useQueryClient()
   const [githubSearchQueryDraft, setGithubSearchQueryDraft] = useState(() =>
     getBoardFilterQuery()
   )
@@ -266,15 +237,6 @@ export function InboxPage() {
   const saveBoardStateMutation = useMutation({
     mutationFn: saveBoardState,
   })
-  const markSeenMutation = useMutation({
-    mutationFn: markPullRequestSeen,
-    onSuccess: async (_result, pullRequestId) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["reviewer-inbox"] }),
-        queryClient.invalidateQueries({ queryKey: ["pull-request", pullRequestId] }),
-      ])
-    },
-  })
   const [localQueueState, setLocalQueueState] =
     useState<LocalQueueStateByPullRequestId>({})
   const [userBuckets, setUserBuckets] = useState<UserBucketDefinition[]>(() => {
@@ -285,7 +247,6 @@ export function InboxPage() {
       return createEmptyUserBucketItemOrder()
     })
   const [hasHydratedBoardState, setHasHydratedBoardState] = useState(false)
-  const [failedCaughtUpItemId, setFailedCaughtUpItemId] = useState<string>()
   const [groupMode, setGroupMode] = useState<QueueGroupMode>("action")
   const [preferredGroupMode, setPreferredGroupMode] = useState<
     "action" | "repository"
@@ -438,13 +399,6 @@ export function InboxPage() {
             ? searchedSnoozedItems
             : searchedMutedItems
   const [selectedId, setSelectedId] = useState<string>("")
-  const selectedItem = resolveVisibleQueueItem(visibleQueueItems, selectedId)
-  const selectedItemLocalState = selectedItem
-    ? localQueueState[selectedItem.id] ?? {}
-    : {}
-  const selectedItemIsPinned = Boolean(selectedItemLocalState.pinned)
-  const selectedItemIsSnoozed = Boolean(selectedItemLocalState.snoozed)
-  const selectedItemIsMuted = Boolean(selectedItemLocalState.muted)
   const dragSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -516,43 +470,6 @@ export function InboxPage() {
       setSelectedId("")
     }
   }, [inboxView, selectedId, visibleQueueItems])
-
-  function moveSelectionAfterHiding(itemId: string) {
-    const remainingVisible = visibleQueueItems.filter((item) => item.id !== itemId)
-
-    if (remainingVisible.length === 0 && isStashedGroupMode(groupMode)) {
-      setGroupMode("action")
-      setActiveActionTabId("home")
-    }
-
-    if (
-      remainingVisible.length === 0 &&
-      groupMode === "action" &&
-      activeActionTabId !== "home"
-    ) {
-      setActiveActionTabId("home")
-    }
-
-    setSelectedId("")
-  }
-
-  async function markSelectedCaughtUp() {
-    const itemToMark = selectedItem
-
-    if (
-      !itemToMark ||
-      !canMarkReviewItemCaughtUp(itemToMark, markSeenMutation.isPending)
-    ) {
-      return
-    }
-
-    const itemId = itemToMark.id
-    setFailedCaughtUpItemId(undefined)
-    markSeenMutation.reset()
-    await markSeenMutation.mutateAsync(itemId).catch(() => {
-      setFailedCaughtUpItemId(itemId)
-    })
-  }
 
   function updateLocalItemState(
     itemId: string,
@@ -680,77 +597,6 @@ export function InboxPage() {
     )
   }
 
-  function moveSelectedToBucket(bucketId: UserBucketId) {
-    if (!selectedItem) return
-    moveItemToBucket(selectedItem.id, bucketId)
-    setActiveActionTabId(bucketId)
-    setGroupMode("action")
-  }
-
-  function snoozeSelected() {
-    if (!selectedItem || !canSnoozeLocalQueueItem(selectedItemLocalState)) return
-    const itemId = selectedItem.id
-    updateLocalItemState(itemId, (current) => ({
-      ...current,
-      muted: undefined,
-      mutedAt: undefined,
-      snoozed: true,
-      snoozedAt: new Date().toISOString(),
-    }))
-    moveSelectionAfterHiding(itemId)
-  }
-
-  function restoreSelected() {
-    if (!selectedItem || (!selectedItemIsSnoozed && !selectedItemIsMuted)) return
-    const itemId = selectedItem.id
-    updateLocalItemState(itemId, (current) => {
-      const next = { ...current }
-      delete next.snoozed
-      delete next.snoozedAt
-      delete next.muted
-      delete next.mutedAt
-      return next
-    })
-    setGroupMode("action")
-    setActiveActionTabId(bucketIdForItem(selectedItem, localQueueState) ?? "home")
-    setSelectedId(itemId)
-  }
-
-  function togglePinSelected() {
-    if (!selectedItem || !canPinLocalQueueItem(selectedItemLocalState)) return
-    const itemId = selectedItem.id
-    const wasPinned = selectedItemIsPinned
-    updateLocalItemState(itemId, (current) => ({
-      ...current,
-      pinned: current.pinned ? undefined : true,
-    }))
-
-    if (wasPinned && groupMode === "pinned") {
-      setGroupMode("action")
-      setActiveActionTabId(bucketIdForItem(selectedItem, localQueueState) ?? "home")
-      setSelectedId(itemId)
-    }
-  }
-
-  function muteSelected() {
-    if (!selectedItem || !canMuteLocalQueueItem(selectedItemLocalState)) return
-    const itemId = selectedItem.id
-    updateLocalItemState(itemId, (current) => ({
-      ...current,
-      muted: true,
-      mutedAt: new Date().toISOString(),
-    }))
-    moveSelectionAfterHiding(itemId)
-  }
-
-  function updateSelectedNotes(notes: string) {
-    if (!selectedItem) return
-    updateLocalItemState(selectedItem.id, (current) => ({
-      ...current,
-      notes: notes.trim() ? notes : undefined,
-    }))
-  }
-
   function focusHome() {
     setGroupMode(preferredGroupMode)
     setActiveActionTabId("home")
@@ -876,9 +722,6 @@ export function InboxPage() {
     return <FirstSyncScreen />
   }
 
-  const reviewWorkspaceMinWidth = selectedItem
-    ? REVIEW_WORKSPACE_MIN_WIDTH
-    : REVIEW_QUEUE_MIN_WIDTH
   const headerView =
     groupMode === "pinned"
       ? {
@@ -969,7 +812,7 @@ export function InboxPage() {
                   [bucketId]: clampBucketColumnWidth(width),
                 }))
               }}
-              onOpenPeek={setSelectedId}
+              onOpenDetails={setSelectedId}
             />
           ) : (
             <ActionQueueList
@@ -980,7 +823,7 @@ export function InboxPage() {
               fallbackBucketId={fallbackBucketId}
               localQueueState={localQueueState}
               onMoveItemToBucket={moveItemToBucket}
-              onOpenPeek={setSelectedId}
+              onOpenDetails={setSelectedId}
             />
           )
         ) : groupMode === "repository" ? (
@@ -1001,7 +844,7 @@ export function InboxPage() {
                   toggleOpenGroup(current, group.id)
                 )
               }}
-              onOpenPeek={setSelectedId}
+              onOpenDetails={setSelectedId}
             />
           ))
         ) : groupMode === "pinned" ? (
@@ -1016,7 +859,7 @@ export function InboxPage() {
             localQueueState={localQueueState}
             onMoveItemToBucket={moveItemToBucket}
             onToggle={() => undefined}
-            onOpenPeek={setSelectedId}
+            onOpenDetails={setSelectedId}
           />
         ) : groupMode === "snoozed" ? (
           <QueueLane
@@ -1030,7 +873,7 @@ export function InboxPage() {
             localQueueState={localQueueState}
             onMoveItemToBucket={moveItemToBucket}
             onToggle={() => undefined}
-            onOpenPeek={setSelectedId}
+            onOpenDetails={setSelectedId}
           />
         ) : (
           <QueueLane
@@ -1044,7 +887,7 @@ export function InboxPage() {
             localQueueState={localQueueState}
             onMoveItemToBucket={moveItemToBucket}
             onToggle={() => undefined}
-            onOpenPeek={setSelectedId}
+            onOpenDetails={setSelectedId}
           />
         )}
       </div>
@@ -1056,7 +899,7 @@ export function InboxPage() {
       <div
         className="grid h-full overflow-x-auto"
         style={{
-          gridTemplateColumns: `${REVIEW_SIDEBAR_WIDTH}px minmax(${reviewWorkspaceMinWidth}px, 1fr)`,
+          gridTemplateColumns: `${REVIEW_SIDEBAR_WIDTH}px minmax(${REVIEW_QUEUE_MIN_WIDTH}px, 1fr)`,
           gridTemplateRows: "minmax(0, 1fr)",
         }}
       >
@@ -1082,74 +925,63 @@ export function InboxPage() {
       />
 
       <section className="min-w-0 bg-background">
-        {selectedItem ? (
-          <ResizablePanelGroup
-            id="review-inbox-split"
-            orientation="horizontal"
-            defaultLayout={{ reviewQueue: 68, quickPeek: 32 }}
-            resizeTargetMinimumSize={{ fine: 12, coarse: 36 }}
-            className="h-full"
-            style={{ minWidth: REVIEW_WORKSPACE_MIN_WIDTH }}
-          >
-            <ResizablePanel
-              id="reviewQueue"
-              defaultSize="58%"
-              minSize={REVIEW_QUEUE_MIN_WIDTH}
-              className="min-w-0"
-            >
-              {reviewQueuePanel}
-            </ResizablePanel>
-            <ResizablePanelResizeHandle
-              id="review-inbox-resize-handle"
-              aria-label="Resize quick peek"
-              className="group relative w-2 cursor-col-resize bg-background outline-none transition-colors hover:bg-muted/70 focus-visible:bg-muted data-[separator=active]:bg-muted"
-            >
-              <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover:bg-foreground/30 group-focus-visible:bg-foreground/40" />
-            </ResizablePanelResizeHandle>
-            <ResizablePanel
-              id="quickPeek"
-              defaultSize="42%"
-              minSize={QUICK_PEEK_MIN_WIDTH}
-              className="min-w-0"
-            >
-              <QuickPeekPanel
-                item={selectedItem}
-                bucketId={bucketIdForAvailableUserBucket(
-                  selectedItem,
-                  localQueueState,
-                  availableBucketIds,
-                  fallbackBucketId
-                )}
-                userBuckets={userBuckets}
-                bucketLanes={bucketLanes}
-                isPinned={selectedItemIsPinned}
-                isSnoozed={selectedItemIsSnoozed}
-                isMuted={selectedItemIsMuted}
-                notes={selectedItemLocalState.notes ?? ""}
-                isMarkingSeen={markSeenMutation.isPending}
-                caughtUpError={failedCaughtUpItemId === selectedItem.id}
-                onSnooze={snoozeSelected}
-                onRestore={restoreSelected}
-                onTogglePin={togglePinSelected}
-                onMute={muteSelected}
-                onNotesSave={updateSelectedNotes}
-                onMoveToBucket={moveSelectedToBucket}
-                onCaughtUp={() => void markSelectedCaughtUp()}
-                onClose={() => setSelectedId("")}
-              />
-            </ResizablePanel>
-          </ResizablePanelGroup>
-        ) : (
-          <div
-            className="h-full"
-            style={{ minWidth: REVIEW_QUEUE_MIN_WIDTH }}
-          >
-            {reviewQueuePanel}
-          </div>
-        )}
+        <div className="h-full" style={{ minWidth: REVIEW_QUEUE_MIN_WIDTH }}>
+          {reviewQueuePanel}
+        </div>
       </section>
       </div>
+      {selectedId ? (
+        <PullRequestDetailOverlay
+          pullRequestId={selectedId}
+          onClose={() => setSelectedId("")}
+        />
+      ) : null}
     </TooltipProvider>
+  )
+}
+
+function PullRequestDetailOverlay({
+  pullRequestId,
+  onClose,
+}: {
+  pullRequestId: string
+  onClose: () => void
+}) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose()
+    }
+
+    document.body.style.overflow = "hidden"
+    window.addEventListener("keydown", handleKeyDown)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [onClose])
+
+  return (
+    <div
+      role="presentation"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-8 py-8 backdrop-blur-[2px]"
+      onMouseDown={onClose}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label="Pull request details"
+        className="min-h-[calc(100vh-4rem)] w-full max-w-[1180px] overflow-hidden rounded-lg border border-border bg-background shadow-2xl"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <PullRequestDetailSurface
+          pullRequestId={pullRequestId}
+          onRequestClose={onClose}
+        />
+      </section>
+    </div>
   )
 }
 
@@ -1919,7 +1751,7 @@ function KanbanBoard({
   onDragEnd,
   onDragCancel,
   onBucketColumnWidthChange,
-  onOpenPeek,
+  onOpenDetails,
 }: {
   laneItems: Record<LaneId, ReviewQueueItemView[]>
   selectedId: string
@@ -1934,7 +1766,7 @@ function KanbanBoard({
   onDragEnd: (event: DragEndEvent) => void
   onDragCancel: () => void
   onBucketColumnWidthChange: (bucketId: UserBucketId, width: number) => void
-  onOpenPeek: (id: string) => void
+  onOpenDetails: (id: string) => void
 }) {
   const columnWidths = bucketLanes.map(
     (lane) => bucketColumnWidths[lane.id] ?? DEFAULT_BUCKET_COLUMN_WIDTH
@@ -1993,7 +1825,7 @@ function KanbanBoard({
                   selectedId={selectedId}
                   bucketLanes={bucketLanes}
                   userBuckets={userBuckets}
-                  onOpenPeek={onOpenPeek}
+                  onOpenDetails={onOpenDetails}
                 />
                 {index < bucketLanes.length - 1 ? (
                   <button
@@ -2023,7 +1855,7 @@ function KanbanBoard({
               bucketLanes={bucketLanes}
               userBuckets={userBuckets}
               dragging
-              onOpenPeek={() => undefined}
+              onOpenDetails={() => undefined}
             />
           </div>
         ) : null}
@@ -2039,7 +1871,7 @@ function KanbanColumn({
   selectedId,
   bucketLanes,
   userBuckets,
-  onOpenPeek,
+  onOpenDetails,
 }: {
   lane: LaneDefinition
   active?: boolean
@@ -2047,7 +1879,7 @@ function KanbanColumn({
   selectedId: string
   bucketLanes: LaneDefinition[]
   userBuckets: UserBucketDefinition[]
-  onOpenPeek: (id: string) => void
+  onOpenDetails: (id: string) => void
 }) {
   const { isOver, setNodeRef } = useDroppable({
     id: bucketDropId(lane.id),
@@ -2102,7 +1934,7 @@ function KanbanColumn({
                 bucketId={lane.id}
                 bucketLanes={bucketLanes}
                 userBuckets={userBuckets}
-                onOpenPeek={() => onOpenPeek(item.id)}
+                onOpenDetails={() => onOpenDetails(item.id)}
               />
             ))
           ) : (
@@ -2122,14 +1954,14 @@ function SortableQueueCard({
   bucketId,
   bucketLanes,
   userBuckets,
-  onOpenPeek,
+  onOpenDetails,
 }: {
   item: ReviewQueueItemView
   selected: boolean
   bucketId: UserBucketId
   bucketLanes: LaneDefinition[]
   userBuckets: UserBucketDefinition[]
-  onOpenPeek: () => void
+  onOpenDetails: () => void
 }) {
   const {
     attributes,
@@ -2172,7 +2004,7 @@ function SortableQueueCard({
             <GripVertical className="h-4 w-4" />
           </button>
         }
-        onOpenPeek={onOpenPeek}
+        onOpenDetails={onOpenDetails}
       />
     </div>
   )
@@ -2186,7 +2018,7 @@ function QueueCard({
   userBuckets,
   dragHandle,
   dragging,
-  onOpenPeek,
+  onOpenDetails,
 }: {
   item: ReviewQueueItemView
   selected: boolean
@@ -2195,7 +2027,7 @@ function QueueCard({
   userBuckets: UserBucketDefinition[]
   dragHandle?: ReactNode
   dragging?: boolean
-  onOpenPeek: () => void
+  onOpenDetails: () => void
 }) {
   const tone = toneForItem(item)
   const reReviewRequested = item.activityEvents.some((event) =>
@@ -2205,18 +2037,8 @@ function QueueCard({
   return (
     <article
       data-selected={selected ? "true" : undefined}
-      role="button"
-      tabIndex={0}
-      aria-label={`Sneak peek ${item.title}`}
-      onClick={onOpenPeek}
-      onKeyDown={(event) => {
-        if (event.target !== event.currentTarget) return
-        if (event.key !== "Enter" && event.key !== " ") return
-        event.preventDefault()
-        onOpenPeek()
-      }}
       className={cn(
-        "group relative cursor-pointer rounded-md border border-border bg-card p-3 text-left shadow-sm outline-none transition hover:border-foreground/20 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring",
+        "group relative rounded-md border border-border bg-card p-3 text-left shadow-sm outline-none transition hover:border-foreground/20 hover:shadow-md",
         selected && "border-foreground/35 ring-2 ring-foreground/10",
         dragging && "cursor-grabbing"
       )}
@@ -2245,6 +2067,21 @@ function QueueCard({
             </span>
           ) : null}
         </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Open details for ${item.title}`}
+              onClick={onOpenDetails}
+              className="h-7 w-7 shrink-0 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Open details</TooltipContent>
+        </Tooltip>
       </div>
       <h4 className="mt-2 line-clamp-2 pl-1 text-sm font-semibold leading-5 text-foreground">
         {item.title}
@@ -2340,7 +2177,7 @@ function ActionQueueList({
   fallbackBucketId,
   localQueueState,
   onMoveItemToBucket,
-  onOpenPeek,
+  onOpenDetails,
 }: {
   items: ReviewQueueItemView[]
   selectedId: string
@@ -2349,7 +2186,7 @@ function ActionQueueList({
   fallbackBucketId: UserBucketId
   localQueueState: LocalQueueStateByPullRequestId
   onMoveItemToBucket: (itemId: string, bucketId: UserBucketId) => void
-  onOpenPeek: (id: string) => void
+  onOpenDetails: (id: string) => void
 }) {
   return (
     <section>
@@ -2367,7 +2204,7 @@ function ActionQueueList({
               bucketLanes={bucketLanes}
               userBuckets={userBuckets}
               fallbackBucketId={fallbackBucketId}
-              onOpenPeek={() => onOpenPeek(item.id)}
+              onOpenDetails={() => onOpenDetails(item.id)}
               onMoveToBucket={(bucketId) => onMoveItemToBucket(item.id, bucketId)}
             />
           ))}
@@ -2392,7 +2229,7 @@ function QueueLane({
   localQueueState,
   onMoveItemToBucket,
   onToggle,
-  onOpenPeek,
+  onOpenDetails,
 }: {
   group: QueueGroupDefinition
   isOpen: boolean
@@ -2404,7 +2241,7 @@ function QueueLane({
   localQueueState: LocalQueueStateByPullRequestId
   onMoveItemToBucket: (itemId: string, bucketId: UserBucketId) => void
   onToggle: () => void
-  onOpenPeek: (id: string) => void
+  onOpenDetails: (id: string) => void
 }) {
   return (
     <section className="border-b border-border last:border-b-0">
@@ -2456,7 +2293,7 @@ function QueueLane({
               bucketLanes={bucketLanes}
               userBuckets={userBuckets}
               fallbackBucketId={fallbackBucketId}
-              onOpenPeek={() => onOpenPeek(item.id)}
+              onOpenDetails={() => onOpenDetails(item.id)}
               onMoveToBucket={(bucketId) => onMoveItemToBucket(item.id, bucketId)}
             />
           ))}
@@ -2473,7 +2310,7 @@ function QueueRow({
   bucketLanes,
   userBuckets,
   fallbackBucketId,
-  onOpenPeek,
+  onOpenDetails,
   onMoveToBucket,
 }: {
   item: ReviewQueueItemView
@@ -2482,7 +2319,7 @@ function QueueRow({
   bucketLanes: LaneDefinition[]
   userBuckets: UserBucketDefinition[]
   fallbackBucketId: UserBucketId
-  onOpenPeek: () => void
+  onOpenDetails: () => void
   onMoveToBucket: (bucketId: UserBucketId) => void
 }) {
   const tone = toneForItem(item)
@@ -2492,18 +2329,8 @@ function QueueRow({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
-      aria-label={`Sneak peek ${item.title}`}
-      onClick={onOpenPeek}
-      onKeyDown={(event) => {
-        if (event.target !== event.currentTarget) return
-        if (event.key !== "Enter" && event.key !== " ") return
-        event.preventDefault()
-        onOpenPeek()
-      }}
       className={cn(
-        "relative grid w-full cursor-pointer grid-cols-[26px_1fr_auto] items-center gap-3 border-t border-border px-5 py-3 text-left outline-none transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring",
+        "relative grid w-full grid-cols-[26px_1fr_auto] items-center gap-3 border-t border-border px-5 py-3 text-left outline-none transition-colors hover:bg-muted/40",
         selected && rowSelectedToneClasses[tone]
       )}
     >
@@ -2594,6 +2421,21 @@ function QueueRow({
         </span>
       </span>
       <span className="flex shrink-0 items-center gap-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Open details for ${item.title}`}
+              onClick={onOpenDetails}
+              className="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Open details</TooltipContent>
+        </Tooltip>
         <BucketMoveMenu
           bucketId={bucketIdForAvailableBucketId(bucketId, userBuckets, fallbackBucketId)}
           bucketLanes={bucketLanes}
@@ -2706,402 +2548,6 @@ function FactChip({
   )
 }
 
-function QuickPeekPanel({
-  item,
-  bucketId,
-  userBuckets,
-  bucketLanes,
-  isPinned,
-  isSnoozed,
-  isMuted,
-  notes,
-  isMarkingSeen,
-  caughtUpError,
-  onSnooze,
-  onRestore,
-  onTogglePin,
-  onMute,
-  onNotesSave,
-  onMoveToBucket,
-  onCaughtUp,
-  onClose,
-}: {
-  item: ReviewQueueItemView
-  bucketId: UserBucketId
-  userBuckets: UserBucketDefinition[]
-  bucketLanes: LaneDefinition[]
-  isPinned: boolean
-  isSnoozed: boolean
-  isMuted: boolean
-  notes: string
-  isMarkingSeen: boolean
-  caughtUpError: boolean
-  onSnooze: () => void
-  onRestore: () => void
-  onTogglePin: () => void
-  onMute: () => void
-  onNotesSave: (notes: string) => void
-  onMoveToBucket: (bucketId: UserBucketId) => void
-  onCaughtUp: () => void
-  onClose: () => void
-}) {
-  const canMarkCaughtUp = canMarkReviewItemCaughtUp(item, isMarkingSeen)
-  const tone = toneForItem(item)
-  const reReviewRequested = item.activityEvents.some((event) =>
-    event.isNew && event.action.toLowerCase().includes("requested your review")
-  )
-  const factRows = [
-    {
-      id: "commits",
-      label: `+${formatCount(item.newCommitCount, "new commit")}`,
-      show: item.newCommitCount > 0,
-    },
-    {
-      id: "replies",
-      label: `${formatCount(item.newReplyCount, "new reply", "new replies")} on threads you opened`,
-      show: item.newReplyCount > 0,
-    },
-    {
-      id: "review",
-      label: "review requested",
-      show: reReviewRequested,
-    },
-  ].filter((row) => row.show)
-  return (
-    <aside className="flex h-full min-h-[520px] min-w-0 flex-col bg-card">
-      <div className="border-b border-border px-5 py-5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <PanelRight className="h-3.5 w-3.5" />
-            {item.repository} / #{item.number}
-          </div>
-          <div className="flex items-center gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  asChild
-                  variant="ghost"
-                  size="icon-sm"
-                  className="h-8 w-8 rounded-md text-muted-foreground hover:text-foreground"
-                >
-                  <Link
-                    to="/pull-requests/$pullRequestId"
-                    params={{ pullRequestId: item.id }}
-                    aria-label={`Open full view for ${item.title}`}
-                  >
-                    <Maximize2 className="h-4 w-4" />
-                  </Link>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Open full view</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Close sneak peek"
-                  onClick={onClose}
-                  className="h-8 w-8 rounded-md text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Close sneak peek</TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <BucketMoveMenu
-            bucketId={bucketId}
-            bucketLanes={bucketLanes}
-            userBuckets={userBuckets}
-            onMoveToBucket={onMoveToBucket}
-          />
-          {item.unseenEventCount > 0 ? (
-            <span className="inline-flex h-7 items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2 text-xs font-medium text-sky-800">
-              <Sparkles className="h-3.5 w-3.5" />
-              {formatCount(item.unseenEventCount, "new event")}
-            </span>
-          ) : null}
-        </div>
-        <h2 className="mt-3 text-xl font-semibold leading-7 tracking-tight text-foreground">
-          {item.title}
-        </h2>
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            <AuthorAvatar
-              login={item.authorLogin}
-              avatarUrl={item.authorAvatarUrl}
-              className="h-4 w-4 text-[8px]"
-            />
-            {item.authorLogin}
-          </span>
-          <span className="text-muted-foreground/40">·</span>
-          <span className={cn(item.waitingOn === "you" && "text-foreground")}>
-            {queueTimingLabel(item)}{" "}
-            <span className={waitingAgeClass(item)}>{item.waitingAge}</span>
-          </span>
-          {item.size ? (
-            <>
-              <span className="text-muted-foreground/40">·</span>
-              <span aria-label={sizeChipLabel(item.size)}>
-                {sizeChipText(item.size)}
-              </span>
-            </>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        <BoardItemNotes value={notes} onSave={onNotesSave} />
-
-        <Separator className="my-4 bg-border" />
-
-        {item.description ? (
-          <>
-            <section>
-              <div className="text-xs text-muted-foreground">
-                PR description
-              </div>
-              <div className="mt-3 rounded-md border border-border bg-muted/30 p-3">
-                <MarkdownContent source={item.description} compact />
-              </div>
-            </section>
-
-            <Separator className="my-4 bg-border" />
-          </>
-        ) : null}
-
-        <section className="rounded-md border border-border bg-card p-3.5">
-          <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            <Clock3 className="h-3.5 w-3.5" />
-            <span className={cn("h-1.5 w-1.5 rounded-full", laneToneClasses[tone])} />
-            Since your last visit · {item.lastSeenAt}
-          </div>
-          <ul className="mt-3 space-y-2 text-sm leading-5 text-foreground">
-            {factRows.length > 0 ? factRows.map((row) => (
-              <li key={row.id} className="flex gap-2">
-                <span className={cn("mt-2 h-1.5 w-1.5 rounded-full", laneToneClasses[tone])} />
-                <span>{row.label}</span>
-              </li>
-            )) : (
-              <li className="flex gap-2">
-                <span className="mt-2 h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
-                <span>No unseen activity since your last visit.</span>
-              </li>
-            )}
-          </ul>
-        </section>
-
-        {item.sinceLastReview ? (
-          <>
-            <Separator className="my-4 bg-border" />
-
-            <section className="rounded-md border border-border bg-card p-3.5">
-              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                <GitCompareArrows className="h-3.5 w-3.5" />
-                Since your last review · {sinceReviewHeading(item.sinceLastReview)}
-              </div>
-              <ul className="mt-3 space-y-2 text-sm leading-5 text-foreground">
-                {sinceReviewFacts(item.sinceLastReview).map((fact) => (
-                  <li key={fact} className="flex gap-2">
-                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
-                    <span>{fact}</span>
-                  </li>
-                ))}
-              </ul>
-              {item.sinceLastReview.compareUrl ? (
-                <a
-                  href={item.sinceLastReview.compareUrl}
-                  {...externalLinkProps}
-                  className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-foreground underline underline-offset-4 hover:text-muted-foreground"
-                >
-                  View what changed since your review
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              ) : null}
-            </section>
-          </>
-        ) : null}
-
-        {item.totalThreadCount > 0 ? (
-          <>
-            <Separator className="my-4 bg-border" />
-
-            <section>
-              <div className="text-xs text-muted-foreground">
-                Open threads · {item.unresolvedThreadCount} of{" "}
-                {item.totalThreadCount} unresolved
-                {threadsAwaitingReplyCount(item) > 0
-                  ? ` · ${threadsAwaitingReplyCount(item)} awaiting your reply`
-                  : ""}
-              </div>
-              <div className="mt-3 space-y-2">
-                {item.reviewThreads.map((thread) => (
-                  <div
-                    key={thread.id}
-                    className="grid grid-cols-[30px_1fr] gap-3 rounded-md border border-border bg-muted/30 p-3"
-                  >
-                    <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-border bg-muted/40 text-xs text-muted-foreground">
-                      {thread.author.slice(0, 2).toUpperCase()}
-                    </span>
-                    <div className="min-w-0">
-                      <div className="line-clamp-2 text-sm leading-5 text-foreground">
-                        {thread.excerpt}
-                      </div>
-                      <div
-                        className={cn(
-                          "mt-1.5 text-xs",
-                          thread.status === "unresolved"
-                            ? "text-foreground"
-                            : "text-muted-foreground/70"
-                        )}
-                      >
-                        {threadStatusLine(thread)}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </>
-        ) : null}
-
-        <Separator className="my-4 bg-border" />
-
-        <section>
-          <div className="text-xs text-muted-foreground">
-            Why this is here
-          </div>
-          <div className="mt-3 rounded-md border border-border bg-muted/30 p-3">
-            <p className="text-sm leading-5 text-foreground">{item.reason}</p>
-            {item.evidence.length > 0 ? (
-              <ul className="mt-2.5 space-y-1.5 border-t border-border pt-2.5">
-                {item.evidence.map((line) => (
-                  <li key={line.id} className="flex gap-2 text-xs leading-5">
-                    <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
-                    <span>
-                      <span className="text-foreground">{line.label}</span>
-                      {line.occurredAt ? (
-                        <span className="text-muted-foreground">
-                          {" "}
-                          · {line.occurredAt}
-                        </span>
-                      ) : null}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-        </section>
-
-        {item.activityEvents.length > 0 ? (
-          <>
-            <Separator className="my-4 bg-border" />
-            <section>
-              <div className="text-xs text-muted-foreground">
-                Latest activity
-              </div>
-              <div className="mt-3 space-y-2">
-                {item.activityEvents.slice(0, 3).map((event) => (
-                  <div
-                    key={event.id}
-                    className="rounded-md border border-border bg-muted/30 p-3 text-sm leading-5 text-foreground"
-                  >
-                    <div>
-                      <ActivityEventLine event={event} />
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground/70">
-                      {event.occurredAt}
-                      {event.isNew ? " · new" : ""}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </>
-        ) : null}
-      </div>
-
-      <div className="mt-auto grid grid-cols-2 gap-2 border-t border-border px-5 py-4">
-        {caughtUpError ? (
-          <div className="col-span-2 flex items-center justify-between gap-3 rounded-md border border-foreground/30 bg-foreground/10 px-3 py-2 text-xs leading-5 text-foreground">
-            <span>Could not save caught-up state.</span>
-            <Button
-              className="h-7 rounded-md px-2 text-xs"
-              disabled={isMarkingSeen}
-              type="button"
-              variant="outline"
-              onClick={onCaughtUp}
-            >
-              <RotateCcw className={cn("h-3.5 w-3.5", isMarkingSeen && "animate-spin")} />
-              Retry
-            </Button>
-          </div>
-        ) : null}
-        <Button asChild className="col-span-2 h-9">
-          <a href={item.url} {...externalLinkProps}>
-            Open in GitHub to review
-            <ExternalLink className="h-4 w-4" />
-          </a>
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={isSnoozed ? onRestore : onSnooze}
-          disabled={isMuted}
-          className="h-9 min-w-0 justify-center"
-        >
-          {isSnoozed ? (
-            <RotateCcw className="h-4 w-4" />
-          ) : (
-            <Clock3 className="h-4 w-4" />
-          )}
-          {isSnoozed ? "Restore" : "Snooze"}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onTogglePin}
-          disabled={isSnoozed || isMuted}
-          aria-pressed={isPinned}
-          className="h-9 min-w-0 justify-center"
-        >
-          <Pin className="h-4 w-4" />
-          {isPinned ? "Unpin" : "Pin"}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={isMuted ? onRestore : onMute}
-          disabled={isSnoozed}
-          className="h-9 min-w-0 justify-center"
-        >
-          <BellOff className="h-4 w-4" />
-          {isMuted ? "Unmute" : "Mute"}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onCaughtUp}
-          disabled={!canMarkCaughtUp}
-          className="h-9 min-w-0 justify-center"
-        >
-          <Check className="h-4 w-4" />
-          {isMarkingSeen
-            ? "Saving"
-            : item.unseenEventCount === 0
-              ? "All caught up"
-              : "Mark caught up"}
-        </Button>
-      </div>
-    </aside>
-  )
-}
-
 function queuePillLabel(item: ReviewQueueItemView): string {
   if (item.waitingOn === "you") return "you"
   if (item.waitingOn === "author") return "author"
@@ -3154,56 +2600,6 @@ function threadsAwaitingReplyCount(item: ReviewQueueItemView): number {
   return item.reviewThreads.filter((thread) => thread.awaitingYourReply).length
 }
 
-function threadStatusLine(thread: ReviewQueueItemView["reviewThreads"][number]): string {
-  if (thread.status === "resolved") {
-    return thread.isOutdated ? "resolved · outdated" : "resolved"
-  }
-
-  const parts = ["unresolved"]
-  if (thread.awaitingYourReply) {
-    parts.push(
-      thread.lastActorLogin
-        ? `${thread.lastActorLogin} replied · awaiting your reply`
-        : "awaiting your reply"
-    )
-  } else {
-    parts.push("you replied last")
-  }
-  if (thread.isOutdated) {
-    parts.push("outdated by new commits")
-  }
-  return parts.join(" · ")
-}
-
-function sinceReviewHeading(view: SinceLastReviewView): string {
-  const action =
-    view.decision === "approved"
-      ? "approved"
-      : view.decision === "changes_requested"
-        ? "requested changes"
-        : "commented"
-  return `you ${action} ${view.reviewedAt}`
-}
-
-function sinceReviewFacts(view: SinceLastReviewView): string[] {
-  const facts: string[] = []
-  if (view.commits.length > 0) {
-    facts.push(`+${formatCount(view.commits.length, "commit")} pushed`)
-  } else if (view.compareUrl) {
-    facts.push("New commits were pushed")
-  }
-  if (view.replyCount > 0) {
-    facts.push(`${formatCount(view.replyCount, "reply", "replies")} from others`)
-  }
-  if (view.threadsResolvedCount > 0) {
-    facts.push(`${formatCount(view.threadsResolvedCount, "thread")} resolved`)
-  }
-  if (facts.length === 0) {
-    facts.push("No new activity since your review")
-  }
-  return facts
-}
-
 function waitingAgeClass(item: ReviewQueueItemView): string | undefined {
   if (item.waitingUrgency === "overdue") return "text-rose-600"
   if (item.waitingUrgency === "elevated") return "text-amber-600"
@@ -3217,18 +2613,6 @@ function queueTimingLabel(item: ReviewQueueItemView): string {
   if (item.laneId === "caught_up") return "caught up"
   if (item.laneId === "stale") return "stale"
   return "watching"
-}
-
-function bucketIdForItem(
-  item: ReviewQueueItemView | undefined,
-  localQueueState: LocalQueueStateByPullRequestId
-): LaneId | undefined {
-  if (!item) return undefined
-  return bucketIdForLocalQueueItem(localQueueState[item.id], item.laneId)
-}
-
-function isStashedGroupMode(groupMode: QueueGroupMode): boolean {
-  return groupMode === "pinned" || groupMode === "snoozed" || groupMode === "muted"
 }
 
 function buildRepositoryGroups(
