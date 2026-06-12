@@ -173,7 +173,9 @@ function listKnownOpenPullRequests(db: DatabaseSync): KnownOpenPullRequest[] {
 
 function isTransientGithubDetailRefreshError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /timed out|failed to fetch|load failed|network/i.test(message);
+  return /timed out|timeout|aborted|failed to fetch|load failed|network/i.test(
+    message
+  );
 }
 
 function pullRequestKey(

@@ -1,3 +1,6 @@
+import { Octokit } from "@octokit/core";
+import { retry } from "@octokit/plugin-retry";
+import { throttling } from "@octokit/plugin-throttling";
 import { z } from "zod";
 
 export const githubTokenEnvSchema = z.object({
@@ -921,83 +924,40 @@ async function listPullRequestReviews(
   }
 }
 
+const requestTimeoutMs = 15_000;
+const maxRateLimitRetries = 2;
+
+const ThrottledOctokit = Octokit.plugin(retry, throttling);
+
 function createTokenRequest(input: {
   token: string;
   apiBaseUrl?: string;
 }): RequestingOctokit["request"] {
-  const apiBaseUrl = input.apiBaseUrl ?? "https://api.github.com";
+  const octokit = new ThrottledOctokit({
+    auth: input.token,
+    baseUrl: (input.apiBaseUrl ?? "https://api.github.com").replace(/\/+$/, ""),
+    request: {
+      // Octokit has no built-in timeout; without one a stalled connection
+      // hangs the whole sync.
+      fetch: (url: RequestInfo | URL, options?: RequestInit) =>
+        fetch(url, {
+          ...options,
+          signal: options?.signal ?? AbortSignal.timeout(requestTimeoutMs)
+        })
+    },
+    throttle: {
+      onRateLimit: (_retryAfter, _options, _client, retryCount) =>
+        retryCount < maxRateLimitRetries,
+      onSecondaryRateLimit: (_retryAfter, _options, _client, retryCount) =>
+        retryCount < maxRateLimitRetries
+    }
+  });
 
   return async <T = unknown>(
     route: string,
-    parameters: Record<string, unknown> = {}
+    parameters?: Record<string, unknown>
   ): Promise<{ data: T }> => {
-    const [method, routePath] = route.split(" ");
-    if (!method || !routePath) {
-      throw new Error(`Unsupported GitHub route: ${route}`);
-    }
-
-    const usedParameterNames = new Set<string>();
-    const pathname = routePath.replace(/\{([^}]+)\}/g, (_match, rawName) => {
-      const name = String(rawName);
-      usedParameterNames.add(name);
-      const value = parameters[name];
-      if (typeof value !== "string" && typeof value !== "number") {
-        throw new Error(`Missing GitHub route parameter: ${name}`);
-      }
-
-      return encodeURIComponent(String(value));
-    });
-    const url = new URL(pathname, apiBaseUrl);
-    const bodyParameters: Record<string, unknown> = {};
-
-    for (const [name, value] of Object.entries(parameters)) {
-      if (usedParameterNames.has(name) || value === undefined || value === null) {
-        continue;
-      }
-
-      if (method === "GET") {
-        url.searchParams.set(name, String(value));
-      } else {
-        bodyParameters[name] = value;
-      }
-    }
-
-    const abortController = new AbortController();
-    const timeout = setTimeout(() => abortController.abort(), 15_000);
-    let response: Response;
-
-    try {
-      response = await fetch(url, {
-        method,
-        signal: abortController.signal,
-        headers: {
-          accept: "application/vnd.github+json",
-          authorization: `Bearer ${input.token}`,
-          "x-github-api-version": "2022-11-28",
-          ...(method === "GET" ? {} : { "content-type": "application/json" })
-        },
-        ...(method === "GET"
-          ? {}
-          : { body: JSON.stringify(bodyParameters) })
-      });
-    } catch (error) {
-      if (abortController.signal.aborted) {
-        throw new Error(`GitHub API request timed out for ${route}`);
-      }
-
-      throw error;
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    if (!response.ok) {
-      const error = new Error(
-        `GitHub API request failed: ${response.status} ${response.statusText}`
-      ) as Error & { status?: number };
-      error.status = response.status;
-      throw error;
-    }
-
-    return { data: (await response.json()) as T };
+    const response = await octokit.request(route, parameters);
+    return { data: response.data as T };
   };
 }
