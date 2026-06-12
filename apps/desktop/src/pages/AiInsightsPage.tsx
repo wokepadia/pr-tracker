@@ -32,22 +32,16 @@ import { Button } from "@/components/ui/button"
 import {
   buildAiDashboardStats,
   type AiDashboardAuthorRow,
-  type AiDashboardBucket,
   type AiDashboardHotspotRow,
-  type AiDashboardKpis,
   type AiDashboardRepositoryRow,
-  type AiDashboardStats,
-  type AiDashboardTrendDay,
 } from "@/reviewer/ai-dashboard-stats"
 import {
-  defaultAttentionThresholds,
   formatRelativeTime,
   type ReviewQueueItemView,
 } from "@/reviewer/view-model"
 import { formatSyncStatusLabel } from "./inbox-helpers"
 import { cn, externalLinkProps } from "@/lib/utils"
 import type { ReviewerInsightsView } from "@/reviewer/insights"
-import type { LocalQueueStateByPullRequestId } from "@/reviewer/local-queue-state"
 
 /**
  * The AI insights view is a deterministic dashboard with narrow AI slots.
@@ -72,8 +66,6 @@ export function AiInsightsPage() {
   const {
     insights,
     allItems,
-    attentionSettings,
-    localQueueState,
   } = useReviewerInsights({
     previousVisitAt: visitQuery.data?.previousVisitAt,
     scope: "board",
@@ -99,9 +91,6 @@ export function AiInsightsPage() {
           <AiInsightsBody
             insights={insights}
             allItems={allItems}
-            attentionSettings={attentionSettings ?? defaultAttentionThresholds}
-            localQueueState={localQueueState}
-            previousVisitAt={visitQuery.data?.previousVisitAt}
             syncLabel={syncLabel}
             isSyncing={githubSync.isSyncing}
             onSyncNow={githubSync.syncNow}
@@ -135,18 +124,12 @@ function AiModeOffCard() {
 function AiInsightsBody({
   insights,
   allItems,
-  attentionSettings,
-  localQueueState,
-  previousVisitAt,
   syncLabel,
   isSyncing,
   onSyncNow,
 }: {
   insights: ReviewerInsightsView
   allItems: ReviewQueueItemView[]
-  attentionSettings: typeof defaultAttentionThresholds
-  localQueueState?: LocalQueueStateByPullRequestId
-  previousVisitAt?: string
   syncLabel: string
   isSyncing: boolean
   onSyncNow: () => void
@@ -156,11 +139,8 @@ function AiInsightsBody({
     () =>
       buildAiDashboardStats({
         items: allItems,
-        thresholds: attentionSettings,
-        localQueueState,
-        previousVisitAt,
       }),
-    [allItems, attentionSettings, localQueueState, previousVisitAt]
+    [allItems]
   )
   const input = useMemo(
     () => buildAiInsightsInput(insights, allItems),
@@ -183,13 +163,15 @@ function AiInsightsBody({
   })
   const result = insightsQuery.data ?? undefined
   const canGenerate = input.items.length > 0 && !generateMutation.isPending
+  const unseenCount = allItems.filter((item) => item.unseenEventCount > 0).length
 
   if (allItems.length === 0) {
     return (
       <>
         <DashboardHeader
-          stats={stats}
           insights={insights}
+          itemCount={allItems.length}
+          unseenCount={unseenCount}
           omittedCount={input.omittedCount}
           result={result}
           isLoadingCache={insightsQuery.isLoading}
@@ -212,8 +194,9 @@ function AiInsightsBody({
   return (
     <>
       <DashboardHeader
-        stats={stats}
         insights={insights}
+        itemCount={allItems.length}
+        unseenCount={unseenCount}
         omittedCount={input.omittedCount}
         result={result}
         isLoadingCache={insightsQuery.isLoading}
@@ -225,8 +208,6 @@ function AiInsightsBody({
         onSyncNow={onSyncNow}
         onGenerate={() => generateMutation.mutate()}
       />
-
-      <KpiStrip kpis={stats.kpis} />
 
       <AiHeadlineSlot
         result={result}
@@ -281,9 +262,6 @@ function AiInsightsBody({
         </div>
 
         <div className="col-span-4 flex flex-col gap-4">
-          <WaitAgeDistributionCard buckets={stats.waitAgeDistribution} />
-          <LaneCompositionCard buckets={stats.laneComposition} />
-          <ActivityTrendCard days={stats.activityTrend} />
           {stats.repositoryBreakdown.isHidden ? null : (
             <RepositoryBreakdownCard
               rows={stats.repositoryBreakdown.rows}
@@ -324,8 +302,9 @@ function AiInsightsBody({
 }
 
 function DashboardHeader({
-  stats,
   insights,
+  itemCount,
+  unseenCount,
   omittedCount,
   result,
   isLoadingCache,
@@ -337,8 +316,9 @@ function DashboardHeader({
   onSyncNow,
   onGenerate,
 }: {
-  stats: AiDashboardStats
   insights: ReviewerInsightsView
+  itemCount: number
+  unseenCount: number
   omittedCount: number
   result: AiGenerated<AiInsightsContent> | undefined
   isLoadingCache: boolean
@@ -378,9 +358,9 @@ function DashboardHeader({
             board.
           </p>
           <p className="mt-3 text-xs text-muted-foreground">
-            Built from {stats.itemCount} board item
-            {stats.itemCount === 1 ? "" : "s"} · {insights.totalCount} flagged
-            · {stats.kpis.unseenActivity.count} with unseen activity
+            Built from {itemCount} board item
+            {itemCount === 1 ? "" : "s"} · {insights.totalCount} flagged
+            · {unseenCount} with unseen activity
             {omittedCount > 0 ? ` · ${omittedCount} lower-priority omitted` : ""}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -425,154 +405,6 @@ function DashboardHeader({
       </div>
     </header>
   )
-}
-
-function KpiStrip({ kpis }: { kpis: AiDashboardKpis }) {
-  return (
-    <section aria-label="Dashboard KPIs" className="grid grid-cols-12 gap-3">
-      <KpiTile
-        className="col-span-2"
-        href="#ai-reading-order"
-        label="Needs your review"
-        value={kpis.needsReview.count}
-        secondary={
-          kpis.needsReview.overdueCount > 0
-            ? `${kpis.needsReview.overdueCount} overdue`
-            : undefined
-        }
-        secondaryTone={kpis.needsReview.overdueCount > 0 ? "overdue" : undefined}
-      />
-      <KpiTile
-        className="col-span-2"
-        to="/"
-        label="Unseen activity"
-        value={kpis.unseenActivity.count}
-        secondary={
-          kpis.unseenActivity.eventCount > 0
-            ? `${kpis.unseenActivity.eventCount} events total`
-            : undefined
-        }
-      />
-      <KpiTile
-        className="col-span-2"
-        href="#ai-reading-order"
-        label="Stale approvals"
-        value={kpis.staleApprovals.count}
-        secondary={
-          kpis.staleApprovals.oldestDays !== undefined
-            ? `oldest ${kpis.staleApprovals.oldestDays}d`
-            : undefined
-        }
-      />
-      <KpiTile
-        className="col-span-2"
-        pullRequestId={kpis.oldestWait.item?.id}
-        label="Oldest wait"
-        value={kpis.oldestWait.item ? kpis.oldestWait.label : "0"}
-        secondary={
-          kpis.oldestWait.item
-            ? `${kpis.oldestWait.item.repository} #${kpis.oldestWait.item.number}`
-            : undefined
-        }
-        secondaryTone={kpis.oldestWait.isOverdue ? "overdue" : undefined}
-      />
-      <KpiTile
-        className="col-span-2"
-        href="#discussion-hotspots"
-        label="Failing checks"
-        value={kpis.failingChecks.count}
-        secondary={
-          kpis.failingChecks.waitingOnYouCount > 0
-            ? `${kpis.failingChecks.waitingOnYouCount} also waiting on you`
-            : undefined
-        }
-      />
-      <KpiTile
-        className="col-span-2"
-        href="#ai-while-away"
-        label="Done while away"
-        value={kpis.concludedWhileAway.count}
-        secondary={
-          kpis.concludedWhileAway.withoutYourReviewCount > 0
-            ? `${kpis.concludedWhileAway.withoutYourReviewCount} without your review`
-            : undefined
-        }
-      />
-    </section>
-  )
-}
-
-function KpiTile({
-  label,
-  value,
-  secondary,
-  secondaryTone,
-  className,
-  href,
-  to,
-  pullRequestId,
-}: {
-  label: string
-  value: number | string
-  secondary?: string
-  secondaryTone?: "overdue"
-  className?: string
-  href?: string
-  to?: "/"
-  pullRequestId?: string
-}) {
-  const content = (
-    <>
-      <div className="text-2xl font-semibold tracking-tight text-foreground">
-        {value}
-      </div>
-      <div className="mt-1 text-xs font-medium text-muted-foreground">
-        {label}
-      </div>
-      {secondary ? (
-        <div
-          className={cn(
-            "mt-2 text-xs text-muted-foreground",
-            secondaryTone === "overdue" && "font-medium text-destructive"
-          )}
-        >
-          {secondary}
-        </div>
-      ) : null}
-    </>
-  )
-  const tileClassName = cn(
-    "rounded-md border border-border bg-card p-3 text-left transition hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring",
-    className
-  )
-
-  if (pullRequestId) {
-    return (
-      <Link
-        to="/pull-requests/$pullRequestId"
-        params={{ pullRequestId }}
-        className={tileClassName}
-      >
-        {content}
-      </Link>
-    )
-  }
-  if (to) {
-    return (
-      <Link to={to} className={tileClassName}>
-        {content}
-      </Link>
-    )
-  }
-  if (href) {
-    return (
-      <a href={href} className={tileClassName}>
-        {content}
-      </a>
-    )
-  }
-
-  return <div className={tileClassName}>{content}</div>
 }
 
 function AiHeadlineSlot({
@@ -643,159 +475,6 @@ function AiSlotPlaceholder({
         Generate to fill this AI slot.
       </div>
     </section>
-  )
-}
-
-function WaitAgeDistributionCard({
-  buckets,
-}: {
-  buckets: AiDashboardBucket[]
-}) {
-  const maxCount = Math.max(1, ...buckets.map((bucket) => bucket.count))
-  const total = buckets.reduce((sum, bucket) => sum + bucket.count, 0)
-
-  return (
-    <DashboardCard title="Wait-age distribution">
-      {total === 0 ? (
-        <EmptyWidgetLine>Nothing is waiting on you.</EmptyWidgetLine>
-      ) : (
-        <div className="space-y-3">
-          {buckets.map((bucket) => (
-            <Link
-              key={bucket.id}
-              to="/"
-              className="grid grid-cols-[88px_1fr_24px] items-center gap-2 text-xs text-muted-foreground"
-            >
-              <span>{bucket.label}</span>
-              <span className="h-2 rounded-full bg-muted">
-                <span
-                  className={cn(
-                    "block h-2 rounded-full bg-foreground/70",
-                    bucket.tone === "overdue" && "bg-destructive"
-                  )}
-                  style={{
-                    width: `${Math.max(6, (bucket.count / maxCount) * 100)}%`,
-                  }}
-                />
-              </span>
-              <span className="text-right tabular-nums">{bucket.count}</span>
-            </Link>
-          ))}
-        </div>
-      )}
-    </DashboardCard>
-  )
-}
-
-function LaneCompositionCard({ buckets }: { buckets: AiDashboardBucket[] }) {
-  const total = buckets.reduce((sum, bucket) => sum + bucket.count, 0)
-
-  return (
-    <DashboardCard title="Board composition">
-      {total === 0 ? (
-        <EmptyWidgetLine>No board items.</EmptyWidgetLine>
-      ) : (
-        <>
-          <Link to="/" className="flex h-3 overflow-hidden rounded-full bg-muted">
-            {buckets.map((bucket) => (
-              <span
-                key={bucket.id}
-                className={cn(
-                  "h-full border-r border-card last:border-r-0",
-                  compositionToneClass(bucket)
-                )}
-                style={{ width: `${(bucket.count / total) * 100}%` }}
-                title={`${bucket.label}: ${bucket.count}`}
-              />
-            ))}
-          </Link>
-          <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2">
-            {buckets.map((bucket) => (
-              <Link
-                key={bucket.id}
-                to="/"
-                className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground"
-              >
-                <span
-                  className={cn("h-2 w-2 shrink-0 rounded-full", compositionToneClass(bucket))}
-                />
-                <span className="truncate">{bucket.label}</span>
-                <span className="ml-auto tabular-nums">{bucket.count}</span>
-              </Link>
-            ))}
-          </div>
-        </>
-      )}
-    </DashboardCard>
-  )
-}
-
-function compositionToneClass(bucket: AiDashboardBucket): string {
-  if (bucket.tone === "muted") return "bg-muted-foreground/35"
-  const tones: Record<string, string> = {
-    needs_review: "bg-foreground",
-    updated_since_review: "bg-sky-500",
-    waiting_on_author: "bg-amber-500",
-    approved: "bg-emerald-500",
-    caught_up: "bg-teal-500",
-    stale: "bg-rose-500",
-    watching: "bg-slate-400",
-  }
-  return tones[bucket.id] ?? "bg-muted-foreground"
-}
-
-function ActivityTrendCard({ days }: { days: AiDashboardTrendDay[] }) {
-  const maxEvents = Math.max(1, ...days.map((day) => day.eventCount))
-  const points = days
-    .map((day, index) => {
-      const x = (index / Math.max(1, days.length - 1)) * 100
-      const y = 52 - (day.eventCount / maxEvents) * 44
-      return `${x},${y}`
-    })
-    .join(" ")
-  const areaPoints = `0,56 ${points} 100,56`
-  const visitIndex = days.findIndex((day) => day.isVisitDay)
-  const eventCount = days.reduce((total, day) => total + day.eventCount, 0)
-
-  return (
-    <DashboardCard title="Activity trend">
-      <div className="relative h-24">
-        <svg
-          aria-label="14-day activity trend"
-          className="h-full w-full overflow-visible"
-          preserveAspectRatio="none"
-          viewBox="0 0 100 60"
-        >
-          <polygon points={areaPoints} className="fill-muted" />
-          <polyline
-            points={points}
-            className="fill-none stroke-foreground/70"
-            strokeWidth="2"
-            vectorEffect="non-scaling-stroke"
-          />
-          {visitIndex >= 0 ? (
-            <line
-              x1={(visitIndex / Math.max(1, days.length - 1)) * 100}
-              x2={(visitIndex / Math.max(1, days.length - 1)) * 100}
-              y1="4"
-              y2="58"
-              className="stroke-amber-500"
-              strokeDasharray="3 3"
-              vectorEffect="non-scaling-stroke"
-            />
-          ) : null}
-        </svg>
-      </div>
-      <div className="mt-2 flex justify-between text-[11px] text-muted-foreground">
-        <span>{days[0]?.label}</span>
-        <span>
-          {eventCount === 0
-            ? "No activity in the last 14 days"
-            : `${eventCount} events in 14 days`}
-        </span>
-        <span>{days.at(-1)?.label}</span>
-      </div>
-    </DashboardCard>
   )
 }
 

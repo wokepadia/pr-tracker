@@ -13,10 +13,8 @@ import {
 import {
   buildInboxView,
   defaultAttentionThresholds,
-  type AttentionThresholds,
   type ReviewQueueItemView,
 } from "@/reviewer/view-model"
-import type { LocalQueueStateByPullRequestId } from "@/reviewer/local-queue-state"
 
 /**
  * Computes the insights projection over the board-filtered inbox — like
@@ -36,8 +34,6 @@ export function useReviewerInsights(options?: {
   /** Active and recently inactive items, for consumers that need to look
    * up the underlying pull requests behind the insight rows. */
   allItems?: ReviewQueueItemView[]
-  attentionSettings?: AttentionThresholds
-  localQueueState?: LocalQueueStateByPullRequestId
   isLoading: boolean
 } {
   const { inboxQuery } = useBoardInbox()
@@ -89,8 +85,6 @@ export function useReviewerInsights(options?: {
   return {
     insights: computed?.insights,
     allItems: computed?.allItems,
-    attentionSettings: attentionSettingsQuery.data ?? defaultAttentionThresholds,
-    localQueueState,
     isLoading: inboxQuery.isLoading,
   }
 }

@@ -3,7 +3,6 @@ import { buildAiDashboardStats } from "./ai-dashboard-stats"
 import type { ActivityEventView, ReviewQueueItemView } from "./view-model"
 
 const now = Date.parse("2026-06-11T12:00:00.000Z")
-const thresholds = { elevatedAfterHours: 24, overdueAfterHours: 96 }
 
 function hoursAgo(hours: number): string {
   return new Date(now - hours * 60 * 60 * 1000).toISOString()
@@ -76,121 +75,12 @@ function build(
   }
 ) {
   return buildAiDashboardStats({
-    thresholds,
     now,
     ...input,
   })
 }
 
 describe("buildAiDashboardStats", () => {
-  it("projects the KPI strip from board-scoped items", () => {
-    const stats = build({
-      previousVisitAt: daysAgo(7),
-      items: [
-        makeItem({
-          id: "pr_overdue",
-          waitingAge: "5d",
-          waitingSinceAtIso: daysAgo(5),
-          waitingUrgency: "overdue",
-          unseenEventCount: 3,
-          checks: { state: "failure" },
-        }),
-        makeItem({
-          id: "pr_stale",
-          workflowState: "approved",
-          laneId: "approved",
-          waitingOn: "none",
-          waitingAge: "unknown",
-          waitingSinceAtIso: undefined,
-          userLastReviewDecision: "approved",
-          userLastReviewAtIso: daysAgo(6),
-          approvalStale: true,
-          activityEvents: [
-            makeEvent({
-              id: "commit",
-              type: "commit",
-              occurredAtIso: daysAgo(4),
-            }),
-          ],
-        }),
-        makeItem({
-          id: "pr_done",
-          state: "merged",
-          workflowState: "caught_up",
-          laneId: "caught_up",
-          waitingOn: "none",
-          updatedAtIso: daysAgo(2),
-          userLastReviewDecision: "pending",
-        }),
-      ],
-    })
-
-    expect(stats.kpis.needsReview).toEqual({ count: 1, overdueCount: 1 })
-    expect(stats.kpis.unseenActivity).toEqual({ count: 1, eventCount: 3 })
-    expect(stats.kpis.staleApprovals).toEqual({ count: 1, oldestDays: 4 })
-    expect(stats.kpis.oldestWait.item?.id).toBe("pr_overdue")
-    expect(stats.kpis.oldestWait.isOverdue).toBe(true)
-    expect(stats.kpis.failingChecks).toEqual({
-      count: 1,
-      waitingOnYouCount: 1,
-    })
-    expect(stats.kpis.concludedWhileAway).toEqual({
-      count: 1,
-      withoutYourReviewCount: 1,
-    })
-  })
-
-  it("builds wait buckets, lane composition, and activity trend", () => {
-    const stats = build({
-      previousVisitAt: daysAgo(1),
-      localQueueState: {
-        pr_snoozed: { snoozed: true },
-        pr_muted: { muted: true },
-      },
-      items: [
-        makeItem({ id: "pr_fast", waitingAge: "3h", waitingSinceAtIso: hoursAgo(3) }),
-        makeItem({ id: "pr_mid", waitingAge: "2d", waitingSinceAtIso: daysAgo(2) }),
-        makeItem({ id: "pr_late", waitingAge: "3d", waitingSinceAtIso: daysAgo(3) }),
-        makeItem({
-          id: "pr_over",
-          waitingAge: "6d",
-          waitingSinceAtIso: daysAgo(6),
-          waitingUrgency: "overdue",
-        }),
-        makeItem({
-          id: "pr_snoozed",
-          laneId: "waiting_on_author",
-          workflowState: "waiting_on_author",
-          waitingOn: "author",
-          activityEvents: [
-            makeEvent({ id: "old", occurredAtIso: daysAgo(20) }),
-            makeEvent({ id: "new", occurredAtIso: hoursAgo(4) }),
-          ],
-        }),
-        makeItem({
-          id: "pr_muted",
-          laneId: "watching",
-          workflowState: "watching",
-          waitingOn: "none",
-          activityEvents: [makeEvent({ id: "seen", occurredAtIso: hoursAgo(1) })],
-        }),
-      ],
-    })
-
-    expect(stats.waitAgeDistribution.map((bucket) => bucket.count)).toEqual([
-      1, 1, 1, 1,
-    ])
-    expect(stats.laneComposition.map((bucket) => [bucket.id, bucket.count])).toEqual([
-      ["needs_review", 4],
-      ["snoozed", 1],
-      ["muted", 1],
-    ])
-    expect(
-      stats.activityTrend.reduce((total, day) => total + day.eventCount, 0)
-    ).toBe(2)
-    expect(stats.activityTrend.some((day) => day.isVisitDay)).toBe(true)
-  })
-
   it("builds repository, discussion, and author tables", () => {
     const stats = build({
       items: [

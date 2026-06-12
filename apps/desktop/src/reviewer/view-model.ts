@@ -53,7 +53,6 @@ export interface SinceLastReviewView {
     id: string
     title: string
     occurredAt: string
-    occurredAtIso?: string
   }>
   replyCount: number
   threadsResolvedCount: number
@@ -140,7 +139,6 @@ export interface ReviewQueueItemView {
   lastSeenAtIso?: string
   userLastReviewDecision: ReviewDecision | "pending"
   userLastReviewAt?: string
-  userLastReviewAtIso?: string
   sinceLastReview?: SinceLastReviewView
   approvalStale: boolean
   /** Completed changes-requested → push cycles; high counts mean stuck. */
@@ -285,7 +283,6 @@ export function toReviewQueueItemView(
     userLastReviewAt: latestViewerReview
       ? formatRelativeTime(latestViewerReview.submittedAt)
       : undefined,
-    userLastReviewAtIso: latestViewerReview?.submittedAt,
     sinceLastReview: latestViewerReview
       ? buildSinceLastReview(pullRequest, latestViewerReview, reviewedHeadMoved)
       : undefined,
@@ -463,7 +460,6 @@ function buildSinceLastReview(
       id: event.id,
       title: event.title,
       occurredAt: formatRelativeTime(event.occurredAt),
-      occurredAtIso: event.occurredAt,
     }))
   const replyCount = activitySinceReview.filter(
     (event) =>
