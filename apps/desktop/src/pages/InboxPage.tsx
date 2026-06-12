@@ -41,14 +41,11 @@ import {
   ChevronsLeftRight,
   Edit3,
   Eye,
-  FileDiff,
   Maximize2,
-  GitCommitHorizontal,
   GitPullRequest,
   GripVertical,
   Inbox,
   LoaderCircle,
-  MessageSquareText,
   Plus,
   RotateCcw,
   Search,
@@ -95,7 +92,6 @@ import {
   buildInboxView,
   defaultAttentionThresholds,
   type ReviewQueueItemView,
-  type SizeChipView,
 } from "@/reviewer/view-model"
 import {
   bucketIdForLocalQueueItem,
@@ -2104,9 +2100,6 @@ function QueueCard({
   onOpenDetails: () => void
 }) {
   const tone = toneForItem(item)
-  const reReviewRequested = item.activityEvents.some((event) =>
-    event.isNew && event.action.toLowerCase().includes("requested your review")
-  )
 
   return (
     <article
@@ -2125,11 +2118,6 @@ function QueueCard({
       />
       <div className="flex items-center gap-2 pl-1">
         {dragHandle}
-        <AuthorAvatar
-          login={item.authorLogin}
-          avatarUrl={item.authorAvatarUrl}
-          className="h-6 w-6"
-        />
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
           <span className="flex min-w-0 items-center gap-1.5">
             <span className="truncate font-medium">{item.repository}</span>
@@ -2160,7 +2148,7 @@ function QueueCard({
       <h4 className="mt-2 line-clamp-2 pl-1 text-sm font-semibold leading-5 text-foreground">
         {item.title}
       </h4>
-      <PullRequestLabels labels={item.labels} className="mt-2 pl-1" />
+      <PullRequestLabels labels={item.labels} className="mt-2 pl-1" maxVisible={3} />
       <div className="mt-3 border-t border-border pt-3">
         <div className="flex flex-wrap items-center gap-1.5">
           <Tooltip>
@@ -2177,57 +2165,15 @@ function QueueCard({
             </TooltipTrigger>
             <TooltipContent>{queuePillTooltip(item)}</TooltipContent>
           </Tooltip>
-          {item.newCommitCount > 0 ? (
-            <FactChip
-              icon={GitCommitHorizontal}
-              text={`+${item.newCommitCount}`}
-              label={formatCount(item.newCommitCount, "new commit")}
-              active
-            />
-          ) : null}
-          {item.newReplyCount > 0 ? (
-            <FactChip
-              icon={MessageSquareText}
-              text={`${item.newReplyCount}`}
-              label={formatCount(item.newReplyCount, "new reply", "new replies")}
-              active
-            />
-          ) : null}
-          {item.totalThreadCount > 0 ? (
-            <FactChip
-              icon={Inbox}
-              text={`${item.unresolvedThreadCount}/${item.totalThreadCount}`}
-              label={threadChipLabel(item)}
-              active={threadsAwaitingReplyCount(item) > 0}
-            />
-          ) : null}
-          {item.size ? (
-            <FactChip
-              icon={FileDiff}
-              text={sizeChipText(item.size)}
-              label={sizeChipLabel(item.size)}
-            />
-          ) : null}
-          {item.approvalStale ? (
-            <FactChip
-              icon={ShieldAlert}
-              text="stale approval"
-              label="The author pushed after your approval"
-              active
-            />
-          ) : null}
-          {reReviewRequested ? (
-            <FactChip
-              icon={Eye}
-              text="requested"
-              label="Your review was requested again"
-              active
-            />
-          ) : null}
+          <BoardActionChips item={item} />
         </div>
-        <PullRequestPeopleSummary item={item} className="mt-3" />
         <div className="mt-3 flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+            <AuthorAvatar
+              login={item.authorLogin}
+              avatarUrl={item.authorAvatarUrl}
+              className="h-5 w-5 text-[10px]"
+            />
             <span className="truncate">{item.authorLogin}</span>
           </div>
           <span
@@ -2399,14 +2345,11 @@ function QueueRow({
   onMoveToBucket: (bucketId: UserBucketId) => void
 }) {
   const tone = toneForItem(item)
-  const reReviewRequested = item.activityEvents.some((event) =>
-    event.isNew && event.action.toLowerCase().includes("requested your review")
-  )
 
   return (
     <div
       className={cn(
-        "relative grid w-full grid-cols-[26px_1fr_auto] items-center gap-3 border-t border-border px-5 py-3 text-left outline-none transition-colors hover:bg-muted/40",
+        "relative grid w-full grid-cols-[1fr_auto] items-center gap-3 border-t border-border px-5 py-3 text-left outline-none transition-colors hover:bg-muted/40",
         selected && rowSelectedToneClasses[tone]
       )}
     >
@@ -2415,11 +2358,6 @@ function QueueRow({
           "absolute inset-y-0 left-0 w-[3px]",
           laneToneClasses[tone]
         )}
-      />
-      <AuthorAvatar
-        login={item.authorLogin}
-        avatarUrl={item.authorAvatarUrl}
-        className="h-[26px] w-[26px]"
       />
       <span className="min-w-0">
         <span className="flex min-w-0 items-start gap-2 sm:items-center">
@@ -2445,58 +2383,24 @@ function QueueRow({
           <span className="text-muted-foreground">
             {item.repository} / #{item.number}
           </span>
-          <span className="text-muted-foreground/40">·</span>
-          <span>{item.authorLogin}</span>
-          {item.newCommitCount > 0 ? (
-            <FactChip
-              icon={GitCommitHorizontal}
-              text={`+${item.newCommitCount}`}
-              label={formatCount(item.newCommitCount, "new commit")}
-              active
-            />
-          ) : null}
-          {item.newReplyCount > 0 ? (
-            <FactChip
-              icon={MessageSquareText}
-              text={`${item.newReplyCount}`}
-              label={formatCount(item.newReplyCount, "new reply", "new replies")}
-              active
-            />
-          ) : null}
-          {item.totalThreadCount > 0 ? (
-            <FactChip
-              icon={Inbox}
-              text={`${item.unresolvedThreadCount}/${item.totalThreadCount}`}
-              label={threadChipLabel(item)}
-              active={threadsAwaitingReplyCount(item) > 0}
-            />
-          ) : null}
-          {item.size ? (
-            <FactChip
-              icon={FileDiff}
-              text={sizeChipText(item.size)}
-              label={sizeChipLabel(item.size)}
-            />
-          ) : null}
-          {item.approvalStale ? (
-            <FactChip
-              icon={ShieldAlert}
-              text="stale approval"
-              label="The author pushed after your approval"
-              active
-            />
-          ) : null}
-          {reReviewRequested ? (
-            <FactChip
-              icon={Eye}
-              text="review requested"
-              label="Your review was requested again"
-              active
-            />
+          {item.unseenEventCount > 0 ? (
+            <span className="shrink-0 rounded-full border border-sky-200 bg-sky-50 px-1.5 py-[1px] font-medium text-sky-800">
+              {formatCount(item.unseenEventCount, "new event")}
+            </span>
           ) : null}
         </span>
-        <PullRequestLabels labels={item.labels} className="mt-2" />
-        <PullRequestPeopleSummary item={item} className="mt-2" />
+        <PullRequestLabels labels={item.labels} className="mt-2" maxVisible={3} />
+        <span className="mt-2 flex flex-wrap items-center gap-1.5">
+          <BoardActionChips item={item} />
+        </span>
+        <span className="mt-2 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          <AuthorAvatar
+            login={item.authorLogin}
+            avatarUrl={item.authorAvatarUrl}
+            className="h-5 w-5 text-[10px]"
+          />
+          <span className="truncate">{item.authorLogin}</span>
+        </span>
       </span>
       <span className="flex shrink-0 items-center gap-2">
         <Tooltip>
@@ -2537,6 +2441,46 @@ function QueueRow({
         </span>
       </span>
     </div>
+  )
+}
+
+function BoardActionChips({ item }: { item: ReviewQueueItemView }) {
+  const awaitingThreads = threadsAwaitingReplyCount(item)
+  const reReviewRequested = item.activityEvents.some((event) =>
+    event.isNew && event.action.toLowerCase().includes("requested your review")
+  )
+
+  return (
+    <>
+      {item.approvalStale ? (
+        <FactChip
+          icon={ShieldAlert}
+          text="stale approval"
+          label="The author pushed after your approval"
+          active
+        />
+      ) : null}
+      {reReviewRequested ? (
+        <FactChip
+          icon={Eye}
+          text="requested"
+          label="Your review was requested again"
+          active
+        />
+      ) : null}
+      {awaitingThreads > 0 ? (
+        <FactChip
+          icon={Inbox}
+          text={formatCount(awaitingThreads, "thread")}
+          label={formatCount(
+            awaitingThreads,
+            "review thread awaiting your reply",
+            "review threads awaiting your reply"
+          )}
+          active
+        />
+      ) : null}
+    </>
   )
 }
 
@@ -2629,15 +2573,20 @@ function FactChip({
 function PullRequestLabels({
   labels,
   className,
+  maxVisible,
 }: {
   labels: ReviewQueueItemView["labels"]
   className?: string
+  maxVisible?: number
 }) {
   if (labels.length === 0) return null
 
+  const visibleLabels = maxVisible ? labels.slice(0, maxVisible) : labels
+  const hiddenLabels = maxVisible ? labels.slice(maxVisible) : []
+
   return (
     <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
-      {labels.map((label) => (
+      {visibleLabels.map((label) => (
         <Tooltip key={label.name}>
           <TooltipTrigger asChild>
             <span
@@ -2660,99 +2609,24 @@ function PullRequestLabels({
           </TooltipContent>
         </Tooltip>
       ))}
-    </div>
-  )
-}
-
-function PullRequestPeopleSummary({
-  item,
-  className,
-}: {
-  item: ReviewQueueItemView
-  className?: string
-}) {
-  return (
-    <div
-      className={cn(
-        "flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs",
-        className
-      )}
-    >
-      <PeopleField
-        label="Author"
-        people={[{ login: item.authorLogin, avatarUrl: item.authorAvatarUrl }]}
-      />
-      <PeopleField label="Assignee" people={item.assignees} empty="none" />
-      <ReviewerField item={item} />
-    </div>
-  )
-}
-
-function ReviewerField({ item }: { item: ReviewQueueItemView }) {
-  const people = [
-    ...(item.waitingOn === "you" || item.userLastReviewDecision !== "pending"
-      ? [
-          {
-            login: "you",
-            detail: reviewerDecisionLabel(item.userLastReviewDecision),
-          },
-        ]
-      : []),
-    ...item.otherReviewers.map((reviewer) => ({
-      login: reviewer.login,
-      avatarUrl: reviewer.avatarUrl,
-      detail: reviewerDecisionLabel(reviewer.decision),
-    })),
-  ]
-
-  return <PeopleField label="Reviewer" people={people} empty="none" />
-}
-
-function reviewerDecisionLabel(
-  decision: ReviewQueueItemView["otherReviewers"][number]["decision"]
-): string {
-  if (decision === "pending") return "pending"
-  if (decision === "changes_requested") return "changes req."
-  return decision
-}
-
-function PeopleField({
-  label,
-  people,
-  empty,
-}: {
-  label: string
-  people: Array<{ login: string; avatarUrl?: string; detail?: string }>
-  empty?: string
-}) {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground">
-      <span className="font-medium text-foreground/70">{label}</span>
-      {people.length > 0 ? (
-        <span className="inline-flex min-w-0 flex-wrap items-center gap-1">
-          {people.map((person) => (
+      {hiddenLabels.length > 0 ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
             <span
-              key={`${label}:${person.login}`}
-              className="inline-flex min-w-0 items-center gap-1 rounded-[4px] border border-border bg-card px-1.5 py-[1px]"
+              aria-label={`Additional GitHub labels: ${hiddenLabels
+                .map((label) => label.name)
+                .join(", ")}`}
+              className="inline-flex items-center rounded-full border border-border bg-muted px-2 py-[1px] text-[11px] font-medium leading-4 text-muted-foreground"
             >
-              <AuthorAvatar
-                login={person.login}
-                avatarUrl={person.avatarUrl}
-                className="h-3.5 w-3.5 text-[7px]"
-              />
-              <span className="max-w-[120px] truncate text-foreground">
-                {person.login}
-              </span>
-              {person.detail ? (
-                <span className="text-muted-foreground">· {person.detail}</span>
-              ) : null}
+              +{hiddenLabels.length}
             </span>
-          ))}
-        </span>
-      ) : (
-        <span className="text-muted-foreground">{empty ?? "none"}</span>
-      )}
-    </span>
+          </TooltipTrigger>
+          <TooltipContent>
+            {hiddenLabels.map((label) => label.name).join(", ")}
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
+    </div>
   )
 }
 
@@ -2794,36 +2668,6 @@ function githubLabelTextColor(color: string): string {
   const blue = Number.parseInt(color.slice(4, 6), 16)
   const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255
   return luminance > 0.58 ? "#24292f" : "#ffffff"
-}
-
-const sizeBucketNames: Record<SizeChipView["bucket"], string> = {
-  S: "Small",
-  M: "Medium",
-  L: "Large",
-  XL: "Very large",
-}
-
-function sizeChipText(size: SizeChipView): string {
-  return size.fileCount !== undefined
-    ? `${size.bucket} · ${formatCount(size.fileCount, "file")}`
-    : size.bucket
-}
-
-function sizeChipLabel(size: SizeChipView): string {
-  const fileSuffix =
-    size.fileCount !== undefined
-      ? ` across ${formatCount(size.fileCount, "file")}`
-      : ""
-  return `${sizeBucketNames[size.bucket]} change · ${size.lineCount} changed lines${fileSuffix}`
-}
-
-function threadChipLabel(item: ReviewQueueItemView): string {
-  const awaiting = threadsAwaitingReplyCount(item)
-  const base = `${item.unresolvedThreadCount} of ${formatCount(
-    item.totalThreadCount,
-    "review thread"
-  )} unresolved`
-  return awaiting > 0 ? `${base}, ${awaiting} awaiting your reply` : base
 }
 
 function threadsAwaitingReplyCount(item: ReviewQueueItemView): number {
