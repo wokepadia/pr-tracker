@@ -14,7 +14,7 @@ import {
   saveAiSettings,
   type AiSettingsStatus,
 } from "@/api"
-import { defaultAiModel } from "@/ai/ai-settings"
+import { defaultAiModels, type AiProvider } from "@/ai/ai-settings"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -27,12 +27,14 @@ export function AiSettingsCard() {
     queryFn: getAiSettings,
   })
   const [apiKey, setApiKey] = useState("")
+  const [provider, setProvider] = useState<AiProvider>("openrouter")
   const [model, setModel] = useState("")
   const [enabled, setEnabled] = useState(false)
   const saveMutation = useMutation({
     mutationFn: saveAiSettings,
     onSuccess: async (saved: AiSettingsStatus) => {
       setApiKey("")
+      setProvider(saved.provider)
       setModel(saved.model)
       setEnabled(saved.enabled)
       queryClient.setQueryData(["ai-settings"], saved)
@@ -42,9 +44,22 @@ export function AiSettingsCard() {
 
   useEffect(() => {
     if (!settingsQuery.data) return
+    setProvider(settingsQuery.data.provider)
     setModel(settingsQuery.data.model)
     setEnabled(settingsQuery.data.enabled)
   }, [settingsQuery.data])
+
+  function switchProvider(next: AiProvider) {
+    setProvider(next)
+    // Model ids are provider-specific; swap the field to the new default
+    // unless the user already typed a custom value for the new provider.
+    setModel((current) => {
+      const other: AiProvider = next === "codex" ? "openrouter" : "codex"
+      return current === "" || current === defaultAiModels[other]
+        ? defaultAiModels[next]
+        : current
+    })
+  }
 
   function submitSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -54,6 +69,7 @@ export function AiSettingsCard() {
   function retrySaveSettings() {
     saveMutation.mutate({
       apiKey: apiKey || undefined,
+      provider,
       model: model || undefined,
       enabled,
     })
@@ -75,14 +91,14 @@ export function AiSettingsCard() {
           </Badge>
         </div>
         <h2 className="mt-2 text-lg font-semibold tracking-normal text-foreground">
-          Summaries with your OpenRouter key
+          Summaries with your own AI access
         </h2>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
           Off by default; the app is unchanged until you enable it. When
-          enabled, pull request pages gain generate-on-demand summaries. Each
-          generation sends that pull request's data (and its diff, for the
-          change summary) to OpenRouter using your key and bills your
-          OpenRouter account. Nothing is generated automatically.
+          enabled, pull request pages and insights gain generate-on-demand
+          summaries. Each generation sends that pull request's data (and its
+          diff, for the change summary) to the provider you pick below, on
+          your own account. Nothing is generated automatically.
         </p>
       </div>
 
@@ -115,6 +131,47 @@ export function AiSettingsCard() {
         </div>
       ) : (
         <form className="flex flex-col gap-4" onSubmit={submitSettings}>
+          <fieldset className="flex flex-col gap-2">
+            <legend className="text-sm font-medium">Provider</legend>
+            <label className="flex items-start gap-2 text-sm text-foreground">
+              <input
+                checked={provider === "openrouter"}
+                className="mt-1 h-3.5 w-3.5 accent-primary"
+                name="ai-provider"
+                type="radio"
+                onChange={() => switchProvider("openrouter")}
+              />
+              <span>
+                <span className="font-medium">OpenRouter</span>
+                <span className="block text-xs leading-5 text-muted-foreground">
+                  Pay-per-use with your own API key. Calls go directly to
+                  OpenRouter.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-sm text-foreground">
+              <input
+                checked={provider === "codex"}
+                className="mt-1 h-3.5 w-3.5 accent-primary"
+                name="ai-provider"
+                type="radio"
+                onChange={() => switchProvider("codex")}
+              />
+              <span>
+                <span className="font-medium">Codex CLI (ChatGPT plan)</span>
+                <span className="block text-xs leading-5 text-muted-foreground">
+                  Uses the locally installed Codex CLI and its own sign-in,
+                  so generations draw on your ChatGPT subscription. Requires
+                  `codex login` in a terminal first. Note: consumer ChatGPT
+                  plans may retain and train on prompts unless you disable
+                  "Improve the model for everyone" in ChatGPT's Data
+                  Controls.
+                </span>
+              </span>
+            </label>
+          </fieldset>
+
+          {provider === "openrouter" ? (
           <label className="flex flex-col gap-2">
             <span className="flex items-center justify-between gap-2">
               <span className="text-sm font-medium">OpenRouter API key</span>
@@ -139,17 +196,20 @@ export function AiSettingsCard() {
               GitHub token. Create one at openrouter.ai/keys.
             </span>
           </label>
+          ) : null}
 
           <label className="flex flex-col gap-2">
             <span className="text-sm font-medium">Model</span>
             <Input
               className={fieldInputClassName}
-              placeholder={defaultAiModel}
+              placeholder={defaultAiModels[provider]}
               value={model}
               onChange={(event) => setModel(event.target.value)}
             />
             <span className="text-xs text-muted-foreground">
-              Any OpenRouter model id. Leave blank for {defaultAiModel}.
+              {provider === "openrouter"
+                ? `Any OpenRouter model id. Leave blank for ${defaultAiModels.openrouter}.`
+                : `A model your ChatGPT plan supports. Leave blank for ${defaultAiModels.codex}.`}
             </span>
           </label>
 

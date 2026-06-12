@@ -11,6 +11,16 @@
     "opener:default",
     "sql:default",
     "sql:allow-execute",
-    "stronghold:default"
+    "stronghold:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "codex",
+          "cmd": "codex",
+          "args": true
+        }
+      ]
+    }
   ]
 }

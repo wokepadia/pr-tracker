@@ -71,6 +71,7 @@ export interface SaveGithubSettingsInput {
 
 export interface AiSettingsStatus {
   enabled: boolean
+  provider: "openrouter" | "codex"
   model: string
   apiKeyConfigured: boolean
 }
@@ -87,6 +88,7 @@ export interface AiGenerated<T> {
 
 export interface SaveAiSettingsInput {
   apiKey?: string
+  provider?: string
   model?: string
   enabled: boolean
 }

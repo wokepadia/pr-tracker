@@ -19,6 +19,7 @@ import {
   type GitHubReviewThreadSnapshot,
 } from "@pr-tracker/github"
 import { buildReviewerInbox } from "@pr-tracker/reviewer-workflow"
+import { Command } from "@tauri-apps/plugin-shell"
 import Database from "@tauri-apps/plugin-sql"
 import {
   Stronghold,
@@ -46,9 +47,15 @@ import type {
 } from "@/api"
 import {
   normalizeAiModel,
+  normalizeAiProvider,
   normalizeStoredAiSettings,
+  type AiProvider,
   type StoredAiSettings,
 } from "@/ai/ai-settings"
+import {
+  requestCodexStructuredCompletion,
+  type CodexExecResult,
+} from "@/ai/codex"
 import { hashContent } from "@/ai/content-hash"
 import { requestStructuredCompletion } from "@/ai/openrouter"
 import {
@@ -612,7 +619,12 @@ export async function getDesktopAiSettings(): Promise<AiSettingsStatus> {
     ? Boolean(await readAiApiKey(db))
     : false
 
-  return { enabled: stored.enabled, model: stored.model, apiKeyConfigured }
+  return {
+    enabled: stored.enabled,
+    provider: stored.provider,
+    model: stored.model,
+    apiKeyConfigured,
+  }
 }
 
 export async function saveDesktopAiSettings(
@@ -631,13 +643,15 @@ export async function saveDesktopAiSettings(
       existing.apiKeyConfigured && Boolean(await readAiApiKey(db))
   }
 
-  if (input.enabled && !apiKeyConfigured) {
+  const provider = normalizeAiProvider(input.provider)
+  if (input.enabled && provider === "openrouter" && !apiKeyConfigured) {
     throw new Error("An OpenRouter API key is required to enable AI mode.")
   }
 
   const settings: StoredAiSettings = {
     enabled: input.enabled,
-    model: normalizeAiModel(input.model),
+    provider,
+    model: normalizeAiModel(input.model, provider),
     apiKeyConfigured,
   }
   await writeAppSetting(db, aiSettingsKey, settings)
@@ -707,9 +721,7 @@ export async function generateDesktopAiPrSummary(
     files,
   })
   const content = normalizePrSummaryContent(
-    await requestStructuredCompletion<PrSummaryContent>({
-      apiKey: config.apiKey,
-      model: config.model,
+    await runStructuredAiCompletion<PrSummaryContent>(config, {
       system: prompt.system,
       user: prompt.user,
       schemaName: prSummarySchemaName,
@@ -762,9 +774,7 @@ export async function generateDesktopAiCatchUpDigest(
   }
 
   const content = normalizeCatchUpDigestContent(
-    await requestStructuredCompletion<CatchUpDigestContent>({
-      apiKey: config.apiKey,
-      model: config.model,
+    await runStructuredAiCompletion<CatchUpDigestContent>(config, {
       system: prompt.system,
       user: prompt.user,
       schemaName: catchUpDigestSchemaName,
@@ -822,9 +832,7 @@ export async function generateDesktopAiThreadState(
   }
 
   const content = normalizeThreadStateContent(
-    await requestStructuredCompletion<ThreadStateContent>({
-      apiKey: config.apiKey,
-      model: config.model,
+    await runStructuredAiCompletion<ThreadStateContent>(config, {
       system: input.prompt.system,
       user: input.prompt.user,
       schemaName: threadStateSchemaName,
@@ -885,9 +893,7 @@ export async function generateDesktopAiQueueBrief(
 
   const prompt = buildQueueBriefPrompt(input)
   const content = normalizeQueueBriefContent(
-    await requestStructuredCompletion<QueueBriefContent>({
-      apiKey: config.apiKey,
-      model: config.model,
+    await runStructuredAiCompletion<QueueBriefContent>(config, {
       system: prompt.system,
       user: prompt.user,
       schemaName: queueBriefSchemaName,
@@ -2358,16 +2364,62 @@ interface AiSummaryRow {
   generated_at: string
 }
 
-async function requireActiveAiConfig(
-  db: SqlDatabase
-): Promise<{ model: string; apiKey: string }> {
+interface ActiveAiConfig {
+  provider: AiProvider
+  model: string
+  apiKey?: string
+}
+
+async function requireActiveAiConfig(db: SqlDatabase): Promise<ActiveAiConfig> {
   const settings = await readLocalAiSettings(db)
-  const apiKey = settings.apiKeyConfigured ? await readAiApiKey(db) : undefined
-  if (!settings.enabled || !apiKey) {
+  if (!settings.enabled) {
     throw new Error("AI mode is not enabled. Turn it on in Settings.")
   }
 
-  return { model: settings.model, apiKey }
+  if (settings.provider === "codex") {
+    return { provider: "codex", model: settings.model }
+  }
+
+  const apiKey = settings.apiKeyConfigured ? await readAiApiKey(db) : undefined
+  if (!apiKey) {
+    throw new Error("AI mode is not enabled. Turn it on in Settings.")
+  }
+
+  return { provider: "openrouter", model: settings.model, apiKey }
+}
+
+/** Routes a structured completion to the configured provider. */
+async function runStructuredAiCompletion<T>(
+  config: ActiveAiConfig,
+  request: {
+    system: string
+    user: string
+    schemaName: string
+    schema: Record<string, unknown>
+  }
+): Promise<T> {
+  if (config.provider === "codex") {
+    return requestCodexStructuredCompletion<T>({
+      model: config.model,
+      ...request,
+      run: runCodexCommand,
+    })
+  }
+
+  return requestStructuredCompletion<T>({
+    apiKey: config.apiKey ?? "",
+    model: config.model,
+    ...request,
+  })
+}
+
+async function runCodexCommand(args: string[]): Promise<CodexExecResult> {
+  const output = await Command.create("codex", args).execute()
+  return {
+    code: output.code ?? -1,
+    stdout: output.stdout,
+    stderr: output.stderr,
+  }
 }
 
 async function readAiSummaryRow(
