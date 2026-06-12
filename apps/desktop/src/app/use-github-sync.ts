@@ -11,6 +11,13 @@ import { useBoardFilterQuery } from "./use-board-filter"
 
 const githubSyncMutationKey = ["github-sync"]
 const githubSyncIntervalMs = 5 * 60 * 1000
+const githubSyncIntervalJitterMs = 30 * 1000
+
+function nextGithubSyncDelayMs(): number {
+  return (
+    githubSyncIntervalMs + Math.floor(Math.random() * githubSyncIntervalJitterMs)
+  )
+}
 
 function useGithubSyncMutation() {
   const queryClient = useQueryClient()
@@ -46,15 +53,24 @@ export function useGithubSyncController() {
 
   useEffect(() => {
     startSync(syncInput)
-    const interval = setInterval(() => startSync(syncInput), githubSyncIntervalMs)
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const scheduleIntervalSync = () => {
+      timeout = setTimeout(() => {
+        if (document.visibilityState === "visible") {
+          startSync(syncInput)
+        }
+        scheduleIntervalSync()
+      }, nextGithubSyncDelayMs())
+    }
     const handleFocus = () => startSync(syncInput)
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") startSync(syncInput)
     }
+    scheduleIntervalSync()
     window.addEventListener("focus", handleFocus)
     document.addEventListener("visibilitychange", handleVisibilityChange)
     return () => {
-      clearInterval(interval)
+      if (timeout) clearTimeout(timeout)
       window.removeEventListener("focus", handleFocus)
       document.removeEventListener("visibilitychange", handleVisibilityChange)
     }

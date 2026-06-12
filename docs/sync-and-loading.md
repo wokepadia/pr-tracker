@@ -17,7 +17,7 @@ The controller starts a sync:
 
 - once at app launch,
 - when the window regains focus or becomes visible again,
-- on a five-minute interval,
+- on a five-minute interval with jitter while the window is visible,
 - and pages can force one through the manual "Sync now" action.
 
 Saving GitHub settings also kicks a forced sync for the currently applied
