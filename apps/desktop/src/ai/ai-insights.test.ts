@@ -33,6 +33,7 @@ function makeInsights(
   return {
     needsYouNow: [],
     mightBeMissing: [],
+    stalledOnYou: [],
     whileAway: [],
     hygiene: [],
     totalCount: 0,

@@ -361,7 +361,7 @@ describe("hygiene insights", () => {
     )
   })
 
-  it("attributes the stall to the viewer when someone else spoke last", () => {
+  it("keeps viewer-blame stalls out of hygiene", () => {
     const insights = build({
       items: [
         makeItem({
@@ -387,9 +387,72 @@ describe("hygiene insights", () => {
       ],
     })
 
-    expect(insights.hygiene[0]?.whyChip).toBe(
-      "No activity for 2w — stalled by you, maya spoke last"
+    expect(insights.hygiene).toEqual([])
+  })
+})
+
+describe("stalled-on-you insights", () => {
+  it("flags stale pull requests where someone else spoke last", () => {
+    const insights = build({
+      items: [
+        makeItem({
+          id: "pr_stale",
+          workflowState: "stale",
+          waitingOn: "none",
+          updatedAtIso: daysAgo(20),
+          activityEvents: [
+            makeEvent({
+              id: "e1",
+              type: "review",
+              actor: "maya",
+              occurredAtIso: daysAgo(20),
+            }),
+            makeEvent({
+              id: "e2",
+              type: "comment",
+              isViewer: true,
+              occurredAtIso: daysAgo(25),
+            }),
+          ],
+        }),
+      ],
+    })
+
+    expect(insights.stalledOnYou.map((row) => row.kind)).toEqual([
+      "stalled_on_you",
+    ])
+    expect(insights.stalledOnYou[0]?.whyChip).toBe(
+      "No activity for 2w — maya spoke last"
     )
+    expect(insights.hygiene).toEqual([])
+  })
+
+  it("keeps overdue stalled pull requests in needs-you-now", () => {
+    const insights = build({
+      items: [
+        makeItem({
+          id: "pr_overdue_stale",
+          workflowState: "stale",
+          waitingOn: "you",
+          waitingUrgency: "overdue",
+          updatedAtIso: daysAgo(10),
+          activityEvents: [
+            makeEvent({
+              id: "e1",
+              type: "comment",
+              actor: "maya",
+              occurredAtIso: daysAgo(10),
+            }),
+          ],
+        }),
+      ],
+    })
+
+    expect(insights.needsYouNow.map((row) => row.id)).toEqual([
+      "pr_overdue_stale",
+    ])
+    expect(insights.stalledOnYou).toEqual([])
+    expect(insights.totalCount).toBe(1)
   })
 })
 
@@ -407,6 +470,7 @@ describe("insight assembly", () => {
     })
 
     expect(insights.needsYouNow.map((row) => row.id)).toEqual(["pr_1"])
+    expect(insights.stalledOnYou).toEqual([])
     expect(insights.hygiene).toEqual([])
     expect(insights.totalCount).toBe(1)
   })

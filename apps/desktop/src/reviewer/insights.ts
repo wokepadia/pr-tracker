@@ -21,6 +21,7 @@ export type InsightKind =
   | "parked_no_movement"
   | "merged_without_you"
   | "closed_without_you"
+  | "stalled_on_you"
   | "stalled"
   | "review_ping_pong"
 
@@ -43,6 +44,7 @@ export interface ReviewerInsightsView {
   digest?: InsightsDigestView
   needsYouNow: InsightRowView[]
   mightBeMissing: InsightRowView[]
+  stalledOnYou: InsightRowView[]
   whileAway: InsightRowView[]
   hygiene: InsightRowView[]
   totalCount: number
@@ -105,6 +107,9 @@ export function buildReviewerInsights(input: {
     ...collect(activeItems, (item) => pilingUnseen(item, now)),
     ...collect(activeItems, (item) => parkedNoMovement(item, now)),
   ])
+  const stalledOnYou = claim(
+    collect(activeItems, (item) => stalledOnYouReply(item, now))
+  )
   const whileAway = claim(
     collect(input.inactiveItems, (item) =>
       finishedWithoutYou(item, input.localQueueState, windowStart, now)
@@ -125,11 +130,13 @@ export function buildReviewerInsights(input: {
     digest,
     needsYouNow,
     mightBeMissing,
+    stalledOnYou,
     whileAway,
     hygiene,
     totalCount:
       needsYouNow.length +
       mightBeMissing.length +
+      stalledOnYou.length +
       whileAway.length +
       hygiene.length,
   }
@@ -331,6 +338,8 @@ function stalled(
   const lastConversation = item.activityEvents.find(
     (event) => event.type === "comment" || event.type === "review"
   )
+  if (lastConversation && !lastConversation.isViewer) return
+
   const lastEvent = item.activityEvents[0]
   return {
     id: item.id,
@@ -343,6 +352,26 @@ function stalled(
       : lastEvent
         ? `No activity for ${quietFor} — last was ${eventNoun(lastEvent.type)}`
         : `No activity for ${quietFor}`,
+  }
+}
+
+function stalledOnYouReply(
+  item: ReviewQueueItemView,
+  now: number
+): InsightRowView | undefined {
+  if (item.workflowState !== "stale") return
+
+  const lastConversation = item.activityEvents.find(
+    (event) => event.type === "comment" || event.type === "review"
+  )
+  if (!lastConversation || lastConversation.isViewer) return
+
+  const quietFor = formatDuration(now - Date.parse(item.updatedAtIso))
+  return {
+    id: item.id,
+    kind: "stalled_on_you",
+    item,
+    whyChip: `No activity for ${quietFor} — ${lastConversation.actor} spoke last`,
   }
 }
 
