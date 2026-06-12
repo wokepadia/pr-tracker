@@ -292,7 +292,7 @@ export function PullRequestDetailSurface({
   }
 
   if (detailQuery.isLoading) {
-    return <div className="min-h-[760px] bg-background" aria-busy="true" />
+    return <DetailLoadingSkeleton />
   }
 
   if (detailQuery.isError || !item) {
@@ -544,6 +544,47 @@ function ThreadLedgerPanel({ item }: { item: ReviewQueueItemView }) {
         ) : null}
       </div>
     </section>
+  )
+}
+
+function DetailLoadingSkeleton() {
+  return (
+    <div
+      className="min-h-[760px] bg-background"
+      aria-busy="true"
+      aria-label="Loading pull request details"
+    >
+      <div className="border-b border-border bg-white px-6 py-5">
+        <div className="mb-4 h-8 w-8 rounded-md bg-muted" />
+        <div className="grid gap-3">
+          <div className="h-4 w-32 rounded bg-muted/70" />
+          <div className="h-7 max-w-2xl rounded bg-muted" />
+          <div className="h-4 w-80 rounded bg-muted/70" />
+        </div>
+      </div>
+      <div className="grid gap-4 p-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid gap-4">
+          {[0, 1, 2].map((section) => (
+            <div key={section} className="rounded-md border border-border bg-white p-4">
+              <div className="mb-4 h-4 w-36 rounded bg-muted" />
+              <div className="grid gap-3">
+                <div className="h-4 w-full rounded bg-muted/70" />
+                <div className="h-4 w-5/6 rounded bg-muted/70" />
+                <div className="h-4 w-2/3 rounded bg-muted/70" />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="rounded-md border border-border bg-white p-4">
+          <div className="mb-4 h-4 w-28 rounded bg-muted" />
+          <div className="grid gap-3">
+            <div className="h-8 rounded bg-muted/70" />
+            <div className="h-8 rounded bg-muted/70" />
+            <div className="h-8 rounded bg-muted/70" />
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 

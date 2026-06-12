@@ -219,6 +219,10 @@ export function InboxPage() {
   const [githubSearchQueryDraft, setGithubSearchQueryDraft] = useState(() =>
     getBoardFilterQuery()
   )
+  const [isGithubSearchApplying, setIsGithubSearchApplying] = useState(false)
+  const [githubSearchApplyError, setGithubSearchApplyError] = useState<
+    string | undefined
+  >()
   // The applied query is the app-wide board filter; every other surface
   // reads the inbox through the same hook and stays on this scope.
   const { inboxQuery } = useBoardInbox()
@@ -645,15 +649,35 @@ export function InboxPage() {
     setSelectedId("")
   }
 
-  function applyGithubSearchQuery(event: FormEvent<HTMLFormElement>) {
+  async function applyGithubSearchQuery(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const nextQuery = githubSearchQueryDraft.trim()
     setGithubSearchQueryDraft(nextQuery)
-    setBoardFilterQuery(nextQuery)
+    setGithubSearchApplyError(undefined)
+
+    if (nextQuery === getBoardFilterQuery()) {
+      return
+    }
+
+    if (!nextQuery) {
+      setBoardFilterQuery("")
+      return
+    }
+
+    setIsGithubSearchApplying(true)
+    try {
+      await githubSync.syncQuery(nextQuery)
+      setBoardFilterQuery(nextQuery)
+    } catch (error) {
+      setGithubSearchApplyError(formatUnknownError(error))
+    } finally {
+      setIsGithubSearchApplying(false)
+    }
   }
 
   function resetGithubSearchQuery() {
     setGithubSearchQueryDraft("")
+    setGithubSearchApplyError(undefined)
     setBoardFilterQuery("")
   }
 
@@ -679,7 +703,7 @@ export function InboxPage() {
   }
 
   if (inboxQuery.isLoading || githubSync.isStatusLoading) {
-    return <div className="h-full bg-background" aria-busy="true" />
+    return <InboxLoadingSkeleton />
   }
 
   if (inboxQuery.isError || !inboxView) {
@@ -767,7 +791,8 @@ export function InboxPage() {
         isSyncing={githubSync.isSyncing}
         onSyncNow={githubSync.syncNow}
         githubSearchQuery={githubSearchQueryDraft}
-        isGithubSearchPending={inboxQuery.isFetching}
+        isGithubSearchPending={inboxQuery.isFetching || isGithubSearchApplying}
+        githubSearchError={githubSearchApplyError}
         onGroupModeChange={changeGroupMode}
         onGithubSearchQueryChange={setGithubSearchQueryDraft}
         onGithubSearchQueryReset={resetGithubSearchQuery}
@@ -1161,6 +1186,47 @@ function InboxSidebar({
   )
 }
 
+function InboxLoadingSkeleton() {
+  return (
+    <div
+      className="flex h-full min-w-0 flex-col bg-background"
+      aria-busy="true"
+      aria-label="Loading review inbox"
+    >
+      <div className="grid gap-3 border-b border-border bg-white px-5 py-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="grid min-w-[220px] gap-2">
+            <div className="h-5 w-36 rounded bg-muted" />
+            <div className="h-3 w-24 rounded bg-muted/70" />
+          </div>
+          <div className="ml-auto h-8 min-w-[220px] max-w-[360px] flex-1 rounded-lg bg-muted/70" />
+        </div>
+      </div>
+      <div className="grid min-h-0 flex-1 grid-cols-3 gap-3 overflow-hidden p-4">
+        {[0, 1, 2].map((lane) => (
+          <div key={lane} className="min-w-0 rounded-md border border-border bg-white">
+            <div className="border-b border-border p-3">
+              <div className="h-4 w-28 rounded bg-muted" />
+            </div>
+            <div className="grid gap-2 p-3">
+              {[0, 1, 2].map((row) => (
+                <div
+                  key={row}
+                  className="grid gap-2 rounded-md border border-border bg-background p-3"
+                >
+                  <div className="h-3 w-20 rounded bg-muted/70" />
+                  <div className="h-4 w-full rounded bg-muted" />
+                  <div className="h-3 w-2/3 rounded bg-muted/70" />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function InboxStatusPanel({
   title,
   detail,
@@ -1546,6 +1612,7 @@ function InboxHeader({
   onSyncNow,
   githubSearchQuery,
   isGithubSearchPending,
+  githubSearchError,
   onGroupModeChange,
   onGithubSearchQueryChange,
   onGithubSearchQueryReset,
@@ -1561,6 +1628,7 @@ function InboxHeader({
   onSyncNow: () => void
   githubSearchQuery: string
   isGithubSearchPending: boolean
+  githubSearchError?: string
   onGroupModeChange: (mode: QueueGroupMode) => void
   onGithubSearchQueryChange: (query: string) => void
   onGithubSearchQueryReset: () => void
@@ -1659,7 +1727,7 @@ function InboxHeader({
             disabled={isGithubSearchPending}
             className="h-8"
           >
-            Apply
+            {isGithubSearchPending ? "Applying" : "Apply"}
           </Button>
           <Button
             type="button"
@@ -1674,6 +1742,11 @@ function InboxHeader({
           >
             <RotateCcw className="h-3.5 w-3.5" />
           </Button>
+          {githubSearchError ? (
+            <div className="min-w-[220px] max-w-[360px] text-xs text-destructive">
+              {githubSearchError}
+            </div>
+          ) : null}
         </form>
       ) : null}
     </div>

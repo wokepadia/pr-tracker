@@ -48,6 +48,7 @@ erDiagram
   pull_requests ||--o{ issue_comments : has
   pull_requests ||--o{ activity_events : has
   pull_requests ||--o{ board_items : appears_on
+  pull_requests ||--o{ board_filter_memberships : matched_by
 
   review_threads ||--o{ review_thread_participants : includes
   github_labels ||--o{ pull_request_labels : applied_as
@@ -55,6 +56,7 @@ erDiagram
 
   boards ||--o{ board_columns : has
   boards ||--o{ board_items : contains
+  boards ||--o{ board_filter_memberships : scopes
   board_columns o|--o{ board_items : groups
 
   tracked_repositories ||--o{ sync_cursors : has
@@ -152,6 +154,13 @@ projections can compare the mark against later GitHub activity. It also
 carries a few viewer relationship fields so hot-path board queries do not need
 to repeatedly derive "I authored this", "I am requested", or "I have unresolved
 threads" by joining the whole GitHub cache.
+
+`board_filter_memberships` stores the durable answer to "which cached PRs
+matched this applied GitHub review query during the last successful sync?"
+Filtered board reads use these rows instead of re-running GitHub search on the
+read path, so a persisted board filter can render from SQLite immediately after
+restart. The `fingerprint` combines the local GitHub scope settings with the
+query, and `matched_at` records when that membership was last confirmed.
 
 This is the important boundary:
 

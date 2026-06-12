@@ -1,10 +1,12 @@
 # Sync Redesign Proposal
 
-Status: proposal only. No code has changed. This document records the
-current sync behavior across every surface, diagnoses why the app feels
-like it "syncs at random times and holds the screen hostage," summarizes
-best practices from comparable apps, and proposes the target behavior in
-detail. It intentionally describes *behavior*, not implementation.
+Status: core local-first pieces implemented. The app now persists filtered
+board membership, renders filtered inbox reads from local SQLite, persists
+filter-scope freshness across restarts, refreshes the applied board scope, and
+keeps the previous board active while a new filter is being applied. The
+two-tier membership/enrichment sync and determinate first-run progress remain
+future implementation work. This document records the original diagnosis and
+target behavior in detail.
 
 ---
 

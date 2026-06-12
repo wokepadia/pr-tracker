@@ -400,6 +400,22 @@ create index board_items_column_sort_idx
 create index board_items_board_pinned_idx
   on board_items (board_id, is_pinned, updated_at desc);
 
+create table board_filter_memberships (
+  id text primary key,
+  board_id text not null references boards(id) on delete cascade,
+  fingerprint text not null,
+  github_search_query text not null,
+  pull_request_id text not null references pull_requests(id) on delete cascade,
+  sort_order integer not null default 0,
+  matched_at text not null,
+  created_at text not null default current_timestamp,
+  updated_at text not null default current_timestamp,
+  unique (fingerprint, pull_request_id)
+);
+
+create index board_filter_memberships_scope_sort_idx
+  on board_filter_memberships (board_id, fingerprint, sort_order);
+
 create table sync_cursors (
   id text primary key,
   tracked_repository_id text not null references tracked_repositories(id) on delete cascade,

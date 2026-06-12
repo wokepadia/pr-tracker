@@ -260,14 +260,14 @@ export async function getDesktopReviewerInbox(input?: {
   githubSearchQuery?: string
 }) {
   const db = await getDatabase()
-  // GitHub-scoped searches need a sync to resolve which PRs match. The
-  // default inbox reads local SQLite only; syncDesktopGithubData refreshes
-  // it in the background.
-  const readScope = input?.githubSearchQuery
-    ? (await syncBeforeRead(db, input)).scope
+  const githubSearchQuery = cleanGithubSearchQuery(input?.githubSearchQuery)
+  // Reads are local-only. For a filtered board, the last successful sync
+  // leaves durable membership rows that answer which cached PRs are in scope.
+  const scopedPullRequestIds = githubSearchQuery
+    ? await loadBoardFilterMembershipPullRequestIds(db, githubSearchQuery)
     : undefined
   const pullRequests = await loadPullRequests(db, {
-    ids: input?.githubSearchQuery ? readScope?.pullRequestIds ?? [] : undefined,
+    ids: githubSearchQuery ? scopedPullRequestIds : undefined,
   })
   const viewerLogin = await resolveViewerLogin(db)
   const actors = buildActors(
@@ -1103,13 +1103,17 @@ async function loadFreshSyncSuccess(
   if (cached && isFresh(cached.finishedAtMs)) {
     return cached
   }
-  if (options.hasSearchQuery) return undefined
 
-  const raw = await readAppSetting(db, lastSyncSuccessSettingsKey)
+  const raw =
+    (await readAppSetting(db, syncSuccessSettingKey(fingerprint))) ??
+    (!options.hasSearchQuery
+      ? await readAppSetting(db, lastSyncSuccessSettingsKey)
+      : undefined)
   if (!raw) return undefined
   const persisted = JSON.parse(raw) as {
     fingerprint?: unknown
     finishedAt?: unknown
+    scope?: unknown
   }
   if (
     persisted.fingerprint !== fingerprint ||
@@ -1122,7 +1126,10 @@ async function loadFreshSyncSuccess(
     return undefined
   }
 
-  const success: SyncSuccess = { finishedAtMs }
+  const success: SyncSuccess = {
+    finishedAtMs,
+    scope: parsePersistedSyncScope(persisted.scope),
+  }
   lastSuccessfulSyncByFingerprint.set(fingerprint, success)
   return success
 }
@@ -1133,6 +1140,7 @@ async function syncLocalGithubData(
   options: { githubSearchQuery?: string },
   fingerprint: string
 ): Promise<SyncBeforeReadResult> {
+  const githubSearchQuery = cleanGithubSearchQuery(options.githubSearchQuery)
   const source = createGithubTokenPullRequestSource({
     token: credentials.token,
     repositories: credentials.repositories,
@@ -1150,9 +1158,9 @@ async function syncLocalGithubData(
   try {
     const viewerLogin = credentials.viewerLogin ?? (await source.getViewerLogin())
     const snapshots = await listPullRequestSnapshots(source, {
-      searchQuery: options.githubSearchQuery,
+      searchQuery: githubSearchQuery,
     })
-    const snapshotsToIngest = options.githubSearchQuery
+    const snapshotsToIngest = githubSearchQuery
       ? snapshots
       : [
           ...snapshots,
@@ -1160,8 +1168,16 @@ async function syncLocalGithubData(
         ]
     result.scannedPullRequests = snapshotsToIngest.length
     const pullRequestIds: string[] = []
+    const now = new Date().toISOString()
 
     await transaction(db, async () => {
+      await upsertLocalProfile(db, {
+        githubLogin: viewerLogin,
+        displayName: viewerLogin,
+        now,
+      })
+      await ensureDefaultBoard(db, now)
+
       for (const snapshot of snapshotsToIngest) {
         const upsertResult = await upsertLocalPullRequestSnapshot(db, snapshot, {
           viewerLogin,
@@ -1174,19 +1190,30 @@ async function syncLocalGithubData(
           result.ignoredPullRequests += 1
         }
       }
+
+      if (githubSearchQuery) {
+        await replaceBoardFilterMembership(db, {
+          githubSearchQuery,
+          pullRequestIds,
+          matchedAt: now,
+        })
+      }
     })
     await finishLocalSyncRun(db, syncRunId, "succeeded", result)
-    const scope = options.githubSearchQuery ? { pullRequestIds } : undefined
+    const scope = githubSearchQuery ? { pullRequestIds } : undefined
     lastFailedSyncByFingerprint.delete(fingerprint)
     lastSuccessfulSyncByFingerprint.set(fingerprint, {
       finishedAtMs: Date.now(),
       scope,
     })
-    if (!options.githubSearchQuery) {
-      await writeAppSetting(db, lastSyncSuccessSettingsKey, {
-        fingerprint,
-        finishedAt: new Date().toISOString(),
-      })
+    const success = {
+      fingerprint,
+      finishedAt: new Date().toISOString(),
+      scope,
+    }
+    await writeAppSetting(db, syncSuccessSettingKey(fingerprint), success)
+    if (!githubSearchQuery) {
+      await writeAppSetting(db, lastSyncSuccessSettingsKey, success)
     }
     return { scope, didSync: true, hasCredentials: true }
   } catch (error) {
@@ -2486,6 +2513,80 @@ async function listBoardColumnRows(db: SqlDatabase): Promise<LocalBoardColumnRow
   )
 }
 
+async function loadBoardFilterMembershipPullRequestIds(
+  db: SqlDatabase,
+  githubSearchQuery: string
+): Promise<string[]> {
+  const fingerprint = await boardFilterMembershipFingerprint(db, githubSearchQuery)
+  const rows = await db.select<Array<{ pull_request_id: string }>>(
+    `
+      select pull_request_id
+      from board_filter_memberships
+      where board_id = $1 and fingerprint = $2
+      order by sort_order asc, pull_request_id asc
+    `,
+    [defaultLocalBoardId, fingerprint]
+  )
+  return rows.map((row) => row.pull_request_id)
+}
+
+async function replaceBoardFilterMembership(
+  db: SqlDatabase,
+  input: {
+    githubSearchQuery: string
+    pullRequestIds: string[]
+    matchedAt: string
+  }
+): Promise<void> {
+  const fingerprint = await boardFilterMembershipFingerprint(
+    db,
+    input.githubSearchQuery
+  )
+
+  await db.execute(
+    `
+      delete from board_filter_memberships
+      where board_id = $1 and fingerprint = $2
+    `,
+    [defaultLocalBoardId, fingerprint]
+  )
+
+  for (const [index, pullRequestId] of input.pullRequestIds.entries()) {
+    await db.execute(
+      `
+        insert into board_filter_memberships (
+          id, board_id, fingerprint, github_search_query, pull_request_id,
+          sort_order, matched_at, created_at, updated_at
+        )
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `,
+      [
+        deterministicUuid(
+          `board-filter-membership:${fingerprint}:${pullRequestId}`
+        ),
+        defaultLocalBoardId,
+        fingerprint,
+        input.githubSearchQuery,
+        pullRequestId,
+        index,
+        input.matchedAt,
+        input.matchedAt,
+        input.matchedAt,
+      ]
+    )
+  }
+}
+
+async function boardFilterMembershipFingerprint(
+  db: SqlDatabase,
+  githubSearchQuery: string
+): Promise<string> {
+  return JSON.stringify({
+    settings: localGithubSettingsScopeFingerprint(await readLocalGithubSettings(db)),
+    githubSearchQuery: cleanGithubSearchQuery(githubSearchQuery) ?? "",
+  })
+}
+
 async function loadLastSeen(
   db: SqlDatabase
 ): Promise<Record<string, string | undefined>> {
@@ -3555,11 +3656,47 @@ async function ensureReviewThreadLedgerColumns(db: SqlDatabase): Promise<void> {
 
 function localGithubSettingsFingerprint(credentials: LocalGithubCredentials): string {
   return JSON.stringify({
-    repositories: credentials.repositories,
-    viewerLogin: credentials.viewerLogin,
-    apiBaseUrl: credentials.apiBaseUrl,
+    ...localGithubSettingsScopeFingerprint(credentials),
     tokenLength: credentials.token.length,
   })
+}
+
+function localGithubSettingsScopeFingerprint(
+  settings: {
+    repositories: string[]
+    viewerLogin?: string
+    apiBaseUrl?: string
+  }
+): {
+  repositories: string[]
+  viewerLogin?: string
+  apiBaseUrl?: string
+} {
+  return {
+    repositories: settings.repositories,
+    viewerLogin: settings.viewerLogin,
+    apiBaseUrl: settings.apiBaseUrl,
+  }
+}
+
+function cleanGithubSearchQuery(value: string | undefined): string | undefined {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : undefined
+}
+
+function syncSuccessSettingKey(fingerprint: string): string {
+  return `${lastSyncSuccessSettingsKey}:${deterministicUuid(fingerprint)}`
+}
+
+function parsePersistedSyncScope(value: unknown): SyncScope | undefined {
+  if (!value || typeof value !== "object") return undefined
+  const pullRequestIds = (value as { pullRequestIds?: unknown }).pullRequestIds
+  if (!Array.isArray(pullRequestIds)) return undefined
+  return {
+    pullRequestIds: pullRequestIds.filter(
+      (id): id is string => typeof id === "string" && id.length > 0
+    ),
+  }
 }
 
 function pullRequestKey(

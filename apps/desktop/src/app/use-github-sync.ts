@@ -7,6 +7,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query"
 import { getSyncStatus, syncGithubData } from "@/api"
+import { useBoardFilterQuery } from "./use-board-filter"
 
 const githubSyncMutationKey = ["github-sync"]
 const githubSyncIntervalMs = 5 * 60 * 1000
@@ -36,15 +37,19 @@ function useGithubSyncMutation() {
  * the launch/refocus/interval triggers cheap no-ops while data is fresh.
  */
 export function useGithubSyncController() {
+  const boardFilterQuery = useBoardFilterQuery()
   const syncMutation = useGithubSyncMutation()
   const startSync = syncMutation.mutate
+  const syncInput = {
+    githubSearchQuery: boardFilterQuery || undefined,
+  }
 
   useEffect(() => {
-    startSync({})
-    const interval = setInterval(() => startSync({}), githubSyncIntervalMs)
-    const handleFocus = () => startSync({})
+    startSync(syncInput)
+    const interval = setInterval(() => startSync(syncInput), githubSyncIntervalMs)
+    const handleFocus = () => startSync(syncInput)
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") startSync({})
+      if (document.visibilityState === "visible") startSync(syncInput)
     }
     window.addEventListener("focus", handleFocus)
     document.addEventListener("visibilitychange", handleVisibilityChange)
@@ -53,7 +58,7 @@ export function useGithubSyncController() {
       window.removeEventListener("focus", handleFocus)
       document.removeEventListener("visibilitychange", handleVisibilityChange)
     }
-  }, [startSync])
+  }, [boardFilterQuery, startSync])
 }
 
 /**
@@ -63,6 +68,7 @@ export function useGithubSyncController() {
  * via the mutation key, so every header reflects the same run.
  */
 export function useGithubSync() {
+  const boardFilterQuery = useBoardFilterQuery()
   const syncStatusQuery = useQuery({
     queryKey: ["sync-status"],
     queryFn: getSyncStatus,
@@ -81,6 +87,15 @@ export function useGithubSync() {
     isStatusLoading: syncStatusQuery.isLoading,
     isSyncing,
     syncError,
-    syncNow: () => syncMutation.mutate({ force: true }),
+    syncNow: () =>
+      syncMutation.mutate({
+        githubSearchQuery: boardFilterQuery || undefined,
+        force: true,
+      }),
+    syncQuery: (githubSearchQuery: string) =>
+      syncMutation.mutateAsync({
+        githubSearchQuery: githubSearchQuery || undefined,
+        force: true,
+      }),
   }
 }
