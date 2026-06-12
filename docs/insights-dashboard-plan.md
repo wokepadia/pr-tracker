@@ -1,10 +1,10 @@
 # Insights Dashboard Plan
 
-Status: implemented 2026-06-11 (insights 1–11, all three phases). The
-optional personal-pace stat (#12) was dropped, and CI insights remain
-deferred on F10 check-run ingestion. The data gaps below are closed:
-snoozed_at/muted_at columns exist, visitInsights records the visit
-anchor, and buildReviewerInsights in
+Status: implemented 2026-06-11, with the stalled-on-you split added
+2026-06-12. The optional personal-pace stat (#13)
+was dropped, and CI insights remain deferred on F10 check-run ingestion. The
+data gaps below are closed: snoozed_at/muted_at columns exist, visitInsights
+records the visit anchor, and buildReviewerInsights in
 apps/desktop/src/reviewer/insights.ts is the projection module.
 
 ## Concept
@@ -67,26 +67,36 @@ changes (you review, the thread resolves, you re-approve).
 Rows 4–5 are the highest-value novel insights in the catalog: they cross
 the user's local marks with remote facts, which no other surface does.
 
-### Section 3 — While you were away (windowed FYI; expire on visit)
+### Section 3 — Stalled on you (reply ownership; persist until activity)
 
 | # | Insight | Deterministic trigger | Row copy pattern |
 |---|---------|----------------------|------------------|
-| 8 | Digest strip | aggregate of `activity_events.occurred_at > lastInsightsVisitAt` (fallback window 7d) | "Since yesterday: 5 PRs updated · 2 merged · 1 new request" |
-| 9 | Merged/closed without you | PR you had a board item for (not muted) reached `merged_at`/`closed_at` since last visit, without your approval on record | "Merged Tue without your review — you can drop it" |
+| 8 | Stalled on your reply | open, no events for 7d+, last conversation event from someone other than the viewer | "No activity for 9d — maya spoke last" |
+
+This split keeps quiet threads where the viewer likely owes the next reply
+out of the lower-priority hygiene sweep. Section precedence still wins:
+long-overdue reviews stay in Needs you now even if someone else spoke last.
+
+### Section 4 — While you were away (windowed FYI; expire on visit)
+
+| # | Insight | Deterministic trigger | Row copy pattern |
+|---|---------|----------------------|------------------|
+| 9 | Digest strip | aggregate of `activity_events.occurred_at > lastInsightsVisitAt` (fallback window 7d) | "Since yesterday: 5 PRs updated · 2 merged · 1 new request" |
+| 10 | Merged/closed without you | PR you had a board item for (not muted) reached `merged_at`/`closed_at` since last visit, without your approval on record | "Merged Tue without your review — you can drop it" |
 
 Windowed items batch per PR (one row per PR, "4 comments, 1 commit"),
 never an event feed. They expire silently once seen; no manual dismissal
 needed in the first version.
 
-### Section 4 — Hygiene (weekly cadence, collapsed by default)
+### Section 5 — Hygiene (weekly cadence, collapsed by default)
 
 | # | Insight | Deterministic trigger | Row copy pattern |
 |---|---------|----------------------|------------------|
-| 10 | Stalled PRs | open, no events for 7d+, in an active bucket (`workflowState === "stale"`) | "No activity for 11d" |
-| 11 | Review ping-pong | `reviewRounds > 2` | "4 changes-requested rounds — consider a call" |
-| 12 | Personal pace (optional, last) | counts over trailing 7d: reviews you submitted, median request→review response | "You reviewed 6 PRs this week; median response 4h" |
+| 11 | Author/no-conversation stalled PRs | open, no events for 7d+, in an active bucket (`workflowState === "stale"`), excluding viewer-owned reply stalls | "No activity for 11d" |
+| 12 | Review ping-pong | `reviewRounds > 2` | "4 changes-requested rounds — consider a call" |
+| 13 | Personal pace (optional, last) | counts over trailing 7d: reviews you submitted, median request→review response | "You reviewed 6 PRs this week; median response 4h" |
 
-Row 12 is framed as a private personal stat against the user's own
+Row 13 is framed as a private personal stat against the user's own
 Settings thresholds (Swarmia "working agreement" framing), not a KPI. It
 is the lowest-priority item and can be dropped if it feels like noise.
 
@@ -108,8 +118,8 @@ is the lowest-priority item and can be dropped if it feels like noise.
   not a tab inside the inbox sidebar — the sidebar belongs to the managed
   queue.
 - **Layout**: single scrollable column, desktop density:
-  1. Digest strip (one line, top) — insight #8.
-  2. Four titled sections in the order above. Dense list rows, identical
+  1. Digest strip (one line, top) — insight #9.
+  2. Five titled sections in the order above. Dense list rows, identical
      row anatomy to inbox rows (repo#, title, why-chip, age) so the eye
      transfers; click opens the PR detail, with quick actions on hover
      (Open in GitHub, Restore from snooze/mute for section 2 rows).
@@ -140,7 +150,7 @@ is the lowest-priority item and can be dropped if it feels like noise.
 
 1. **Phase 1**: route + nav, projection module, sections 1 and 2
    (insights 1–7), empty states. Requires data gaps 1–3.
-2. **Phase 2**: digest strip and merged/closed-without-you (8–9).
-3. **Phase 3**: hygiene section (10–11), then evaluate whether personal
-   pace (12) earns its place.
+2. **Phase 2**: digest strip and merged/closed-without-you (9–10).
+3. **Phase 3**: hygiene section (11–12), then evaluate whether personal
+   pace (13) earns its place.
 4. **Later**: CI insights once F10 ingestion exists.
