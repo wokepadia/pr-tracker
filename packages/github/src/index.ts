@@ -312,6 +312,12 @@ export function getGithubClosedLookbackDays(
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
+// Runaway guard for repositories with an unexpectedly large open queue;
+// the reviewer inbox must see every open pull request, so this is far
+// above any realistic single-user review responsibility.
+const defaultMaxOpenPullRequests = 200;
+const defaultMaxClosedPullRequests = 20;
+
 async function listConfiguredRepositoryPullRequests(
   octokit: RequestingOctokit,
   repositories: string[],
@@ -322,7 +328,10 @@ async function listConfiguredRepositoryPullRequests(
   }
 ): Promise<GitHubPullRequestSnapshot[]> {
   const snapshots: GitHubPullRequestSnapshot[] = [];
-  const maxPullRequests = options.maxPullRequests ?? 20;
+  const maxOpenPullRequests =
+    options.maxPullRequests ?? defaultMaxOpenPullRequests;
+  const maxClosedPullRequests =
+    options.maxPullRequests ?? defaultMaxClosedPullRequests;
   const closedUpdatedSince = new Date(
     Date.now() - (options.closedLookbackDays ?? 30) * 24 * 60 * 60 * 1000
   ).toISOString();
@@ -333,25 +342,28 @@ async function listConfiguredRepositoryPullRequests(
       continue;
     }
 
+    // created/asc is an immutable sort key, so rows cannot shift across
+    // page boundaries mid-pagination the way updated/desc rows do when a
+    // pull request is updated between page fetches.
     const openPullRequests = await listRepoPullRequests(octokit, owner, name, {
       state: "open",
-      maxCount: maxPullRequests
+      sort: "created",
+      direction: "asc",
+      maxCount: maxOpenPullRequests
     });
-    const remainingPullRequestCapacity = Math.max(
-      maxPullRequests - openPullRequests.length,
-      0
-    );
     const recentlyClosedPullRequests = options.includeRecentClosed
-      && remainingPullRequestCapacity > 0
       ? await listRepoPullRequests(octokit, owner, name, {
           state: "closed",
           updatedSince: closedUpdatedSince,
-          maxCount: remainingPullRequestCapacity
+          maxCount: maxClosedPullRequests
         })
       : [];
-    const pullRequests = [...openPullRequests, ...recentlyClosedPullRequests]
-      .sort((a, b) => Date.parse(b.updated_at ?? "") - Date.parse(a.updated_at ?? ""))
-      .slice(0, maxPullRequests);
+    // A pull request that closes between the two list calls shows up in
+    // both; keep the snapshot with the newest update.
+    const pullRequests = dedupePullRequestsByNumber([
+      ...openPullRequests,
+      ...recentlyClosedPullRequests
+    ]);
 
     const hydratedPullRequests = await mapConcurrent(
       pullRequests,
@@ -497,17 +509,39 @@ function cleanGithubSearchQuery(value: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+function dedupePullRequestsByNumber(
+  pullRequests: GitHubPullRequestFromApi[]
+): GitHubPullRequestFromApi[] {
+  const byNumber = new Map<number, GitHubPullRequestFromApi>();
+
+  for (const pullRequest of pullRequests) {
+    const existing = byNumber.get(pullRequest.number);
+    if (
+      !existing ||
+      Date.parse(pullRequest.updated_at ?? "") >
+        Date.parse(existing.updated_at ?? "")
+    ) {
+      byNumber.set(pullRequest.number, pullRequest);
+    }
+  }
+
+  return [...byNumber.values()];
+}
+
 async function listRepoPullRequests(
   octokit: RequestingOctokit,
   owner: string,
   repo: string,
   options: {
     state: "open" | "closed";
+    sort?: "created" | "updated";
+    direction?: "asc" | "desc";
     updatedSince?: string;
     maxCount?: number;
   }
 ): Promise<GitHubPullRequestFromApi[]> {
   const pullRequests: GitHubPullRequestFromApi[] = [];
+  const seenNumbers = new Set<number>();
   const updatedSinceTime = options.updatedSince
     ? Date.parse(options.updatedSince)
     : undefined;
@@ -519,14 +553,20 @@ async function listRepoPullRequests(
         owner,
         repo,
         state: options.state,
-        sort: "updated",
-        direction: "desc",
+        sort: options.sort ?? "updated",
+        direction: options.direction ?? "desc",
         per_page: 100,
         page
       }
     );
 
     for (const pullRequest of response.data) {
+      // Rows that shift across page boundaries between fetches would
+      // otherwise be ingested twice.
+      if (seenNumbers.has(pullRequest.number)) {
+        continue;
+      }
+      seenNumbers.add(pullRequest.number);
       if (
         updatedSinceTime !== undefined &&
         pullRequest.updated_at &&

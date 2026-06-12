@@ -334,6 +334,142 @@ describe("GitHub token pull request source", () => {
     expect(snapshots[0]?.review_threads).toBeUndefined();
   });
 
+  it("lists every open pull request across pages without duplicates", async () => {
+    const listCalls: Array<Record<string, unknown> | undefined> = [];
+    const openPage1 = Array.from({ length: 100 }, (_value, index) => ({
+      id: index + 1,
+      number: index + 1,
+      title: `Open PR ${index + 1}`,
+      state: "open",
+      created_at: "2026-06-01T08:00:00.000Z",
+      updated_at: "2026-06-01T09:00:00.000Z",
+      user: { login: "author" }
+    }));
+    // Number 100 repeats on page 2, as happens when rows shift across
+    // page boundaries between fetches.
+    const openPage2 = [
+      openPage1[99],
+      {
+        id: 101,
+        number: 101,
+        title: "Open PR 101",
+        state: "open",
+        created_at: "2026-06-02T08:00:00.000Z",
+        updated_at: "2026-06-02T09:00:00.000Z",
+        user: { login: "author" }
+      }
+    ];
+    const source = createGithubTokenPullRequestSource({
+      token: "token",
+      repositories: ["acme/web"],
+      request: async <T = unknown>(
+        route: string,
+        parameters?: Record<string, unknown>
+      ) => {
+        if (route === "GET /repos/{owner}/{repo}/pulls") {
+          listCalls.push(parameters);
+          return {
+            data: (parameters?.page === 1 ? openPage1 : openPage2) as T
+          };
+        }
+
+        if (route === "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews") {
+          return { data: [] as T };
+        }
+
+        if (route === "POST /graphql") {
+          throw new Error("GraphQL unavailable");
+        }
+
+        throw new Error(`Unexpected route: ${route}`);
+      }
+    });
+
+    if (!source.listOpenPullRequests) {
+      throw new Error("Expected token source to support listOpenPullRequests.");
+    }
+
+    const snapshots = await source.listOpenPullRequests();
+
+    expect(listCalls).toHaveLength(2);
+    expect(listCalls[0]).toMatchObject({
+      state: "open",
+      sort: "created",
+      direction: "asc",
+      page: 1
+    });
+    expect(snapshots).toHaveLength(101);
+    expect(
+      snapshots.filter((snapshot) => snapshot.pull_request.number === 100)
+    ).toHaveLength(1);
+  });
+
+  it("keeps the newest snapshot when a pull request closes mid-listing", async () => {
+    const source = createGithubTokenPullRequestSource({
+      token: "token",
+      repositories: ["acme/web"],
+      request: async <T = unknown>(
+        route: string,
+        parameters?: Record<string, unknown>
+      ) => {
+        if (route === "GET /repos/{owner}/{repo}/pulls") {
+          if (parameters?.state === "open") {
+            return {
+              data: [
+                {
+                  id: 1,
+                  number: 42,
+                  title: "Still open when listed",
+                  state: "open",
+                  updated_at: "2026-06-01T09:00:00.000Z",
+                  user: { login: "author" }
+                }
+              ] as T
+            };
+          }
+
+          return {
+            data: [
+              {
+                id: 1,
+                number: 42,
+                title: "Merged moments later",
+                state: "closed",
+                updated_at: "2026-06-01T09:05:00.000Z",
+                merged_at: "2026-06-01T09:05:00.000Z",
+                user: { login: "author" }
+              }
+            ] as T
+          };
+        }
+
+        if (route === "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews") {
+          return { data: [] as T };
+        }
+
+        if (route === "POST /graphql") {
+          throw new Error("GraphQL unavailable");
+        }
+
+        throw new Error(`Unexpected route: ${route}`);
+      }
+    });
+
+    if (!source.listPullRequests) {
+      throw new Error("Expected token source to support listPullRequests.");
+    }
+
+    const snapshots = await source.listPullRequests();
+
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]?.pull_request).toMatchObject({
+      number: 42,
+      state: "closed",
+      merged: true,
+      updated_at: "2026-06-01T09:05:00.000Z"
+    });
+  });
+
   it("uses GitHub issue search syntax to list matching pull requests", async () => {
     const calls: Array<{ route: string; parameters?: Record<string, unknown> }> = [];
     const source = createGithubTokenPullRequestSource({
