@@ -66,6 +66,12 @@ export interface GitHubPullRequestSnapshot {
     additions?: number;
     deletions?: number;
     changed_files?: number;
+    labels?: Array<{
+      name?: string;
+      color?: string | null;
+      description?: string | null;
+    }>;
+    assignees?: Array<{ login?: string; avatar_url?: string }>;
     requested_reviewers?: Array<{ login?: string; avatar_url?: string }>;
   };
   reviews?: GitHubReviewSnapshot[];
@@ -183,6 +189,12 @@ interface GitHubPullRequestFromApi {
   additions?: number;
   deletions?: number;
   changed_files?: number;
+  labels?: Array<{
+    name?: string;
+    color?: string | null;
+    description?: string | null;
+  }>;
+  assignees?: Array<{ login?: string; avatar_url?: string }>;
   requested_reviewers?: Array<{ login?: string; avatar_url?: string }>;
 }
 

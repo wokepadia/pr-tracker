@@ -8,6 +8,12 @@ export interface Actor {
   avatarUrl?: string;
 }
 
+export interface PullRequestLabel {
+  name: string;
+  color?: string;
+  description?: string;
+}
+
 export interface ReviewDecisionEvent {
   id: string;
   reviewerId: string;
@@ -68,6 +74,8 @@ export interface PullRequestItem {
   createdAt: string;
   updatedAt: string;
   latestCommitSha: string;
+  labels?: PullRequestLabel[];
+  assigneeIds?: string[];
   /** Diff size facts; undefined when the sync source did not provide them. */
   additions?: number;
   deletions?: number;
@@ -114,6 +122,11 @@ export const samplePullRequests: PullRequestItem[] = [
     createdAt: "2026-05-29T08:20:00.000Z",
     updatedAt: "2026-06-01T11:30:00.000Z",
     latestCommitSha: "c2",
+    labels: [
+      { name: "bug", color: "d73a4a", description: "Something isn't working" },
+      { name: "backend", color: "5319e7" }
+    ],
+    assigneeIds: ["maya"],
     additions: 38,
     deletions: 6,
     changedFiles: 3,
@@ -142,6 +155,8 @@ export const samplePullRequests: PullRequestItem[] = [
     createdAt: "2026-05-24T09:00:00.000Z",
     updatedAt: "2026-06-01T09:12:00.000Z",
     latestCommitSha: "f3",
+    labels: [{ name: "enhancement", color: "a2eeef" }],
+    assigneeIds: ["ari"],
     additions: 214,
     deletions: 58,
     changedFiles: 9,
@@ -185,6 +200,8 @@ export const samplePullRequests: PullRequestItem[] = [
     createdAt: "2026-05-28T13:45:00.000Z",
     updatedAt: "2026-05-30T10:05:00.000Z",
     latestCommitSha: "d1",
+    labels: [{ name: "infra", color: "1d76db" }],
+    assigneeIds: [],
     additions: 1240,
     deletions: 310,
     changedFiles: 21,

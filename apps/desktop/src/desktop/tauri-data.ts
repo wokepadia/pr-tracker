@@ -2,6 +2,7 @@ import type {
   Actor,
   PullRequestActivity,
   PullRequestItem,
+  PullRequestLabel,
   ReviewDecisionEvent,
   ReviewThread,
 } from "@pr-tracker/core"
@@ -145,6 +146,18 @@ interface LocalPullRequestRow {
   merged_at: string | null
   status_check_summary_json: string | null
   raw_payload_json: string
+}
+
+interface LocalPullRequestLabelRow {
+  pull_request_id: string
+  name: string
+  color: string | null
+  description: string | null
+}
+
+interface LocalPullRequestAssigneeRow {
+  pull_request_id: string
+  login: string
 }
 
 interface LocalBoardItemStateRow {
@@ -1282,6 +1295,7 @@ async function storeSnapshotAvatarUrls(
   }
 
   collect(snapshot.pull_request.user)
+  snapshot.pull_request.assignees?.forEach(collect)
   snapshot.pull_request.requested_reviewers?.forEach(collect)
   snapshot.reviews?.forEach((review) => collect(review.user))
 
@@ -1449,6 +1463,8 @@ async function upsertPullRequestItem(
   }
 
   const storedPullRequest = { ...pullRequest, id: storedPullRequestId }
+  await replaceLabels(db, repositoryId, storedPullRequest, now)
+  await replaceAssignees(db, storedPullRequest, now)
   await replaceReviewRequests(db, storedPullRequest, now)
   await replaceReviews(db, storedPullRequest.reviews, storedPullRequest.id, now)
   if (!options.skipThreads) {
@@ -1554,6 +1570,99 @@ async function ensureDefaultBoardItem(
       now,
     ]
   )
+}
+
+async function replaceLabels(
+  db: SqlDatabase,
+  repositoryId: string,
+  pullRequest: PullRequestItem,
+  now: string
+): Promise<void> {
+  await db.execute(`delete from pull_request_labels where pull_request_id = $1`, [
+    pullRequest.id,
+  ])
+
+  for (const label of pullRequest.labels ?? []) {
+    const labelId = deterministicUuid(
+      `github-label:${repositoryId}:${label.name.toLowerCase()}`
+    )
+    await db.execute(
+      `
+        insert into github_labels (
+          id, repository_id, github_node_id, name, color, description,
+          raw_payload_json, created_at, updated_at
+        )
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        on conflict(repository_id, name)
+        do update set
+          color = excluded.color,
+          description = excluded.description,
+          raw_payload_json = excluded.raw_payload_json,
+          updated_at = excluded.updated_at
+      `,
+      [
+        labelId,
+        repositoryId,
+        labelId,
+        label.name,
+        label.color ?? null,
+        label.description ?? null,
+        JSON.stringify(label),
+        now,
+        now,
+      ]
+    )
+    await db.execute(
+      `
+        insert into pull_request_labels (
+          id, pull_request_id, label_id, created_at, updated_at
+        )
+        values ($1, $2, $3, $4, $5)
+        on conflict(pull_request_id, label_id)
+        do update set updated_at = excluded.updated_at
+      `,
+      [
+        deterministicUuid(`pull-request-label:${pullRequest.id}:${labelId}`),
+        pullRequest.id,
+        labelId,
+        now,
+        now,
+      ]
+    )
+  }
+}
+
+async function replaceAssignees(
+  db: SqlDatabase,
+  pullRequest: PullRequestItem,
+  now: string
+): Promise<void> {
+  await db.execute(`delete from pull_request_assignees where pull_request_id = $1`, [
+    pullRequest.id,
+  ])
+
+  for (const assigneeId of pullRequest.assigneeIds ?? []) {
+    const accountId = await upsertGithubAccount(db, {
+      login: assigneeId,
+      accountType: "user",
+      now,
+    })
+    await db.execute(
+      `
+        insert into pull_request_assignees (
+          id, pull_request_id, account_id, created_at
+        )
+        values ($1, $2, $3, $4)
+        on conflict(pull_request_id, account_id) do nothing
+      `,
+      [
+        deterministicUuid(`pull-request-assignee:${pullRequest.id}:${assigneeId}`),
+        pullRequest.id,
+        accountId,
+        now,
+      ]
+    )
+  }
 }
 
 async function replaceReviewRequests(
@@ -1884,6 +1993,10 @@ async function toPullRequestItem(
     listReviewThreadRows(db, row.id),
     listActivityEventRows(db, row.id),
   ])
+  const [labels, assignees] = await Promise.all([
+    listPullRequestLabelRows(db, row.id),
+    listPullRequestAssigneeRows(db, row.id),
+  ])
   const participants = await listReviewThreadParticipantRows(
     db,
     reviewThreads.map((thread) => thread.id)
@@ -1909,6 +2022,12 @@ async function toPullRequestItem(
     createdAt: row.github_created_at ?? new Date().toISOString(),
     updatedAt: row.github_updated_at ?? new Date().toISOString(),
     latestCommitSha: row.latest_commit_sha ?? "",
+    labels: labels.map((label) => ({
+      name: label.name,
+      color: label.color ?? undefined,
+      description: label.description ?? undefined,
+    })),
+    assigneeIds: assignees.map((assignee) => assignee.login),
     additions: row.additions ?? undefined,
     deletions: row.deletions ?? undefined,
     changedFiles: row.changed_files ?? undefined,
@@ -1945,6 +2064,44 @@ async function toPullRequestItem(
       diffUrl: event.diff_url ?? undefined,
     })),
   }
+}
+
+async function listPullRequestLabelRows(
+  db: SqlDatabase,
+  pullRequestId: string
+): Promise<LocalPullRequestLabelRow[]> {
+  return db.select<LocalPullRequestLabelRow[]>(
+    `
+      select
+        pr_label.pull_request_id,
+        label.name,
+        label.color,
+        label.description
+      from pull_request_labels pr_label
+      join github_labels label on label.id = pr_label.label_id
+      where pr_label.pull_request_id = $1
+      order by label.name collate nocase asc
+    `,
+    [pullRequestId]
+  )
+}
+
+async function listPullRequestAssigneeRows(
+  db: SqlDatabase,
+  pullRequestId: string
+): Promise<LocalPullRequestAssigneeRow[]> {
+  return db.select<LocalPullRequestAssigneeRow[]>(
+    `
+      select
+        assignee.pull_request_id,
+        account.login
+      from pull_request_assignees assignee
+      join github_accounts account on account.id = assignee.account_id
+      where assignee.pull_request_id = $1
+      order by account.login collate nocase asc
+    `,
+    [pullRequestId]
+  )
 }
 
 async function listReviewRequestRows(db: SqlDatabase, pullRequestId: string) {
@@ -2760,6 +2917,12 @@ function snapshotToPullRequestItem(
     createdAt: pullRequest.created_at ?? updatedAt,
     updatedAt,
     latestCommitSha: pullRequest.head?.sha ?? "",
+    labels: (pullRequest.labels ?? [])
+      .map(mapSnapshotLabel)
+      .filter((label): label is PullRequestLabel => Boolean(label)),
+    assigneeIds: (pullRequest.assignees ?? [])
+      .map((assignee) => assignee.login)
+      .filter((login): login is string => Boolean(login)),
     additions: pullRequest.additions,
     deletions: pullRequest.deletions,
     changedFiles: pullRequest.changed_files,
@@ -2778,6 +2941,23 @@ function snapshotToPullRequestItem(
     ),
     activity: buildSnapshotActivity({ ...snapshot, reviews }),
   }
+}
+
+function mapSnapshotLabel(
+  label: NonNullable<GitHubPullRequestSnapshot["pull_request"]["labels"]>[number]
+): PullRequestLabel | undefined {
+  if (!label.name) return undefined
+
+  return {
+    name: label.name,
+    color: normalizeGithubLabelColor(label.color),
+    description: label.description ?? undefined,
+  }
+}
+
+function normalizeGithubLabelColor(value: string | null | undefined): string | undefined {
+  const color = value?.replace(/^#/, "").trim()
+  return color && /^[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : undefined
 }
 
 function mapSnapshotReviewThread(
@@ -2818,6 +2998,7 @@ function buildActors(
   const logins = new Set<string>(extraLogins)
   for (const pullRequest of pullRequests) {
     logins.add(pullRequest.authorId)
+    pullRequest.assigneeIds?.forEach((login) => logins.add(login))
     pullRequest.requestedReviewerIds.forEach((login) => logins.add(login))
     pullRequest.reviews.forEach((review) => logins.add(review.reviewerId))
     pullRequest.threads.forEach((thread) =>

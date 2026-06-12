@@ -42,6 +42,14 @@ describe("GitHub token pull request source", () => {
                   updated_at: "2026-06-01T09:00:00.000Z",
                   user: { login: "author" },
                   head: { sha: "head-sha" },
+                  labels: [
+                    {
+                      name: "bug",
+                      color: "d73a4a",
+                      description: "Something isn't working"
+                    }
+                  ],
+                  assignees: [{ login: "author" }],
                   requested_reviewers: [{ login: "viewer" }]
                 }
               ] as T
@@ -112,6 +120,14 @@ describe("GitHub token pull request source", () => {
       pull_request: {
         number: 42,
         requested_reviewers: [{ login: "viewer" }],
+        labels: [
+          {
+            name: "bug",
+            color: "d73a4a",
+            description: "Something isn't working"
+          }
+        ],
+        assignees: [{ login: "author" }],
         additions: 120,
         deletions: 30,
         changed_files: 7

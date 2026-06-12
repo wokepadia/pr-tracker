@@ -9,6 +9,8 @@ import {
   listLocalActivityEventRows,
   listLocalBoardItemStateRows,
   listLocalBoardColumnRows,
+  listLocalPullRequestAssigneeRows,
+  listLocalPullRequestLabelRows,
   listLocalPullRequestRows,
   listLocalReviewEventRows,
   listLocalReviewRequestRows,
@@ -355,6 +357,15 @@ describe("local SQLite storage", () => {
                   additions: 120,
                   deletions: 30,
                   changed_files: 7,
+                  labels: [
+                    {
+                      name: "bug",
+                      color: "d73a4a",
+                      description: "Something isn't working"
+                    },
+                    { name: "frontend", color: "a2eeef" }
+                  ],
+                  assignees: [{ login: "author" }, { login: "triage" }],
                   requested_reviewers: [{ login: "viewer" }]
                 },
                 reviews: [
@@ -401,6 +412,28 @@ describe("local SQLite storage", () => {
           reviewer_kind: "user",
           login: "viewer"
         }
+      ]);
+      expect(
+        listLocalPullRequestLabelRows(local.db, "github:acme~web:42")
+      ).toEqual([
+        {
+          pull_request_id: "github:acme~web:42",
+          name: "bug",
+          color: "d73a4a",
+          description: "Something isn't working"
+        },
+        {
+          pull_request_id: "github:acme~web:42",
+          name: "frontend",
+          color: "a2eeef",
+          description: null
+        }
+      ]);
+      expect(
+        listLocalPullRequestAssigneeRows(local.db, "github:acme~web:42")
+      ).toEqual([
+        { pull_request_id: "github:acme~web:42", login: "author" },
+        { pull_request_id: "github:acme~web:42", login: "triage" }
       ]);
       expect(listLocalReviewEventRows(local.db, "github:acme~web:42")).toMatchObject([
         {
