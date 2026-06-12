@@ -23,6 +23,12 @@ Model GitHub activity as reusable primitives such as actors, items, events, comm
 
 Do not bake view-specific states such as "needs my review" directly into the core entities. Keep those as computed classifications owned by workflow/view layers.
 
+## Board Scope Contract
+
+The board filter — the GitHub review query the user applies on the inbox — defines which pull requests the user is responsible for. It is the single scope contract for the whole app: every surface (the inbox lanes, the insights projections, nav badges, and anything that feeds an AI prompt) must derive its universe from the filtered board, never from an unfiltered read of the local store. The local database intentionally holds more than the board (refresh history, pull requests that left the filter); none of that may leak into a user-facing surface.
+
+In code, UI surfaces read the reviewer inbox only through the shared `useBoardInbox` hook in `apps/desktop/src/app/use-board-inbox.ts`, which keys on the applied filter owned by `apps/desktop/src/app/use-board-filter.ts`. AI inputs additionally pass through the board-row selector in `apps/desktop/src/reviewer/board-scope.ts`. When adding a new surface or data consumer, route it through these shared modules instead of calling the data layer directly; widening a surface's scope past the board filter is a bug, not a feature decision.
+
 ## V1 Product Scope
 
 V1 is basic plumbing for a single-user reviewer inbox. Use deterministic GitHub data ingestion, event storage, and computed workflow classifications. Do not add generated summaries or other LLM-dependent features in V1.

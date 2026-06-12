@@ -37,7 +37,13 @@ The admission rule for an AI section, distilled from the research:
 
 AI insights operate **only on items on the user's board**, never on
 the wider set of pull requests the local database happens to know
-about. Concretely, the input universe is:
+about. Since 2026-06-12 this contract has two layers, and the first
+applies to every surface, not just AI (see CLAUDE.md, "Board Scope
+Contract"): the applied **board filter** (the GitHub review query on
+the inbox) defines the universe every projection reads — all
+surfaces consume the inbox through the shared `useBoardInbox` hook,
+keyed on the filter owned by `use-board-filter.ts`. On top of that
+filtered universe, the AI input universe is:
 
 1. Pull requests with a **non-archived `board_items` row** on the
    default board, as projected into the inbox view — active items in

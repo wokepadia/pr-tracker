@@ -3,8 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import {
   getAttentionSettings,
   getBoardState,
-  getReviewerInbox,
 } from "@/api"
+import { useBoardInbox } from "./use-board-inbox"
 import { selectBoardScopedItems } from "@/reviewer/board-scope"
 import {
   buildReviewerInsights,
@@ -17,13 +17,14 @@ import {
 } from "@/reviewer/view-model"
 
 /**
- * Computes the insights projection from the shared local-read queries.
- * Callers that only need section counts (the nav badge) can omit the
- * visit anchor; the needs-you-now section does not depend on it.
+ * Computes the insights projection over the board-filtered inbox — like
+ * every surface, it sees only the pull requests the applied board filter
+ * admits. Callers that only need section counts (the nav badge) can omit
+ * the visit anchor; the needs-you-now section does not depend on it.
  *
- * With `scope: "board"` the projection runs only over items holding a live
- * board row — the contract for anything that feeds an AI prompt — and stays
- * undefined until the board rows have loaded.
+ * With `scope: "board"` the projection additionally drops items without a
+ * live board row — the contract for anything that feeds an AI prompt — and
+ * stays undefined until the board rows have loaded.
  */
 export function useReviewerInsights(options?: {
   previousVisitAt?: string
@@ -35,10 +36,7 @@ export function useReviewerInsights(options?: {
   allItems?: ReviewQueueItemView[]
   isLoading: boolean
 } {
-  const inboxQuery = useQuery({
-    queryKey: ["reviewer-inbox", ""],
-    queryFn: () => getReviewerInbox({}),
-  })
+  const { inboxQuery } = useBoardInbox()
   const attentionSettingsQuery = useQuery({
     queryKey: ["attention-settings"],
     queryFn: getAttentionSettings,

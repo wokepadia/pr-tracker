@@ -20,7 +20,6 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import {
-  keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
@@ -96,11 +95,15 @@ import {
 import {
   getBoardState,
   getGithubSettingsStatus,
-  getReviewerInbox,
   markPullRequestSeen,
   getAttentionSettings,
   saveBoardState,
 } from "@/api"
+import {
+  getBoardFilterQuery,
+  setBoardFilterQuery,
+} from "@/app/use-board-filter"
+import { useBoardInbox } from "@/app/use-board-inbox"
 import { useGithubSync } from "@/app/use-github-sync"
 import { formatCount } from "@/lib/copy"
 import { describeGithubSyncError } from "@/lib/sync-error"
@@ -150,7 +153,6 @@ const REVIEW_SPLIT_HANDLE_WIDTH = 8
 const REVIEW_WORKSPACE_MIN_WIDTH =
   REVIEW_QUEUE_MIN_WIDTH + QUICK_PEEK_MIN_WIDTH + REVIEW_SPLIT_HANDLE_WIDTH
 const REVIEW_SIDEBAR_WIDTH = 212
-const githubReviewQueryStorageKey = "pr-tracker:github-review-query:v1"
 const DEFAULT_BUCKET_COLUMN_WIDTH = 232
 const MIN_BUCKET_COLUMN_WIDTH = 200
 const MAX_BUCKET_COLUMN_WIDTH = 420
@@ -159,15 +161,6 @@ const kanbanCollisionDetection: CollisionDetection = (args) => {
   return pointerCollisions.length > 0
     ? pointerCollisions
     : rectIntersection(args)
-}
-
-function loadStoredGithubReviewQuery(): string {
-  if (typeof window === "undefined") return ""
-  return window.localStorage.getItem(githubReviewQueryStorageKey) ?? ""
-}
-
-function saveStoredGithubReviewQuery(query: string): void {
-  window.localStorage.setItem(githubReviewQueryStorageKey, query)
 }
 
 function clampBucketColumnWidth(width: number): number {
@@ -252,16 +245,11 @@ const rowSelectedToneClasses: Record<LaneDefinition["tone"], string> = {
 export function InboxPage() {
   const queryClient = useQueryClient()
   const [githubSearchQueryDraft, setGithubSearchQueryDraft] = useState(() =>
-    loadStoredGithubReviewQuery()
+    getBoardFilterQuery()
   )
-  const [appliedGithubSearchQuery, setAppliedGithubSearchQuery] =
-    useState<string | undefined>(() => loadStoredGithubReviewQuery() || undefined)
-  const inboxQuery = useQuery({
-    queryKey: ["reviewer-inbox", appliedGithubSearchQuery ?? ""],
-    queryFn: () =>
-      getReviewerInbox({ githubSearchQuery: appliedGithubSearchQuery }),
-    placeholderData: keepPreviousData,
-  })
+  // The applied query is the app-wide board filter; every other surface
+  // reads the inbox through the same hook and stays on this scope.
+  const { inboxQuery } = useBoardInbox()
   const githubSync = useGithubSync()
   const githubSettingsQuery = useQuery({
     queryKey: ["github-settings"],
@@ -814,14 +802,12 @@ export function InboxPage() {
     event.preventDefault()
     const nextQuery = githubSearchQueryDraft.trim()
     setGithubSearchQueryDraft(nextQuery)
-    setAppliedGithubSearchQuery(nextQuery || undefined)
-    saveStoredGithubReviewQuery(nextQuery)
+    setBoardFilterQuery(nextQuery)
   }
 
   function resetGithubSearchQuery() {
     setGithubSearchQueryDraft("")
-    setAppliedGithubSearchQuery(undefined)
-    saveStoredGithubReviewQuery("")
+    setBoardFilterQuery("")
   }
 
   function handleKanbanDragStart(event: DragStartEvent) {
