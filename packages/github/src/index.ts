@@ -408,7 +408,9 @@ async function listSearchedPullRequests(
   const maxPullRequests = options.maxPullRequests ?? 20;
   const query = normalizePullRequestSearchQuery(searchQuery, repositories);
   const searchResults = await listIssueSearchResults(octokit, query, maxPullRequests);
-  const lookups = searchResults.flatMap(searchResultToPullRequestLookup);
+  const lookups = dedupePullRequestLookups(
+    searchResults.flatMap(searchResultToPullRequestLookup)
+  );
   const snapshots = await mapConcurrent(lookups, 8, (lookup) =>
     getTokenPullRequest(octokit, lookup, { stripReviewBodies: true })
   );
@@ -432,6 +434,9 @@ async function listIssueSearchResults(
       q: query,
       sort: "updated",
       order: "desc",
+      // The generated query uses advanced syntax such as parenthesized
+      // repo OR groups, which the legacy issue search does not parse.
+      advanced_search: "true",
       per_page: Math.min(maxCount, 100),
       page
     });
@@ -447,6 +452,16 @@ async function listIssueSearchResults(
       return items;
     }
   }
+}
+
+function dedupePullRequestLookups(
+  lookups: GitHubPullRequestLookupInput[]
+): GitHubPullRequestLookupInput[] {
+  const byKey = new Map<string, GitHubPullRequestLookupInput>();
+  for (const lookup of lookups) {
+    byKey.set(`${lookup.repository}#${lookup.number}`, lookup);
+  }
+  return [...byKey.values()];
 }
 
 function searchResultToPullRequestLookup(

@@ -543,7 +543,8 @@ describe("GitHub token pull request source", () => {
     expect(searchCall?.parameters).toMatchObject({
       q: "is:open assignee:@me is:pr (repo:acme/web OR repo:acme/api)",
       sort: "updated",
-      order: "desc"
+      order: "desc",
+      advanced_search: "true"
     });
     expect(snapshots).toHaveLength(1);
     expect(snapshots[0]?.reviews?.[0]?.body).toBeUndefined();
