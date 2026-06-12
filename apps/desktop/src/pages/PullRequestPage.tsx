@@ -59,8 +59,10 @@ import {
   defaultAttentionThresholds,
   toReviewQueueItemView,
   type ActivityEventView,
+  type EvidenceLineView,
   type ReviewQueueItemView,
   type SinceLastReviewView,
+  type SizeChipView,
 } from "@/reviewer/view-model"
 import {
   bucketIdForLocalQueueItem,
@@ -865,6 +867,7 @@ function DetailSideRail({
   onCaughtUp: () => void
 }) {
   const canMarkCaughtUp = canMarkReviewItemCaughtUp(item, isMarkingSeen)
+  const evidenceLines = getDetailEvidenceLines(item)
 
   return (
     <aside className="border-t border-border bg-card px-5 py-6 xl:border-l xl:border-t-0">
@@ -955,9 +958,9 @@ function DetailSideRail({
 
       <RailCard title="Why this needs your attention">
         <p className="text-sm leading-5 text-foreground">{item.reason}</p>
-        {item.evidence.length > 0 ? (
+        {evidenceLines.length > 0 ? (
           <ul className="mt-3 space-y-2 border-t border-border pt-3">
-            {item.evidence.map((line) => (
+            {evidenceLines.map((line) => (
               <li key={line.id} className="flex gap-2 text-xs leading-5">
                 <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
                 <span>
@@ -982,16 +985,12 @@ function DetailSideRail({
             />
           }
         />
-        <RailKeyValue
-          label="assignee"
-          value={
-            item.assignees.length > 0 ? (
-              <PeopleInline people={item.assignees} />
-            ) : (
-              "none"
-            )
-          }
-        />
+        {item.assignees.length > 0 ? (
+          <RailKeyValue
+            label="assignee"
+            value={<PeopleInline people={item.assignees} />}
+          />
+        ) : null}
         <RailKeyValue
           label="your review"
           value={reviewDecisionLabel(item.userLastReviewDecision)}
@@ -1016,10 +1015,12 @@ function DetailSideRail({
             }
           />
         ))}
-        <RailKeyValue
-          label="attention"
-          value={detailAttentionLabel(item)}
-        />
+        {item.size ? (
+          <RailKeyValue
+            label="size"
+            value={detailSizeText(item.size)}
+          />
+        ) : null}
         {item.reviewRounds > 0 ? (
           <RailKeyValue
             label="rounds of changes"
@@ -1033,6 +1034,32 @@ function DetailSideRail({
       </RailCard>
     </aside>
   )
+}
+
+type DetailEvidenceItem = Pick<
+  ReviewQueueItemView,
+  "evidence" | "reason" | "userLastReviewDecision" | "waitingOn" | "laneId"
+>
+
+export function getDetailEvidenceLines(
+  item: DetailEvidenceItem
+): EvidenceLineView[] {
+  const reason = normalizeEvidenceText(item.reason)
+
+  return item.evidence.filter((line) => {
+    const label = normalizeEvidenceText(line.label)
+    if (!label) return false
+    if (reason.includes(label)) return false
+    if (isReviewDecisionEvidence(label, item.userLastReviewDecision)) return false
+    if (isAttentionEvidence(label, item)) return false
+    if (
+      label.includes("author has not pushed since your review") &&
+      reason.includes("author has not pushed since")
+    ) {
+      return false
+    }
+    return true
+  })
 }
 
 function RailCard({
@@ -1156,6 +1183,12 @@ function reviewDecisionLabel(decision: ReviewDecision | "pending"): string {
   return decision === "pending" ? "pending" : reviewDecisionLabels[decision]
 }
 
+function detailSizeText(size: SizeChipView): string {
+  const fileText =
+    size.fileCount !== undefined ? ` · ${formatCount(size.fileCount, "file")}` : ""
+  return `${size.bucket} · ${formatCount(size.lineCount, "line")}${fileText}`
+}
+
 function detailQueueLabel(item: ReviewQueueItemView): string {
   if (item.waitingOn === "you") return "Waiting on you"
   if (item.waitingOn === "author") return "Waiting on author"
@@ -1186,6 +1219,29 @@ function detailToneForItem(item: ReviewQueueItemView): DetailTone {
   }
   if (item.laneId === "approved") return "success"
   return "quiet"
+}
+
+function isReviewDecisionEvidence(
+  label: string,
+  decision: ReviewDecision | "pending"
+): boolean {
+  if (decision === "changes_requested") return label === "you requested changes"
+  if (decision === "approved") return label === "you approved"
+  if (decision === "commented") return label === "you commented"
+  return false
+}
+
+function isAttentionEvidence(label: string, item: DetailEvidenceItem): boolean {
+  return label === normalizeEvidenceText(detailAttentionLabel(item))
+}
+
+function normalizeEvidenceText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\bthe\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ")
 }
 
 function bucketIdForAvailableBucketId(
