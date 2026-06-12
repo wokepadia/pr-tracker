@@ -222,10 +222,10 @@ describe("inbox sync status label", () => {
     ).toBe("syncing with GitHub…")
   })
 
-  it("labels sample data when no token is configured", () => {
+  it("labels local-only data when no token is configured", () => {
     expect(
       formatSyncStatusLabel({ isSyncing: false, tokenConfigured: false, now })
-    ).toBe("local sample data")
+    ).toBe("local data only")
   })
 
   it("reports when a configured inbox has never synced", () => {

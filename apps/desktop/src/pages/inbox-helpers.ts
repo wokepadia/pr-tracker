@@ -211,7 +211,7 @@ export function formatSyncStatusLabel({
   now?: number
 }): string {
   if (isSyncing) return "syncing with GitHub…"
-  if (!tokenConfigured) return "local sample data"
+  if (!tokenConfigured) return "local data only"
   if (!lastSyncedAt) return "not synced yet"
 
   const elapsedMs = Math.max(0, now - Date.parse(lastSyncedAt))

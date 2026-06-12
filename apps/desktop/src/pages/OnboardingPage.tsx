@@ -214,7 +214,7 @@ export function OnboardingPage() {
                   {saveOnboardingMutation.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : null}
-                  Use sample data
+                  Skip for now
                 </Button>
               }
               onSaved={() => completeOnboarding()}

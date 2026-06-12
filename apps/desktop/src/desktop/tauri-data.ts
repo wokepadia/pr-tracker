@@ -6,11 +6,6 @@ import type {
   ReviewThread,
 } from "@pr-tracker/core"
 import {
-  sampleAvatarUrlsByLogin,
-  sampleLastSeenAtByPullRequestId,
-  samplePullRequests,
-} from "@pr-tracker/core"
-import {
   createGithubTokenPullRequestSource,
   getGithubClosedLookbackDays,
   parseGithubRepositories,
@@ -304,8 +299,8 @@ export async function syncDesktopGithubData(input?: {
     githubSearchQuery: input?.githubSearchQuery,
     force: input?.force,
   })
-  // "synced" means local data changed (a GitHub sync or sample-data seed
-  // landed); callers refresh their reads only for this status.
+  // "synced" means local data changed (a GitHub sync landed); callers
+  // refresh their reads only for this status.
   if (didSync) {
     return { status: "synced" }
   }
@@ -976,12 +971,6 @@ async function syncBeforeRead(
 ): Promise<SyncBeforeReadResult> {
   const credentials = await loadLocalGithubCredentials(db)
   if (!credentials) {
-    // Seeding counts as a sync: it changes local data, so callers must
-    // refresh their reads just like after a real GitHub sync.
-    if (await isLocalDatabaseEmpty(db)) {
-      await seedLocalSampleData(db)
-      return { didSync: true, hasCredentials: false }
-    }
     return { didSync: false, hasCredentials: false }
   }
 
@@ -1214,45 +1203,6 @@ async function finishLocalSyncRun(
         syncRunId,
       ]
     )
-  })
-}
-
-async function seedLocalSampleData(db: SqlDatabase): Promise<void> {
-  const now = new Date().toISOString()
-  await transaction(db, async () => {
-    await upsertLocalProfile(db, {
-      githubLogin: "viewer",
-      displayName: "you",
-      now,
-    })
-    await ensureDefaultBoard(db, now)
-
-    for (const pullRequest of samplePullRequests) {
-      const storedPullRequestId = await upsertPullRequestItem(db, pullRequest, now)
-      await ensureDefaultBoardItem(db, storedPullRequestId, now)
-    }
-
-    for (const [login, avatarUrl] of Object.entries(sampleAvatarUrlsByLogin)) {
-      await upsertGithubAccount(db, {
-        login,
-        accountType: "user",
-        avatarUrl,
-        now,
-      })
-    }
-
-    for (const [pullRequestId, lastSeenAt] of Object.entries(
-      sampleLastSeenAtByPullRequestId
-    )) {
-      await db.execute(
-        `
-          update board_items
-          set last_seen_at = $1, updated_at = $2
-          where board_id = $3 and pull_request_id = $4
-        `,
-        [lastSeenAt ?? null, now, defaultLocalBoardId, pullRequestId]
-      )
-    }
   })
 }
 
@@ -2687,15 +2637,6 @@ function parseStatusCheckRollup(
   } catch {
     return undefined
   }
-}
-
-async function isLocalDatabaseEmpty(db: SqlDatabase): Promise<boolean> {
-  const row = (
-    await db.select<Array<{ count: number }>>(
-      `select count(*) as count from pull_requests`
-    )
-  )[0]
-  return (row?.count ?? 0) === 0
 }
 
 async function listKnownOpenPullRequestSnapshots(
