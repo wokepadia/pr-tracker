@@ -6,8 +6,8 @@ import type { ReviewQueueItemView } from "@/reviewer/view-model"
  * re-derives urgency or ranks the queue. The map stage is fully
  * deterministic: each relevant pull request becomes a structured record
  * built from the already-computed insight rows and unseen activity, and one
- * LLM call reduces those records into four short sections (headline,
- * reading order, while-away notes, sweep notes). The model may only
+ * LLM call reduces those records into five short sections (headline,
+ * reading order, stalled-on-you notes, while-away notes, sweep notes). The model may only
  * reference pull request ids it was given; titles and links render from
  * local data.
  */
@@ -42,6 +42,7 @@ export interface AiInsightsInput {
 export interface AiInsightsContent {
   headline: string
   readingOrder: Array<{ pullRequestId: string; why: string }>
+  stalledOnYou: Array<{ pullRequestId: string; note: string }>
   whileAway: Array<{ pullRequestId: string; note: string }>
   sweep: Array<{ pullRequestId: string; note: string }>
 }
@@ -51,14 +52,21 @@ const maxUnseenEventsPerItem = 5
 const maxDiscussionExcerptsPerItem = 5
 const maxDiscussionExcerptChars = 500
 const maxReadingOrderEntries = 8
+const maxStalledOnYouEntries = 4
 const maxWhileAwayEntries = 6
 const maxSweepEntries = 4
 const sectionLabels: Array<{
-  key: "needsYouNow" | "mightBeMissing" | "whileAway" | "hygiene"
+  key:
+    | "needsYouNow"
+    | "mightBeMissing"
+    | "stalledOnYou"
+    | "whileAway"
+    | "hygiene"
   label: string
 }> = [
   { key: "needsYouNow", label: "needs you now" },
   { key: "mightBeMissing", label: "might be missing" },
+  { key: "stalledOnYou", label: "stalled on you" },
   { key: "whileAway", label: "finished while away" },
   { key: "hygiene", label: "aging" },
 ]
@@ -132,6 +140,7 @@ export function buildAiInsightsInput(
 
   const ordered = dedupeById([
     ...bySection("needsYouNow"),
+    ...bySection("stalledOnYou"),
     ...bySection("hygiene"),
     ...unseenOnly,
     ...bySection("whileAway"),
@@ -163,7 +172,7 @@ export const aiInsightsSchemaName = "ai_insights"
 export const aiInsightsSchema: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
-  required: ["headline", "readingOrder", "whileAway", "sweep"],
+  required: ["headline", "readingOrder", "stalledOnYou", "whileAway", "sweep"],
   properties: {
     headline: {
       type: "string",
@@ -197,6 +206,24 @@ export const aiInsightsSchema: Record<string, unknown> = {
       maxItems: maxWhileAwayEntries,
       description:
         "Short notes on what concluded or changed without the reviewer.",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["pullRequestId", "note"],
+        properties: {
+          pullRequestId: {
+            type: "string",
+            description: "A pull request id exactly as listed.",
+          },
+          note: { type: "string" },
+        },
+      },
+    },
+    stalledOnYou: {
+      type: "array",
+      maxItems: maxStalledOnYouEntries,
+      description:
+        "Short notes grouping open pull requests with aging flags where someone else spoke last and the reviewer owes the next reply — restate the listed facts only, never advice about code or people.",
       items: {
         type: "object",
         additionalProperties: false,
@@ -283,7 +310,7 @@ export function buildAiInsightsPrompt(input: AiInsightsInput): {
 
   lines.push(
     "",
-    "Write the headline, then the needs-you reading order, then the while-away notes, then sweep notes grouping the pull requests with aging flags. Only reference listed ids; leave a list empty when nothing fits it."
+    "Write the headline, then the needs-you reading order, then stalled-on-you notes grouping the pull requests where the reviewer owes the next reply, then the while-away notes, then sweep notes grouping the remaining pull requests with aging flags. Only reference listed ids; leave a list empty when nothing fits it."
   )
 
   return { system, user: lines.join("\n") }
@@ -313,6 +340,7 @@ export function normalizeAiInsightsContent(
   const parsed = (value ?? {}) as {
     headline?: unknown
     readingOrder?: unknown
+    stalledOnYou?: unknown
     whileAway?: unknown
     sweep?: unknown
   }
@@ -355,6 +383,14 @@ export function normalizeAiInsightsContent(
         why: entry.text,
       })
     ),
+    stalledOnYou: pick(
+      parsed.stalledOnYou,
+      "note",
+      maxStalledOnYouEntries
+    ).map((entry) => ({
+      pullRequestId: entry.pullRequestId,
+      note: entry.text,
+    })),
     whileAway: pick(parsed.whileAway, "note", maxWhileAwayEntries).map(
       (entry) => ({
         pullRequestId: entry.pullRequestId,

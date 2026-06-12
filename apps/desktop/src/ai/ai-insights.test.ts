@@ -44,6 +44,7 @@ function makeInsights(
 describe("buildAiInsightsInput", () => {
   it("orders sections edges-first and aggregates chips per pull request", () => {
     const urgent = makeItem({ id: "pr_urgent" })
+    const stalled = makeItem({ id: "pr_stalled", waitingOn: "none" })
     const aging = makeItem({ id: "pr_aging", waitingOn: "author" })
     const missing = makeItem({ id: "pr_missing" })
     const unseenOnly = makeItem({
@@ -59,12 +60,14 @@ describe("buildAiInsightsInput", () => {
         makeRow(urgent, "Your turn for 4d"),
         makeRow(urgent, "2 threads await your reply"),
       ],
+      stalledOnYou: [makeRow(stalled, "No activity for 9d — maya spoke last")],
       hygiene: [makeRow(aging, "Nothing moved for 9d")],
       mightBeMissing: [makeRow(missing, "Snoozed, but 4 events arrived")],
     })
 
     const input = buildAiInsightsInput(insights, [
       urgent,
+      stalled,
       aging,
       missing,
       unseenOnly,
@@ -72,6 +75,7 @@ describe("buildAiInsightsInput", () => {
 
     expect(input.items.map((item) => item.id)).toEqual([
       "pr_urgent",
+      "pr_stalled",
       "pr_aging",
       "pr_unseen",
       "pr_missing",
@@ -80,7 +84,10 @@ describe("buildAiInsightsInput", () => {
       "needs you now: Your turn for 4d",
       "needs you now: 2 threads await your reply",
     ])
-    expect(input.items[2]?.unseenEvents).toEqual(["maya pushed 2 commits"])
+    expect(input.items[1]?.chips).toEqual([
+      "stalled on you: No activity for 9d — maya spoke last",
+    ])
+    expect(input.items[3]?.unseenEvents).toEqual(["maya pushed 2 commits"])
     expect(input.omittedCount).toBe(0)
   })
 
@@ -161,7 +168,8 @@ describe("buildAiInsightsPrompt", () => {
       "discussion — [2026-06-10T09:00:00.000Z] review_comment on src/webhooks.ts:44 by maya:"
     )
     expect(user).toContain("The webhook retry state now matches")
-    expect(user).toContain("sweep notes grouping the pull requests")
+    expect(user).toContain("stalled-on-you notes grouping the pull requests")
+    expect(user).toContain("sweep notes grouping the remaining pull requests")
   })
 
   it("is deterministic and notes omissions", () => {
@@ -192,6 +200,11 @@ describe("normalizeAiInsightsContent", () => {
             { pullRequestId: "pr_invented", why: "hallucinated" },
             { pullRequestId: "pr_2", why: "" },
           ],
+          stalledOnYou: [
+            { pullRequestId: "pr_2", note: " You owe maya a reply. " },
+            { pullRequestId: "pr_2", note: "duplicate" },
+            { pullRequestId: "pr_invented", note: "hallucinated" },
+          ],
           whileAway: [{ pullRequestId: "pr_2", note: "Merged without you." }],
           sweep: [
             { pullRequestId: "pr_3", note: " Stalled for 11d. " },
@@ -203,9 +216,34 @@ describe("normalizeAiInsightsContent", () => {
     ).toEqual({
       headline: "Two PRs need you.",
       readingOrder: [{ pullRequestId: "pr_1", why: "Overdue 4d." }],
+      stalledOnYou: [{ pullRequestId: "pr_2", note: "You owe maya a reply." }],
       whileAway: [{ pullRequestId: "pr_2", note: "Merged without you." }],
       sweep: [{ pullRequestId: "pr_3", note: "Stalled for 11d." }],
     })
+  })
+
+  it("caps the stalled-on-you section at four notes", () => {
+    const ids = ["pr_1", "pr_2", "pr_3", "pr_4", "pr_5"]
+    const content = normalizeAiInsightsContent(
+      {
+        headline: "Reply queue.",
+        readingOrder: [],
+        stalledOnYou: ids.map((id) => ({
+          pullRequestId: id,
+          note: `Note ${id}`,
+        })),
+        whileAway: [],
+        sweep: [],
+      },
+      ids
+    )
+
+    expect(content.stalledOnYou.map((entry) => entry.pullRequestId)).toEqual([
+      "pr_1",
+      "pr_2",
+      "pr_3",
+      "pr_4",
+    ])
   })
 
   it("caps the sweep section at four notes", () => {
@@ -214,6 +252,7 @@ describe("normalizeAiInsightsContent", () => {
       {
         headline: "Sweep day.",
         readingOrder: [],
+        stalledOnYou: [],
         whileAway: [],
         sweep: ids.map((id) => ({ pullRequestId: id, note: `Note ${id}` })),
       },
