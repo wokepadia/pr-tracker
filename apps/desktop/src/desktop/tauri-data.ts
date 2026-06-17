@@ -64,24 +64,22 @@ import {
   type AiDashboardInput,
 } from "@/ai/ai-dashboard"
 import {
-  buildCatchUpDigestPrompt,
-  buildPrSummaryPrompt,
-  buildThreadStatePrompt,
-  catchUpDigestSchema,
-  catchUpDigestSchemaName,
-  normalizeCatchUpDigestContent,
-  normalizePrSummaryContent,
-  normalizeThreadStateContent,
-  prSummarySchema,
-  prSummarySchemaName,
-  threadStateSchema,
-  threadStateSchemaName,
-  type CatchUpDigestContent,
-  type PrSummaryContent,
-  type ThreadStateContent,
-  type ThreadStateCommentInput,
-} from "@/ai/summaries"
-import { defaultAttentionThresholds } from "@/reviewer/view-model"
+  buildPrBriefPrompt,
+  normalizePrBriefContent,
+  prBriefSchema,
+  prBriefSchemaName,
+  threadLocationKey,
+  type PrBriefCommentInput,
+  type PrBriefContent,
+  type PrBriefEventInput,
+  type PrBriefThreadInput,
+} from "@/ai/pr-brief"
+import {
+  defaultAttentionThresholds,
+  toReviewQueueItemView,
+  type AttentionThresholds,
+  type ReviewQueueItemView,
+} from "@/reviewer/view-model"
 import { localDesktopSchemaSql } from "../../../../packages/db/src/local-schema"
 import { createQueuedTransaction } from "./sqlite-transaction"
 
@@ -219,9 +217,7 @@ interface ReviewCommentInput {
   rawPayload: unknown
 }
 
-type DiscussionCommentInput = ThreadStateCommentInput & {
-  source: "issue_comment" | "review_comment" | "review"
-}
+type DiscussionCommentInput = PrBriefCommentInput
 
 interface StrongholdSession {
   stronghold: Stronghold
@@ -709,30 +705,31 @@ export async function saveDesktopAiSettings(
   return settings
 }
 
-export async function getDesktopAiPrSummary(
+export async function getDesktopAiPrBrief(
   pullRequestId: string
-): Promise<AiGenerated<PrSummaryContent> | null> {
+): Promise<AiGenerated<PrBriefContent> | null> {
   const db = await getDatabase()
-  const row = await readAiSummaryRow(db, pullRequestId, "pr-summary")
+  const row = await readAiSummaryRow(db, pullRequestId, "pr-brief")
   if (!row) {
     // null, not undefined: TanStack Query rejects undefined query data.
     return null
   }
 
   const settings = await readLocalAiSettings(db)
-  const expectedKey = await prSummaryCacheKey(db, pullRequestId, settings.model)
+  const { allowedFiles } = await loadPrBriefThreads(db, pullRequestId)
+  const expectedKey = await prBriefCacheKey(db, pullRequestId, settings.model)
 
   return {
-    content: normalizePrSummaryContent(JSON.parse(row.content_json)),
+    content: normalizePrBriefContent(JSON.parse(row.content_json), allowedFiles),
     generatedAt: row.generated_at,
     model: row.model,
     isStale: expectedKey !== row.cache_key,
   }
 }
 
-export async function generateDesktopAiPrSummary(
+export async function generateDesktopAiPrBrief(
   pullRequestId: string
-): Promise<AiGenerated<PrSummaryContent>> {
+): Promise<AiGenerated<PrBriefContent>> {
   const db = await getDatabase()
   const config = await requireActiveAiConfig(db)
   const pullRequest = (await listPullRequestRows(db, { id: pullRequestId }))[0]
@@ -743,7 +740,7 @@ export async function generateDesktopAiPrSummary(
   const credentials = await loadLocalGithubCredentials(db)
   if (!credentials) {
     throw new Error(
-      "Generating a summary needs GitHub access to fetch the diff. Configure GitHub in Settings first."
+      "Generating a brief needs GitHub access to fetch the diff. Configure GitHub in Settings first."
     )
   }
 
@@ -758,145 +755,56 @@ export async function generateDesktopAiPrSummary(
     )
   }
 
-  const prompt = buildPrSummaryPrompt({
-    repository: pullRequest.repository_full_name,
-    number: pullRequest.number,
-    title: pullRequest.title,
+  const { item } = await loadPullRequestView(db, pullRequestId)
+  const { threads, allowedFiles } = await loadPrBriefThreads(db, pullRequestId)
+  const comments = await listDiscussionComments(db, pullRequestId)
+  const newEvents = await loadPrBriefNewEvents(db, pullRequestId)
+
+  const prompt = buildPrBriefPrompt({
+    repository: item.repository,
+    number: item.number,
+    title: item.title,
     body: pullRequest.body ?? undefined,
-    authorLogin: pullRequest.author_login,
-    state: pullRequest.state,
+    authorLogin: item.authorLogin,
+    viewerLogin: await resolveViewerLogin(db),
+    state: item.state,
     isDraft: pullRequest.is_draft === 1,
-    additions: pullRequest.additions ?? undefined,
-    deletions: pullRequest.deletions ?? undefined,
-    changedFiles: pullRequest.changed_files ?? undefined,
+    additions: item.size?.additions,
+    deletions: item.size?.deletions,
+    changedFiles: item.size?.fileCount,
+    waitingOn: item.waitingOn,
+    waitingAge: item.waitingAge,
+    waitingUrgency: item.waitingUrgency,
+    isStalled: isItemStalled(item),
+    reason: item.reason,
+    userLastReviewDecision: item.userLastReviewDecision,
+    approvalStale: item.approvalStale,
+    reviewRounds: item.reviewRounds,
+    checksState: item.checks?.state,
+    lastSeenLabel: item.lastSeenAtIso ? item.lastSeenAt : undefined,
+    otherReviewers: item.otherReviewers.map((reviewer) => ({
+      login: reviewer.login,
+      decision: reviewer.decision,
+    })),
+    newEvents,
+    threads,
+    comments,
     files,
   })
-  const content = normalizePrSummaryContent(
-    await runStructuredAiCompletion<PrSummaryContent>(config, {
+
+  const content = normalizePrBriefContent(
+    await runStructuredAiCompletion<PrBriefContent>(config, {
       system: prompt.system,
       user: prompt.user,
-      schemaName: prSummarySchemaName,
-      schema: prSummarySchema,
-    })
-  )
-
-  const generatedAt = new Date().toISOString()
-  await writeAiSummaryRow(db, pullRequestId, "pr-summary", {
-    cacheKey: await prSummaryCacheKey(db, pullRequestId, config.model),
-    model: config.model,
-    contentJson: JSON.stringify(content),
-    generatedAt,
-  })
-
-  return { content, generatedAt, model: config.model, isStale: false }
-}
-
-export async function getDesktopAiCatchUpDigest(
-  pullRequestId: string
-): Promise<AiGenerated<CatchUpDigestContent> | null> {
-  const db = await getDatabase()
-  const row = await readAiSummaryRow(db, pullRequestId, "catch-up-digest")
-  if (!row) {
-    return null
-  }
-
-  const settings = await readLocalAiSettings(db)
-  const prompt = await buildCatchUpDigestPromptForPullRequest(db, pullRequestId)
-  const expectedKey = await hashContent(
-    `catch-up-digest\n${settings.model}\n${prompt?.user ?? ""}`
-  )
-
-  return {
-    content: normalizeCatchUpDigestContent(JSON.parse(row.content_json)),
-    generatedAt: row.generated_at,
-    model: row.model,
-    isStale: expectedKey !== row.cache_key,
-  }
-}
-
-export async function generateDesktopAiCatchUpDigest(
-  pullRequestId: string
-): Promise<AiGenerated<CatchUpDigestContent>> {
-  const db = await getDatabase()
-  const config = await requireActiveAiConfig(db)
-  const prompt = await buildCatchUpDigestPromptForPullRequest(db, pullRequestId)
-  if (!prompt) {
-    throw new Error("Nothing new has happened since you last caught up.")
-  }
-
-  const content = normalizeCatchUpDigestContent(
-    await runStructuredAiCompletion<CatchUpDigestContent>(config, {
-      system: prompt.system,
-      user: prompt.user,
-      schemaName: catchUpDigestSchemaName,
-      schema: catchUpDigestSchema,
-    })
-  )
-
-  const generatedAt = new Date().toISOString()
-  await writeAiSummaryRow(db, pullRequestId, "catch-up-digest", {
-    cacheKey: await hashContent(
-      `catch-up-digest\n${config.model}\n${prompt.user}`
-    ),
-    model: config.model,
-    contentJson: JSON.stringify(content),
-    generatedAt,
-  })
-
-  return { content, generatedAt, model: config.model, isStale: false }
-}
-
-export async function getDesktopAiThreadState(
-  pullRequestId: string
-): Promise<AiGenerated<ThreadStateContent> | null> {
-  const db = await getDatabase()
-  const row = await readAiSummaryRow(db, pullRequestId, "thread-state")
-  if (!row) {
-    return null
-  }
-
-  const settings = await readLocalAiSettings(db)
-  const input = await buildThreadStateInputForPullRequest(db, pullRequestId)
-  const expectedKey = await hashContent(
-    `thread-state\n${settings.model}\n${input?.prompt.user ?? ""}`
-  )
-
-  return {
-    content: normalizeThreadStateContent(
-      JSON.parse(row.content_json),
-      input?.allowedFiles ?? []
-    ),
-    generatedAt: row.generated_at,
-    model: row.model,
-    isStale: expectedKey !== row.cache_key,
-  }
-}
-
-export async function generateDesktopAiThreadState(
-  pullRequestId: string
-): Promise<AiGenerated<ThreadStateContent>> {
-  const db = await getDatabase()
-  const config = await requireActiveAiConfig(db)
-  const input = await buildThreadStateInputForPullRequest(db, pullRequestId)
-  if (!input) {
-    throw new Error("This pull request has no review threads to summarize.")
-  }
-
-  const content = normalizeThreadStateContent(
-    await runStructuredAiCompletion<ThreadStateContent>(config, {
-      system: input.prompt.system,
-      user: input.prompt.user,
-      schemaName: threadStateSchemaName,
-      schema: threadStateSchema,
+      schemaName: prBriefSchemaName,
+      schema: prBriefSchema,
     }),
-    input.allowedFiles
+    allowedFiles
   )
 
   const generatedAt = new Date().toISOString()
-  await writeAiSummaryRow(db, pullRequestId, "thread-state", {
-    cacheKey: await hashContent(
-      `thread-state\n${config.model}\n${input.prompt.user}`
-    ),
+  await writeAiSummaryRow(db, pullRequestId, "pr-brief", {
+    cacheKey: await prBriefCacheKey(db, pullRequestId, config.model),
     model: config.model,
     contentJson: JSON.stringify(content),
     generatedAt,
@@ -1022,7 +930,7 @@ async function dropOutdatedAiSummariesTable(db: SqlDatabase): Promise<void> {
     `select sql from sqlite_master where type = 'table' and name = 'ai_summaries'`
   )
   const createSql = rows[0]?.sql
-  if (createSql && !createSql.includes("'ai-dashboard'")) {
+  if (createSql && !createSql.includes("'pr-brief'")) {
     await db.execute(`drop table ai_summaries`)
   }
 }
@@ -2792,9 +2700,7 @@ async function writeAiApiKey(db: SqlDatabase, apiKey: string): Promise<void> {
 }
 
 type AiSummaryKind =
-  | "pr-summary"
-  | "catch-up-digest"
-  | "thread-state"
+  | "pr-brief"
   | "ai-dashboard"
 
 interface AiSummaryRow {
@@ -2914,19 +2820,120 @@ async function writeAiSummaryRow(
 }
 
 /**
- * The digest covers the deterministic delta the page already computes: all
- * cached activity after the board item's last-seen marker. Returns
- * undefined when there is nothing new to digest.
+ * Builds the board-scoped view-model item for one pull request, the source of
+ * the turn facts (whose move, waiting age, reason, checks, reviewers) the PR
+ * brief is grounded in.
  */
-async function buildCatchUpDigestPromptForPullRequest(
+async function loadPullRequestView(
   db: SqlDatabase,
   pullRequestId: string
-): Promise<{ system: string; user: string } | undefined> {
-  const pullRequest = (await listPullRequestRows(db, { id: pullRequestId }))[0]
-  if (!pullRequest) {
+): Promise<{ item: ReviewQueueItemView; viewerLogin: string }> {
+  const pullRequests = await loadPullRequests(db, pullRequestId)
+  if (pullRequests.length === 0) {
     throw new Error("Pull request not found.")
   }
 
+  const viewerLogin = await resolveViewerLogin(db)
+  const actors = buildActors(
+    pullRequests,
+    [viewerLogin],
+    await loadAvatarUrlsByLogin(db)
+  )
+  const viewer = ensureActor(actors, viewerLogin)
+  const inbox = buildReviewerInbox({
+    viewer,
+    actors,
+    pullRequests,
+    now: new Date().toISOString(),
+    lastSeenAtByPullRequestId: await loadLastSeen(db),
+  })
+  const classified = inbox.items[0] ?? inbox.inactiveItems?.[0]
+  if (!classified) {
+    throw new Error("Pull request not found.")
+  }
+
+  const item = toReviewQueueItemView(
+    classified,
+    new Map(actors.map((actor) => [actor.id, actor])),
+    viewer.id,
+    await readAttentionThresholds(db)
+  )
+  return { item, viewerLogin }
+}
+
+function isItemStalled(item: ReviewQueueItemView): boolean {
+  return item.workflowState === "stale" || item.waitingUrgency === "overdue"
+}
+
+async function readAttentionThresholds(
+  db: SqlDatabase
+): Promise<AttentionThresholds> {
+  const raw = await readAppSetting(db, attentionSettingsKey)
+  if (!raw) return { ...defaultAttentionThresholds }
+  try {
+    return normalizeAttentionSettings(JSON.parse(raw))
+  } catch {
+    return { ...defaultAttentionThresholds }
+  }
+}
+
+/**
+ * Local thread facts for the PR brief, plus the allowed file list the
+ * normalizer uses to drop any thread note whose path is not a real thread.
+ */
+async function loadPrBriefThreads(
+  db: SqlDatabase,
+  pullRequestId: string
+): Promise<{ threads: PrBriefThreadInput[]; allowedFiles: string[] }> {
+  const threadRows = await listReviewThreadRows(db, pullRequestId)
+  if (threadRows.length === 0) {
+    return { threads: [], allowedFiles: [] }
+  }
+
+  const viewerLogin = await resolveViewerLogin(db)
+  const participants = await listReviewThreadParticipantRows(
+    db,
+    threadRows.map((thread) => thread.id)
+  )
+  const participantsByThreadId = new Map<string, string[]>()
+  for (const participant of participants) {
+    const logins = participantsByThreadId.get(participant.review_thread_id) ?? []
+    logins.push(participant.login)
+    participantsByThreadId.set(participant.review_thread_id, logins)
+  }
+
+  const threads: PrBriefThreadInput[] = threadRows.map((thread) => {
+    const isResolved = thread.is_resolved === 1
+    return {
+      filePath: thread.file_path ?? undefined,
+      line: thread.line ?? undefined,
+      status: isResolved ? "resolved" : "unresolved",
+      awaitingYourReply:
+        !isResolved && thread.last_actor_login !== viewerLogin,
+      isOutdated: thread.is_outdated === 1,
+      lastActorLogin: thread.last_actor_login ?? undefined,
+      participants: participantsByThreadId.get(thread.id) ?? [],
+    }
+  })
+
+  return {
+    threads,
+    allowedFiles: threadRows.flatMap((thread) =>
+      thread.file_path
+        ? [threadLocationKey(thread.file_path, thread.line ?? undefined)]
+        : []
+    ),
+  }
+}
+
+/**
+ * The activity (with comment bodies) that landed after the board item's
+ * last-seen marker — what the brief restates under "since you last looked".
+ */
+async function loadPrBriefNewEvents(
+  db: SqlDatabase,
+  pullRequestId: string
+): Promise<PrBriefEventInput[]> {
   const lastSeenAt = (
     await db.select<Array<{ last_seen_at: string | null }>>(
       `
@@ -2943,97 +2950,25 @@ async function buildCatchUpDigestPromptForPullRequest(
   const comments = (await listDiscussionComments(db, pullRequestId)).filter(
     (comment) => !lastSeenAt || comment.occurredAt > lastSeenAt
   )
-  if (events.length === 0 && comments.length === 0) {
-    return undefined
-  }
 
-  return buildCatchUpDigestPrompt({
-    repository: pullRequest.repository_full_name,
-    number: pullRequest.number,
-    title: pullRequest.title,
-    lastSeenAt: lastSeenAt ?? undefined,
-    events: [
-      ...events.map((event) => ({
-        type: event.event_type,
-        actor: event.actor_login,
-        title: event.title,
-        body: event.body ?? undefined,
-        occurredAt: event.occurred_at,
-      })),
-      ...comments.map((comment) => ({
-        type: comment.source,
-        actor: comment.actor,
-        title: comment.filePath
-          ? `Commented on ${comment.filePath}${comment.line ? `:${comment.line}` : ""}`
-          : "Commented on the pull request",
-        body: comment.body,
-        occurredAt: comment.occurredAt,
-      })),
-    ].sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt)),
-  })
-}
-
-/**
- * Thread-state input is fully local: the cached thread rows plus the
- * comment/review bodies from the activity feed. The allowed file list lets
- * the normalizer drop any note whose path is not a real thread.
- */
-async function buildThreadStateInputForPullRequest(
-  db: SqlDatabase,
-  pullRequestId: string
-): Promise<
-  | {
-      prompt: { system: string; user: string }
-      allowedFiles: string[]
-    }
-  | undefined
-> {
-  const pullRequest = (await listPullRequestRows(db, { id: pullRequestId }))[0]
-  if (!pullRequest) {
-    throw new Error("Pull request not found.")
-  }
-
-  const threads = await listReviewThreadRows(db, pullRequestId)
-  if (threads.length === 0) {
-    return undefined
-  }
-
-  const participants = await listReviewThreadParticipantRows(
-    db,
-    threads.map((thread) => thread.id)
-  )
-  const participantsByThreadId = new Map<string, string[]>()
-  for (const participant of participants) {
-    const logins = participantsByThreadId.get(participant.review_thread_id) ?? []
-    logins.push(participant.login)
-    participantsByThreadId.set(participant.review_thread_id, logins)
-  }
-
-  const comments = await listDiscussionComments(db, pullRequestId)
-
-  const prompt = buildThreadStatePrompt({
-    repository: pullRequest.repository_full_name,
-    number: pullRequest.number,
-    title: pullRequest.title,
-    viewerLogin: await resolveViewerLogin(db),
-    threads: threads.map((thread) => ({
-      filePath: thread.file_path ?? undefined,
-      line: thread.line ?? undefined,
-      isResolved: thread.is_resolved === 1,
-      isOutdated: thread.is_outdated === 1,
-      participants: participantsByThreadId.get(thread.id) ?? [],
-      lastActorLogin: thread.last_actor_login ?? undefined,
-      lastActivityAt: thread.last_activity_at,
+  return [
+    ...events.map((event) => ({
+      type: event.event_type,
+      actor: event.actor_login,
+      title: event.title,
+      body: event.body ?? undefined,
+      occurredAt: event.occurred_at,
     })),
-    comments,
-  })
-
-  return {
-    prompt,
-    allowedFiles: threads.flatMap((thread) =>
-      thread.file_path ? [thread.file_path] : []
-    ),
-  }
+    ...comments.map((comment) => ({
+      type: comment.source,
+      actor: comment.actor,
+      title: comment.filePath
+        ? `Commented on ${comment.filePath}${comment.line ? `:${comment.line}` : ""}`
+        : "Commented on the pull request",
+      body: comment.body,
+      occurredAt: comment.occurredAt,
+    })),
+  ].sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt))
 }
 
 async function listDiscussionComments(
@@ -3092,17 +3027,31 @@ async function enrichAiDashboardInputWithComments(
 }
 
 /**
- * The summary is regenerated only when the head commit (or the model)
- * changes; comment-only activity keeps the cached diff summary valid.
+ * The brief goes stale when the head commit moves, when GitHub records new
+ * activity (its updated_at advances on comments and reviews), or when the
+ * reviewer marks the pull request caught up. Computed from local rows only so
+ * the read path never needs a GitHub round trip; the cached content still
+ * renders until the reviewer regenerates.
  */
-async function prSummaryCacheKey(
+async function prBriefCacheKey(
   db: SqlDatabase,
   pullRequestId: string,
   model: string
 ): Promise<string> {
   const row = (await listPullRequestRows(db, { id: pullRequestId }))[0]
-  const head = row?.latest_commit_sha ?? row?.github_updated_at ?? ""
-  return hashContent(`pr-summary\n${model}\n${head}`)
+  const head = row?.latest_commit_sha ?? ""
+  const updatedAt = row?.github_updated_at ?? ""
+  const lastSeenAt =
+    (
+      await db.select<Array<{ last_seen_at: string | null }>>(
+        `
+          select last_seen_at from board_items
+          where board_id = $1 and pull_request_id = $2
+        `,
+        [defaultLocalBoardId, pullRequestId]
+      )
+    )[0]?.last_seen_at ?? ""
+  return hashContent(`pr-brief\n${model}\n${head}\n${updatedAt}\n${lastSeenAt}`)
 }
 
 async function getStrongholdSession(

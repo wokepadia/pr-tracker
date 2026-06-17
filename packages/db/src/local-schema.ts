@@ -459,6 +459,6 @@ create table if not exists ai_summaries (
   content_json text not null,
   generated_at text not null default current_timestamp,
   primary key (pull_request_id, kind),
-  check (kind in ('pr-summary', 'catch-up-digest', 'thread-state', 'ai-dashboard'))
+  check (kind in ('pr-brief', 'ai-dashboard'))
 );
 `;

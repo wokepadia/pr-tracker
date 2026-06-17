@@ -3,11 +3,7 @@ import type {
   ClassifiedPullRequest,
   ReviewerInbox,
 } from "@pr-tracker/reviewer-workflow"
-import type {
-  CatchUpDigestContent,
-  PrSummaryContent,
-  ThreadStateContent,
-} from "@/ai/summaries"
+import type { PrBriefContent } from "@/ai/pr-brief"
 import type {
   AiDashboardContent,
   AiDashboardInput,
@@ -193,40 +189,16 @@ export async function saveAiSettings(
   return (await getDesktopApi()).saveDesktopAiSettings(input)
 }
 
-export async function getAiPrSummary(
+export async function getAiPrBrief(
   pullRequestId: string
-): Promise<AiGenerated<PrSummaryContent> | null> {
-  return (await getDesktopApi()).getDesktopAiPrSummary(pullRequestId)
+): Promise<AiGenerated<PrBriefContent> | null> {
+  return (await getDesktopApi()).getDesktopAiPrBrief(pullRequestId)
 }
 
-export async function generateAiPrSummary(
+export async function generateAiPrBrief(
   pullRequestId: string
-): Promise<AiGenerated<PrSummaryContent>> {
-  return (await getDesktopApi()).generateDesktopAiPrSummary(pullRequestId)
-}
-
-export async function getAiCatchUpDigest(
-  pullRequestId: string
-): Promise<AiGenerated<CatchUpDigestContent> | null> {
-  return (await getDesktopApi()).getDesktopAiCatchUpDigest(pullRequestId)
-}
-
-export async function generateAiCatchUpDigest(
-  pullRequestId: string
-): Promise<AiGenerated<CatchUpDigestContent>> {
-  return (await getDesktopApi()).generateDesktopAiCatchUpDigest(pullRequestId)
-}
-
-export async function getAiThreadState(
-  pullRequestId: string
-): Promise<AiGenerated<ThreadStateContent> | null> {
-  return (await getDesktopApi()).getDesktopAiThreadState(pullRequestId)
-}
-
-export async function generateAiThreadState(
-  pullRequestId: string
-): Promise<AiGenerated<ThreadStateContent>> {
-  return (await getDesktopApi()).generateDesktopAiThreadState(pullRequestId)
+): Promise<AiGenerated<PrBriefContent>> {
+  return (await getDesktopApi()).generateDesktopAiPrBrief(pullRequestId)
 }
 
 export async function getAiDashboard(
