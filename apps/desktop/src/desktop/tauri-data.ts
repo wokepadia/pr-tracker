@@ -744,14 +744,22 @@ export async function generateDesktopAiPrBrief(
     )
   }
 
-  const source = createGithubTokenPullRequestSource(credentials)
+  // The board can track pull requests from repositories outside the
+  // explicitly configured list (a search-query board pulls them in), so allow
+  // the diff fetch for this already-tracked pull request's own repository.
+  const source = createGithubTokenPullRequestSource({
+    ...credentials,
+    repositories: [
+      ...new Set([...credentials.repositories, pullRequest.repository_full_name]),
+    ],
+  })
   const files = await source.listPullRequestChangedFiles({
     repository: pullRequest.repository_full_name,
     number: pullRequest.number,
   })
   if (!files) {
     throw new Error(
-      "Could not fetch the diff for this pull request from GitHub."
+      "GitHub returned no changed files for this pull request, so there is no diff to brief."
     )
   }
 
