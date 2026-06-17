@@ -16,57 +16,11 @@ afterEach(() => {
 })
 
 describe("reviewer view model", () => {
-  it("maps workflow classifications into reviewer queue lanes", () => {
+  it("maps the inbox into board-scoped active and inactive items", () => {
     const view = buildInboxView(buildSampleInbox())
 
-    expect(view.laneItems.needs_review.map((item) => item.id)).toEqual(["pr_1"])
-    expect(view.laneItems.updated_since_review.map((item) => item.id)).toEqual([
-      "pr_2",
-    ])
-    expect(view.laneItems.waiting_on_author.map((item) => item.id)).toEqual([
-      "pr_3",
-    ])
-  })
-
-  it("keeps approved and watching pull requests reachable as queue buckets", () => {
-    const inbox: ReviewerInbox = {
-      viewer: { id: "viewer", login: "you" },
-      actors: [
-        { id: "viewer", login: "you" },
-        { id: "maya", login: "maya" },
-      ],
-      items: [
-        classifiedItem("pr_approved", "approved"),
-        classifiedItem("pr_caught_up", "caught_up"),
-        classifiedItem("pr_watching", "watching"),
-        classifiedItem("pr_stale", "stale"),
-      ],
-      sections: {
-        needs_review: [],
-        updated_since_review: [],
-        waiting_on_author: [],
-        needs_thread_attention: [],
-        approved: [classifiedItem("pr_approved", "approved")],
-        caught_up: [classifiedItem("pr_caught_up", "caught_up")],
-        stale: [classifiedItem("pr_stale", "stale")],
-        watching: [classifiedItem("pr_watching", "watching")],
-        inactive: [],
-      },
-      inactiveItems: [],
-    }
-
-    const view = buildInboxView(inbox)
-
-    expect(view.laneItems.approved.map((item) => item.id)).toEqual([
-      "pr_approved",
-    ])
-    expect(view.laneItems.watching.map((item) => item.id)).toEqual([
-      "pr_caught_up",
-      "pr_watching",
-      "pr_stale",
-    ])
-    expect(view.approvedCount).toBe(1)
-    expect(view.watchingCount).toBe(3)
+    expect(view.items.map((item) => item.id)).toEqual(["pr_1", "pr_2", "pr_3"])
+    expect(Array.isArray(view.inactiveItems)).toBe(true)
   })
 
   it("counts only unseen deterministic activity facts", () => {

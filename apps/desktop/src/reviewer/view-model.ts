@@ -20,8 +20,6 @@ export type ReviewLaneId =
   | "updated_since_review"
   | "waiting_on_author"
 
-export type ReviewQueueBucketId = ReviewLaneId | "approved" | "watching"
-
 export type WaitingOn = "you" | "author" | "none"
 
 export type WaitingUrgency = "none" | "elevated" | "overdue"
@@ -163,13 +161,9 @@ export interface ReviewQueueItemView {
 
 export interface ReviewerInboxView {
   items: ReviewQueueItemView[]
-  /** Recently closed or merged pull requests, for insight projections. */
+  /** Recently closed or merged pull requests, so the dashboard can report
+   * activity that landed while the reviewer was away. */
   inactiveItems: ReviewQueueItemView[]
-  laneItems: Record<ReviewQueueBucketId, ReviewQueueItemView[]>
-  approvedCount: number
-  watchingCount: number
-  actorById: Map<string, Actor>
-  viewerId: string
 }
 
 export function canMarkReviewItemCaughtUp(
@@ -191,35 +185,7 @@ export function buildInboxView(
     toReviewQueueItemView(item, actorById, inbox.viewer.id, thresholds)
   )
 
-  return {
-    items,
-    inactiveItems,
-    laneItems: {
-      needs_review: items.filter((item) => item.laneId === "needs_review"),
-      updated_since_review: items.filter(
-        (item) => item.laneId === "updated_since_review"
-      ),
-      waiting_on_author: items.filter(
-        (item) => item.laneId === "waiting_on_author"
-      ),
-      approved: items.filter((item) => item.laneId === "approved"),
-      watching: items.filter(
-        (item) =>
-          item.laneId === "caught_up" ||
-          item.laneId === "watching" ||
-          item.laneId === "stale"
-      ),
-    },
-    approvedCount: items.filter((item) => item.laneId === "approved").length,
-    watchingCount: items.filter(
-      (item) =>
-        item.laneId === "caught_up" ||
-        item.laneId === "watching" ||
-        item.laneId === "stale"
-    ).length,
-    actorById,
-    viewerId: inbox.viewer.id,
-  }
+  return { items, inactiveItems }
 }
 
 export function toReviewQueueItemView(
