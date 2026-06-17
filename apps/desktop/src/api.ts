@@ -90,22 +90,18 @@ export interface SaveAiSettingsInput {
 }
 
 export interface BoardState {
-  buckets: Array<{ id: string; label: string }>
-  localQueueState: Partial<Record<
-    string,
-    {
-      snoozed?: boolean
-      snoozedAt?: string
-      pinned?: boolean
-      muted?: boolean
-      mutedAt?: string
-      bucketId?: string
-      notes?: string
-    }
-  >>
-  userBucketItemOrder: Record<string, string[]>
-  bucketColumnWidths: Record<string, number>
+  /** One entry per pull request on the board. Presence is the membership
+   * signal every board-scoped surface keys on; the value carries the
+   * reviewer's private per-PR state. */
+  localQueueState: BoardScopeState
 }
+
+/** Per-pull-request local state that survives outside GitHub. */
+export interface BoardItemLocalState {
+  notes?: string
+}
+
+export type BoardScopeState = Partial<Record<string, BoardItemLocalState>>
 
 let desktopApiPromise: Promise<typeof import("./desktop/tauri-data")> | undefined
 
@@ -137,8 +133,17 @@ export async function getBoardState(): Promise<BoardState> {
   return (await getDesktopApi()).getDesktopBoardState()
 }
 
-export async function saveBoardState(state: BoardState): Promise<BoardState> {
-  return (await getDesktopApi()).saveDesktopBoardState(state)
+export async function getPullRequestNotes(
+  id: string
+): Promise<{ notes: string }> {
+  return (await getDesktopApi()).getDesktopPullRequestNotes(id)
+}
+
+export async function savePullRequestNotes(
+  id: string,
+  notes: string
+): Promise<{ notes: string }> {
+  return (await getDesktopApi()).saveDesktopPullRequestNotes(id, notes)
 }
 
 export async function syncGithubData(

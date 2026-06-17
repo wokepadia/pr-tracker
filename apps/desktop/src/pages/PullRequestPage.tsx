@@ -5,23 +5,18 @@ import {
   useQueryClient,
 } from "@tanstack/react-query"
 import {
-  useEffect,
   useState,
   type CSSProperties,
   type ReactNode,
 } from "react"
 import {
   ArrowLeft,
-  BellOff,
   Check,
   CheckCircle2,
-  ChevronDown,
-  Clock3,
   ExternalLink,
   GitCommitHorizontal,
   Loader2,
   MessageSquare,
-  Pin,
   RefreshCw,
   RotateCcw,
   Sparkles,
@@ -32,24 +27,16 @@ import type { PrBriefContent } from "@/ai/pr-brief"
 import { Button } from "@/components/ui/button"
 import { AuthorAvatar } from "@/components/AuthorAvatar"
 import { BoardItemNotes } from "@/components/BoardItemNotes"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { Separator } from "@/components/ui/separator"
 import {
   generateAiPrBrief,
   getAiPrBrief,
   getAiSettings,
   getAttentionSettings,
-  getBoardState,
   getPullRequest,
+  getPullRequestNotes,
   markPullRequestSeen,
-  saveBoardState,
+  savePullRequestNotes,
   type AiGenerated,
 } from "@/api"
 import { formatCount } from "@/lib/copy"
@@ -63,44 +50,12 @@ import {
   type ReviewThreadView,
   type SizeChipView,
 } from "@/reviewer/view-model"
-import {
-  bucketIdForLocalQueueItem,
-  canMuteLocalQueueItem,
-  canPinLocalQueueItem,
-  canSnoozeLocalQueueItem,
-  hasLocalQueueState,
-  defaultUserBuckets,
-  createEmptyUserBucketItemOrder,
-  userBucketLabelFromId,
-  type LocalPullRequestQueueState,
-  type LocalQueueStateByPullRequestId,
-  type UserBucketDefinition,
-  type UserBucketId,
-} from "@/reviewer/local-queue-state"
 import type { ReviewDecision } from "@pr-tracker/core"
 
 const reviewDecisionLabels: Record<ReviewDecision, string> = {
   approved: "approved",
   changes_requested: "changes req.",
   commented: "commented",
-}
-
-type DetailTone = "hot" | "changed" | "waiting" | "success" | "quiet"
-
-const detailDotClasses: Record<DetailTone, string> = {
-  hot: "bg-amber-500",
-  changed: "bg-sky-500",
-  waiting: "bg-violet-500",
-  success: "bg-emerald-500",
-  quiet: "bg-slate-400",
-}
-
-const detailBucketToneClasses: Partial<Record<UserBucketId, DetailTone>> = {
-  inbox: "hot",
-  reviewing: "changed",
-  waiting: "waiting",
-  later: "quiet",
-  done: "success",
 }
 
 export function PullRequestPage() {
@@ -118,24 +73,9 @@ export function PullRequestDetailSurface({
 }) {
   const queryClient = useQueryClient()
   const [caughtUpError, setCaughtUpError] = useState(false)
-  const [localQueueState, setLocalQueueState] =
-    useState<LocalQueueStateByPullRequestId>({})
-  const [userBuckets, setUserBuckets] =
-    useState<UserBucketDefinition[]>(defaultUserBuckets)
-  const [userBucketItemOrder, setUserBucketItemOrder] = useState(() =>
-    createEmptyUserBucketItemOrder()
-  )
-  const [bucketColumnWidths, setBucketColumnWidths] = useState<
-    Record<string, number>
-  >({})
-  const [hasHydratedBoardState, setHasHydratedBoardState] = useState(false)
   const detailQuery = useQuery({
     queryKey: ["pull-request", pullRequestId],
     queryFn: () => getPullRequest(pullRequestId),
-  })
-  const boardStateQuery = useQuery({
-    queryKey: ["board-state"],
-    queryFn: getBoardState,
   })
   const attentionSettingsQuery = useQuery({
     queryKey: ["attention-settings"],
@@ -145,9 +85,16 @@ export function PullRequestDetailSurface({
     queryKey: ["ai-settings"],
     queryFn: getAiSettings,
   })
+  const notesQuery = useQuery({
+    queryKey: ["pull-request-notes", pullRequestId],
+    queryFn: () => getPullRequestNotes(pullRequestId),
+  })
   const aiActive = isAiModeActive(aiSettingsQuery.data)
-  const saveBoardStateMutation = useMutation({
-    mutationFn: saveBoardState,
+  const saveNotesMutation = useMutation({
+    mutationFn: (notes: string) => savePullRequestNotes(pullRequestId, notes),
+    onSuccess: (result) => {
+      queryClient.setQueryData(["pull-request-notes", pullRequestId], result)
+    },
   })
   const markSeenMutation = useMutation({
     mutationFn: markPullRequestSeen,
@@ -168,110 +115,7 @@ export function PullRequestDetailSurface({
       )
     : undefined
 
-  useEffect(() => {
-    if (!boardStateQuery.data) return
-
-    setUserBuckets(boardStateQuery.data.buckets)
-    setLocalQueueState(boardStateQuery.data.localQueueState)
-    setUserBucketItemOrder(boardStateQuery.data.userBucketItemOrder)
-    setBucketColumnWidths(boardStateQuery.data.bucketColumnWidths)
-    setHasHydratedBoardState(true)
-  }, [boardStateQuery.data])
-
-  useEffect(() => {
-    if (!hasHydratedBoardState) return
-
-    saveBoardStateMutation.mutate({
-      buckets: userBuckets,
-      localQueueState,
-      userBucketItemOrder,
-      bucketColumnWidths,
-    })
-  }, [
-    bucketColumnWidths,
-    hasHydratedBoardState,
-    localQueueState,
-    userBucketItemOrder,
-    userBuckets,
-  ])
-
-  function updateLocalItemState(
-    itemId: string,
-    update: (current: LocalPullRequestQueueState) => LocalPullRequestQueueState
-  ) {
-    setLocalQueueState((current) => {
-      const next = { ...current }
-      const nextItemState = update(current[itemId] ?? {})
-
-      if (hasLocalQueueState(nextItemState)) {
-        next[itemId] = nextItemState
-      } else {
-        delete next[itemId]
-      }
-
-      return next
-    })
-  }
-
-  function movePullRequestToBucket(itemId: string, bucketId: UserBucketId) {
-    updateLocalItemState(itemId, (current) => ({
-      ...current,
-      bucketId,
-    }))
-  }
-
-  function snoozePullRequestById(itemId: string) {
-    const itemState = localQueueState[itemId] ?? {}
-    if (!canSnoozeLocalQueueItem(itemState)) return
-    updateLocalItemState(itemId, (current) => ({
-      ...current,
-      muted: undefined,
-      mutedAt: undefined,
-      snoozed: true,
-      snoozedAt: new Date().toISOString(),
-    }))
-  }
-
-  function restorePullRequestById(itemId: string) {
-    const itemState = localQueueState[itemId] ?? {}
-    if (!itemState.snoozed && !itemState.muted) return
-    updateLocalItemState(itemId, (current) => {
-      const next = { ...current }
-      delete next.snoozed
-      delete next.snoozedAt
-      delete next.muted
-      delete next.mutedAt
-      return next
-    })
-  }
-
-  function togglePinPullRequestById(itemId: string) {
-    const itemState = localQueueState[itemId] ?? {}
-    if (!canPinLocalQueueItem(itemState)) return
-    updateLocalItemState(itemId, (current) => ({
-      ...current,
-      pinned: current.pinned ? undefined : true,
-    }))
-  }
-
-  function mutePullRequestById(itemId: string) {
-    const itemState = localQueueState[itemId] ?? {}
-    if (!canMuteLocalQueueItem(itemState)) return
-    updateLocalItemState(itemId, (current) => ({
-      ...current,
-      muted: true,
-      mutedAt: new Date().toISOString(),
-    }))
-  }
-
-  function updatePullRequestNotes(itemId: string, notes: string) {
-    updateLocalItemState(itemId, (current) => ({
-      ...current,
-      notes: notes.trim() ? notes : undefined,
-    }))
-  }
-
-  async function markCaughtUpById(itemId: string) {
+  async function markCaughtUp(itemId: string) {
     setCaughtUpError(false)
     markSeenMutation.reset()
     await markSeenMutation.mutateAsync(itemId).catch(() => {
@@ -303,42 +147,6 @@ export function PullRequestDetailSurface({
   const newEventCount = loadedItem.activityEvents.filter(
     (event) => event.isNew
   ).length
-  const loadedItemLocalState = localQueueState[loadedItem.id] ?? {}
-  const bucketId = bucketIdForAvailableBucketId(
-    bucketIdForLocalQueueItem(loadedItemLocalState, loadedItem.laneId),
-    userBuckets
-  )
-  const isPinned = Boolean(loadedItemLocalState.pinned)
-  const isSnoozed = Boolean(loadedItemLocalState.snoozed)
-  const isMuted = Boolean(loadedItemLocalState.muted)
-
-  function snoozePullRequest() {
-    snoozePullRequestById(loadedItem.id)
-  }
-
-  function restorePullRequest() {
-    restorePullRequestById(loadedItem.id)
-  }
-
-  function togglePinPullRequest() {
-    togglePinPullRequestById(loadedItem.id)
-  }
-
-  function mutePullRequest() {
-    mutePullRequestById(loadedItem.id)
-  }
-
-  function updateNotes(notes: string) {
-    updatePullRequestNotes(loadedItem.id, notes)
-  }
-
-  function movePullRequest(bucketId: UserBucketId) {
-    movePullRequestToBucket(loadedItem.id, bucketId)
-  }
-
-  async function markCaughtUp() {
-    await markCaughtUpById(loadedItem.id)
-  }
 
   return (
     <div className="min-h-[760px] bg-background">
@@ -351,27 +159,17 @@ export function PullRequestDetailSurface({
             aiLoading={aiSettingsQuery.isLoading}
           />
           <BoardItemNotes
-            value={loadedItemLocalState.notes ?? ""}
-            onSave={updateNotes}
+            value={notesQuery.data?.notes ?? ""}
+            onSave={(notes) => saveNotesMutation.mutate(notes)}
             className="mb-6"
           />
         </main>
         <DetailSideRail
           item={loadedItem}
-          bucketId={bucketId}
-          userBuckets={userBuckets}
           newEventCount={newEventCount}
-          isPinned={isPinned}
-          isSnoozed={isSnoozed}
-          isMuted={isMuted}
           isMarkingSeen={markSeenMutation.isPending}
           caughtUpError={caughtUpError}
-          onSnooze={snoozePullRequest}
-          onRestore={restorePullRequest}
-          onTogglePin={togglePinPullRequest}
-          onMute={mutePullRequest}
-          onMoveToBucket={movePullRequest}
-          onCaughtUp={() => void markCaughtUp()}
+          onCaughtUp={() => void markCaughtUp(loadedItem.id)}
         />
       </div>
     </div>
@@ -933,7 +731,7 @@ function DetailHeader({
         >
           <Link to="/">
             <ArrowLeft className="h-4 w-4" />
-            Inbox
+            Home
           </Link>
         </Button>
       )}
@@ -974,90 +772,17 @@ function DetailHeader({
   )
 }
 
-function BucketMoveMenu({
-  bucketId,
-  userBuckets,
-  onMoveToBucket,
-  fullWidth,
-}: {
-  bucketId: UserBucketId
-  userBuckets: UserBucketDefinition[]
-  onMoveToBucket: (bucketId: UserBucketId) => void
-  fullWidth?: boolean
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          aria-label={`Move to bucket, currently ${userBucketLabelFromId(userBuckets, bucketId)}`}
-          className={cn(
-            "h-9 justify-between rounded-md text-xs",
-            fullWidth && "w-full"
-          )}
-        >
-          <span className="font-normal text-muted-foreground">
-            Move to bucket
-          </span>
-          <span className="inline-flex items-center gap-1.5 font-medium">
-            {userBucketLabelFromId(userBuckets, bucketId)}
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-          </span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-48 rounded-lg">
-        <DropdownMenuLabel>Move to bucket</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {userBuckets.map((bucket) => {
-          const tone = detailBucketToneClasses[bucket.id] ?? "quiet"
-          return (
-            <DropdownMenuItem
-              key={bucket.id}
-              disabled={bucket.id === bucketId}
-              onClick={() => onMoveToBucket(bucket.id)}
-            >
-              <span className={cn("h-2 w-2 rounded-full", detailDotClasses[tone])} />
-              {bucket.label}
-            </DropdownMenuItem>
-          )
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
 function DetailSideRail({
   item,
-  bucketId,
-  userBuckets,
   newEventCount,
-  isPinned,
-  isSnoozed,
-  isMuted,
   isMarkingSeen,
   caughtUpError,
-  onSnooze,
-  onRestore,
-  onTogglePin,
-  onMute,
-  onMoveToBucket,
   onCaughtUp,
 }: {
   item: ReviewQueueItemView
-  bucketId: UserBucketId
-  userBuckets: UserBucketDefinition[]
   newEventCount: number
-  isPinned: boolean
-  isSnoozed: boolean
-  isMuted: boolean
   isMarkingSeen: boolean
   caughtUpError: boolean
-  onSnooze: () => void
-  onRestore: () => void
-  onTogglePin: () => void
-  onMute: () => void
-  onMoveToBucket: (bucketId: UserBucketId) => void
   onCaughtUp: () => void
 }) {
   const canMarkCaughtUp = canMarkReviewItemCaughtUp(item, isMarkingSeen)
@@ -1092,12 +817,6 @@ function DetailSideRail({
               <ExternalLink className="h-4 w-4" />
             </a>
           </Button>
-          <BucketMoveMenu
-            bucketId={bucketId}
-            userBuckets={userBuckets}
-            onMoveToBucket={onMoveToBucket}
-            fullWidth
-          />
           <Button
             type="button"
             variant="outline"
@@ -1112,43 +831,6 @@ function DetailSideRail({
                 ? "All caught up"
                 : "Mark caught up"}
           </Button>
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isMuted}
-              onClick={isSnoozed ? onRestore : onSnooze}
-              className="h-9 justify-center"
-            >
-              {isSnoozed ? (
-                <RotateCcw className="h-4 w-4" />
-              ) : (
-                <Clock3 className="h-4 w-4" />
-              )}
-              {isSnoozed ? "Restore" : "Snooze"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isSnoozed || isMuted}
-              aria-pressed={isPinned}
-              onClick={onTogglePin}
-              className="h-9 justify-center"
-            >
-              <Pin className="h-4 w-4" />
-              {isPinned ? "Unpin" : "Pin"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isSnoozed}
-              onClick={isMuted ? onRestore : onMute}
-              className="col-span-2 h-9 justify-center"
-            >
-              <BellOff className="h-4 w-4" />
-              {isMuted ? "Unmute" : "Mute"}
-            </Button>
-          </div>
         </div>
       </RailCard>
 
@@ -1374,13 +1056,4 @@ function waitingChipClasses(item: ReviewQueueItemView): string {
     return "border-amber-200 bg-amber-50 text-amber-800"
   }
   return "border-border bg-muted/30 text-muted-foreground"
-}
-
-function bucketIdForAvailableBucketId(
-  bucketId: UserBucketId,
-  userBuckets: UserBucketDefinition[]
-): UserBucketId {
-  return userBuckets.some((bucket) => bucket.id === bucketId)
-    ? bucketId
-    : userBuckets[0]?.id ?? bucketId
 }

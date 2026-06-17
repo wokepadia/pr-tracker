@@ -162,22 +162,8 @@ interface LocalPullRequestAssigneeRow {
 
 interface LocalBoardItemStateRow {
   pull_request_id: string
-  column_id: string | null
-  sort_order: number
   last_seen_at: string | null
   notes: string | null
-  is_snoozed: number
-  snoozed_at: string | null
-  is_muted: number
-  muted_at: string | null
-  is_pinned: number
-}
-
-interface LocalBoardColumnRow {
-  id: string
-  name: string
-  sort_order: number
-  width_px: number
 }
 
 interface LocalReviewCommentRow {
@@ -395,150 +381,43 @@ export async function getDesktopSyncStatus(): Promise<SyncStatus> {
   return { lastSyncedAt: rows[0]?.finished_at ?? undefined }
 }
 
-export async function saveDesktopBoardState(
-  state: BoardState
-): Promise<BoardState> {
+export async function getDesktopPullRequestNotes(
+  id: string
+): Promise<{ notes: string }> {
   const db = await getDatabase()
-  const bucketIds = new Set(state.buckets.map((bucket) => bucket.id))
-  const fallbackBucketId = state.buckets[0]?.id ?? "inbox"
-  const knownPullRequestIds = new Set(
-    (await listPullRequestRows(db)).map((row) => row.id)
+  const row = (
+    await db.select<Array<{ notes: string | null }>>(
+      `
+        select notes from board_items
+        where board_id = $1 and pull_request_id = $2
+      `,
+      [defaultLocalBoardId, id]
+    )
+  )[0]
+  return { notes: row?.notes ?? "" }
+}
+
+export async function saveDesktopPullRequestNotes(
+  id: string,
+  notes: string
+): Promise<{ notes: string }> {
+  const db = await getDatabase()
+  const now = new Date().toISOString()
+  const cleaned = cleanOptionalText(notes)
+  const result = await db.execute(
+    `
+      update board_items
+      set notes = $1, updated_at = $2
+      where board_id = $3 and pull_request_id = $4
+    `,
+    [cleaned, now, defaultLocalBoardId, id]
   )
-  const itemByPullRequestId = new Map<
-    string,
-    {
-      pullRequestId: string
-      columnId: string
-      sortOrder: number
-      snoozed?: boolean
-      snoozedAt?: string
-      muted?: boolean
-      mutedAt?: string
-      pinned?: boolean
-      notes?: string
-    }
-  >()
 
-  for (const [bucketId, itemIds] of Object.entries(state.userBucketItemOrder)) {
-    if (!bucketIds.has(bucketId)) continue
-
-    itemIds.forEach((pullRequestId, index) => {
-      if (!knownPullRequestIds.has(pullRequestId)) return
-      itemByPullRequestId.set(pullRequestId, {
-        pullRequestId,
-        columnId: bucketId,
-        sortOrder: index,
-      })
-    })
+  if (result.rowsAffected === 0) {
+    throw new Error("Pull request not found.")
   }
 
-  for (const [pullRequestId, itemState] of Object.entries(state.localQueueState)) {
-    if (!itemState || !knownPullRequestIds.has(pullRequestId)) continue
-
-    const current = itemByPullRequestId.get(pullRequestId)
-    const columnId =
-      itemState.bucketId && bucketIds.has(itemState.bucketId)
-        ? itemState.bucketId
-        : current?.columnId ?? fallbackBucketId
-
-    itemByPullRequestId.set(pullRequestId, {
-      pullRequestId,
-      columnId,
-      sortOrder: current?.sortOrder ?? itemByPullRequestId.size,
-      snoozed: itemState.snoozed,
-      snoozedAt: itemState.snoozed ? itemState.snoozedAt : undefined,
-      muted: itemState.muted,
-      mutedAt: itemState.muted ? itemState.mutedAt : undefined,
-      pinned: itemState.pinned,
-      notes: itemState.notes,
-    })
-  }
-
-  await transaction(db, async () => {
-    const now = new Date().toISOString()
-    const activeColumnIds = new Set(state.buckets.map((bucket) => bucket.id))
-
-    for (const [index, bucket] of state.buckets.entries()) {
-      await db.execute(
-        `
-          insert into board_columns (
-            id, board_id, name, sort_order, width_px, created_at, updated_at, archived_at
-          )
-          values ($1, $2, $3, $4, $5, $6, $7, null)
-          on conflict(id)
-          do update set
-            name = excluded.name,
-            sort_order = excluded.sort_order,
-            width_px = excluded.width_px,
-            archived_at = null,
-            updated_at = excluded.updated_at
-        `,
-        [
-          bucket.id,
-          defaultLocalBoardId,
-          bucket.label,
-          index,
-          state.bucketColumnWidths[bucket.id] ?? 232,
-          now,
-          now,
-        ]
-      )
-    }
-
-    for (const column of await listBoardColumnRows(db)) {
-      if (activeColumnIds.has(column.id)) continue
-      await db.execute(
-        `
-          update board_columns
-          set archived_at = $1, updated_at = $2
-          where id = $3 and board_id = $4
-        `,
-        [now, now, column.id, defaultLocalBoardId]
-      )
-    }
-
-    for (const item of itemByPullRequestId.values()) {
-      await db.execute(
-        `
-          insert into board_items (
-            id, board_id, pull_request_id, column_id, sort_order,
-            notes, is_snoozed, snoozed_at, is_muted, muted_at, is_pinned,
-            created_at, updated_at, archived_at
-          )
-          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, null)
-          on conflict(board_id, pull_request_id)
-          do update set
-            column_id = excluded.column_id,
-            sort_order = excluded.sort_order,
-            notes = excluded.notes,
-            is_snoozed = excluded.is_snoozed,
-            snoozed_at = excluded.snoozed_at,
-            is_muted = excluded.is_muted,
-            muted_at = excluded.muted_at,
-            is_pinned = excluded.is_pinned,
-            archived_at = null,
-            updated_at = excluded.updated_at
-        `,
-        [
-          deterministicUuid(`board-item:${defaultLocalBoardId}:${item.pullRequestId}`),
-          defaultLocalBoardId,
-          item.pullRequestId,
-          item.columnId,
-          item.sortOrder,
-          cleanOptionalText(item.notes),
-          boolToSqlite(Boolean(item.snoozed)),
-          item.snoozed ? item.snoozedAt ?? now : null,
-          boolToSqlite(Boolean(item.muted)),
-          item.muted ? item.mutedAt ?? now : null,
-          boolToSqlite(Boolean(item.pinned)),
-          now,
-          now,
-        ]
-      )
-    }
-  })
-
-  return loadBoardState(db)
+  return { notes: cleaned ?? "" }
 }
 
 export async function getDesktopGithubSettingsStatus(): Promise<GithubSettingsStatus> {
@@ -1533,31 +1412,6 @@ async function ensureDefaultBoard(db: SqlDatabase, now: string): Promise<void> {
     `,
     [defaultLocalBoardId, defaultLocalProfileId, "Default", 1, 0, now, now]
   )
-
-  const columns = [
-    ["inbox", "Inbox", 0],
-    ["reviewing", "Reviewing", 1],
-    ["waiting", "Waiting", 2],
-    ["later", "Later", 3],
-    ["done", "Done", 4],
-  ] as const
-
-  for (const [id, name, sortOrder] of columns) {
-    await db.execute(
-      `
-        insert into board_columns (
-          id, board_id, name, sort_order, width_px, created_at, updated_at
-        )
-        values ($1, $2, $3, $4, $5, $6, $7)
-        on conflict(id)
-        do update set
-          name = excluded.name,
-          sort_order = excluded.sort_order,
-          updated_at = excluded.updated_at
-      `,
-      [id, defaultLocalBoardId, name, sortOrder, 232, now, now]
-    )
-  }
 }
 
 async function ensureDefaultBoardItem(
@@ -1568,9 +1422,9 @@ async function ensureDefaultBoardItem(
   await db.execute(
     `
       insert into board_items (
-        id, board_id, pull_request_id, column_id, sort_order, created_at, updated_at
+        id, board_id, pull_request_id, created_at, updated_at
       )
-      values ($1, $2, $3, $4, $5, $6, $7)
+      values ($1, $2, $3, $4, $5)
       on conflict(board_id, pull_request_id)
       do update set updated_at = excluded.updated_at
     `,
@@ -1578,8 +1432,6 @@ async function ensureDefaultBoardItem(
       deterministicUuid(`board-item:${defaultLocalBoardId}:${pullRequestId}`),
       defaultLocalBoardId,
       pullRequestId,
-      "inbox",
-      0,
       now,
       now,
     ]
@@ -1982,39 +1834,16 @@ async function upsertGithubAccount(
 }
 
 async function loadBoardState(db: SqlDatabase): Promise<BoardState> {
-  const columns = await listBoardColumnRows(db)
   const itemRows = await listBoardItemStateRows(db)
   const localQueueState: BoardState["localQueueState"] = {}
-  const userBucketItemOrder = Object.fromEntries(
-    columns.map((column) => [column.id, [] as string[]])
-  )
-  const bucketColumnWidths = Object.fromEntries(
-    columns.map((column) => [column.id, column.width_px])
-  )
 
   for (const row of itemRows) {
-    if (row.column_id) {
-      userBucketItemOrder[row.column_id] ??= []
-      userBucketItemOrder[row.column_id]?.push(row.pull_request_id)
-    }
-
     localQueueState[row.pull_request_id] = {
-      bucketId: row.column_id ?? undefined,
-      snoozed: row.is_snoozed ? true : undefined,
-      snoozedAt: row.is_snoozed ? row.snoozed_at ?? undefined : undefined,
-      muted: row.is_muted ? true : undefined,
-      mutedAt: row.is_muted ? row.muted_at ?? undefined : undefined,
-      pinned: row.is_pinned ? true : undefined,
       notes: row.notes ?? undefined,
     }
   }
 
-  return {
-    buckets: columns.map((column) => ({ id: column.id, label: column.name })),
-    localQueueState,
-    userBucketItemOrder,
-    bucketColumnWidths,
-  }
+  return { localQueueState }
 }
 
 async function loadPullRequests(
@@ -2398,32 +2227,10 @@ async function listBoardItemStateRows(
 ): Promise<LocalBoardItemStateRow[]> {
   return db.select<LocalBoardItemStateRow[]>(
     `
-      select
-        pull_request_id,
-        column_id,
-        sort_order,
-        last_seen_at,
-        notes,
-        is_snoozed,
-        snoozed_at,
-        is_muted,
-        muted_at,
-        is_pinned
+      select pull_request_id, last_seen_at, notes
       from board_items
       where board_id = $1 and archived_at is null
-      order by column_id asc, sort_order asc, pull_request_id asc
-    `,
-    [defaultLocalBoardId]
-  )
-}
-
-async function listBoardColumnRows(db: SqlDatabase): Promise<LocalBoardColumnRow[]> {
-  return db.select<LocalBoardColumnRow[]>(
-    `
-      select id, name, sort_order, width_px
-      from board_columns
-      where board_id = $1 and archived_at is null
-      order by sort_order asc, created_at asc
+      order by pull_request_id asc
     `,
     [defaultLocalBoardId]
   )

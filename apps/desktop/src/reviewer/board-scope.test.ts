@@ -3,26 +3,20 @@ import { describe, expect, it } from "vitest"
 import { selectBoardScopedItems } from "./board-scope"
 
 describe("selectBoardScopedItems", () => {
-  it("keeps only items with a board row, including snoozed and muted ones", () => {
+  it("keeps only items that have a board row", () => {
     const items = [
-      { id: "pr_active" },
-      { id: "pr_snoozed" },
-      { id: "pr_muted" },
+      { id: "pr_on_board" },
+      { id: "pr_with_notes" },
       { id: "pr_off_board" },
     ]
 
     expect(
       selectBoardScopedItems(items, {
-        pr_active: { bucketId: "inbox" },
-        pr_snoozed: { snoozed: true },
-        pr_muted: { muted: true },
-        pr_unrelated: { bucketId: "later" },
+        pr_on_board: {},
+        pr_with_notes: { notes: "check the migration path" },
+        pr_unrelated: {},
       })
-    ).toEqual([
-      { id: "pr_active" },
-      { id: "pr_snoozed" },
-      { id: "pr_muted" },
-    ])
+    ).toEqual([{ id: "pr_on_board" }, { id: "pr_with_notes" }])
   })
 
   it("returns nothing when the board is empty", () => {
