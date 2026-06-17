@@ -56,13 +56,13 @@ import {
 import { hashContent } from "@/ai/content-hash"
 import { requestStructuredCompletion } from "@/ai/openrouter"
 import {
-  aiInsightsSchema,
-  aiInsightsSchemaName,
-  buildAiInsightsPrompt,
-  normalizeAiInsightsContent,
-  type AiInsightsContent,
-  type AiInsightsInput,
-} from "@/ai/ai-insights"
+  aiDashboardSchema,
+  aiDashboardSchemaName,
+  buildAiDashboardPrompt,
+  normalizeAiDashboardContent,
+  type AiDashboardContent,
+  type AiDashboardInput,
+} from "@/ai/ai-dashboard"
 import {
   buildCatchUpDigestPrompt,
   buildPrSummaryPrompt,
@@ -905,26 +905,26 @@ export async function generateDesktopAiThreadState(
   return { content, generatedAt, model: config.model, isStale: false }
 }
 
-const aiInsightsSentinelId = "queue"
+const aiDashboardSentinelId = "queue"
 
-export async function getDesktopAiInsights(
-  input: AiInsightsInput
-): Promise<AiGenerated<AiInsightsContent> | null> {
+export async function getDesktopAiDashboard(
+  input: AiDashboardInput
+): Promise<AiGenerated<AiDashboardContent> | null> {
   const db = await getDatabase()
-  const row = await readAiSummaryRow(db, aiInsightsSentinelId, "ai-insights")
+  const row = await readAiSummaryRow(db, aiDashboardSentinelId, "ai-dashboard")
   if (!row) {
     return null
   }
 
   const settings = await readLocalAiSettings(db)
-  const enrichedInput = await enrichAiInsightsInputWithComments(db, input)
-  const prompt = buildAiInsightsPrompt(enrichedInput)
+  const enrichedInput = await enrichAiDashboardInputWithComments(db, input)
+  const prompt = buildAiDashboardPrompt(enrichedInput)
   const expectedKey = await hashContent(
-    `ai-insights\n${settings.model}\n${prompt.user}`
+    `ai-dashboard\n${settings.model}\n${prompt.user}`
   )
 
   return {
-    content: normalizeAiInsightsContent(
+    content: normalizeAiDashboardContent(
       JSON.parse(row.content_json),
       enrichedInput.items.map((item) => item.id)
     ),
@@ -934,31 +934,31 @@ export async function getDesktopAiInsights(
   }
 }
 
-export async function generateDesktopAiInsights(
-  input: AiInsightsInput
-): Promise<AiGenerated<AiInsightsContent>> {
+export async function generateDesktopAiDashboard(
+  input: AiDashboardInput
+): Promise<AiGenerated<AiDashboardContent>> {
   const db = await getDatabase()
   const config = await requireActiveAiConfig(db)
   if (input.items.length === 0) {
-    throw new Error("There are no insights to brief right now.")
+    throw new Error("There are no open reviews to brief right now.")
   }
 
-  const enrichedInput = await enrichAiInsightsInputWithComments(db, input)
-  const prompt = buildAiInsightsPrompt(enrichedInput)
-  const content = normalizeAiInsightsContent(
-    await runStructuredAiCompletion<AiInsightsContent>(config, {
+  const enrichedInput = await enrichAiDashboardInputWithComments(db, input)
+  const prompt = buildAiDashboardPrompt(enrichedInput)
+  const content = normalizeAiDashboardContent(
+    await runStructuredAiCompletion<AiDashboardContent>(config, {
       system: prompt.system,
       user: prompt.user,
-      schemaName: aiInsightsSchemaName,
-      schema: aiInsightsSchema,
+      schemaName: aiDashboardSchemaName,
+      schema: aiDashboardSchema,
     }),
     enrichedInput.items.map((item) => item.id)
   )
 
   const generatedAt = new Date().toISOString()
-  await writeAiSummaryRow(db, aiInsightsSentinelId, "ai-insights", {
+  await writeAiSummaryRow(db, aiDashboardSentinelId, "ai-dashboard", {
     cacheKey: await hashContent(
-      `ai-insights\n${config.model}\n${prompt.user}`
+      `ai-dashboard\n${config.model}\n${prompt.user}`
     ),
     model: config.model,
     contentJson: JSON.stringify(content),
@@ -1022,7 +1022,7 @@ async function dropOutdatedAiSummariesTable(db: SqlDatabase): Promise<void> {
     `select sql from sqlite_master where type = 'table' and name = 'ai_summaries'`
   )
   const createSql = rows[0]?.sql
-  if (createSql && !createSql.includes("'ai-insights'")) {
+  if (createSql && !createSql.includes("'ai-dashboard'")) {
     await db.execute(`drop table ai_summaries`)
   }
 }
@@ -2795,7 +2795,7 @@ type AiSummaryKind =
   | "pr-summary"
   | "catch-up-digest"
   | "thread-state"
-  | "ai-insights"
+  | "ai-dashboard"
 
 interface AiSummaryRow {
   cache_key: string
@@ -3076,10 +3076,10 @@ async function listDiscussionComments(
   ].sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt))
 }
 
-async function enrichAiInsightsInputWithComments(
+async function enrichAiDashboardInputWithComments(
   db: SqlDatabase,
-  input: AiInsightsInput
-): Promise<AiInsightsInput> {
+  input: AiDashboardInput
+): Promise<AiDashboardInput> {
   return {
     ...input,
     items: await Promise.all(

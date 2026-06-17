@@ -9,9 +9,9 @@ import type {
   ThreadStateContent,
 } from "@/ai/summaries"
 import type {
-  AiInsightsContent,
-  AiInsightsInput,
-} from "@/ai/ai-insights"
+  AiDashboardContent,
+  AiDashboardInput,
+} from "@/ai/ai-dashboard"
 
 export interface PullRequestDetailResponse {
   viewer: Actor
@@ -229,16 +229,16 @@ export async function generateAiThreadState(
   return (await getDesktopApi()).generateDesktopAiThreadState(pullRequestId)
 }
 
-export async function getAiInsights(
-  input: AiInsightsInput
-): Promise<AiGenerated<AiInsightsContent> | null> {
-  return (await getDesktopApi()).getDesktopAiInsights(input)
+export async function getAiDashboard(
+  input: AiDashboardInput
+): Promise<AiGenerated<AiDashboardContent> | null> {
+  return (await getDesktopApi()).getDesktopAiDashboard(input)
 }
 
-export async function generateAiInsights(
-  input: AiInsightsInput
-): Promise<AiGenerated<AiInsightsContent>> {
-  return (await getDesktopApi()).generateDesktopAiInsights(input)
+export async function generateAiDashboard(
+  input: AiDashboardInput
+): Promise<AiGenerated<AiDashboardContent>> {
+  return (await getDesktopApi()).generateDesktopAiDashboard(input)
 }
 
 export async function getOnboardingState(): Promise<OnboardingState> {

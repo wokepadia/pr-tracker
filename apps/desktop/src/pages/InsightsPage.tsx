@@ -193,7 +193,7 @@ export function InsightsPage() {
 
         {insights?.digest ? <DigestStrip digest={insights.digest} /> : null}
 
-        {aiActive ? <AiInsightsLinkRow /> : null}
+        {aiActive ? <AiDashboardLinkRow /> : null}
 
         {!insights ? (
           <InsightsLoadingSkeleton />
@@ -215,18 +215,18 @@ export function InsightsPage() {
   )
 }
 
-function AiInsightsLinkRow() {
+function AiDashboardLinkRow() {
   return (
     <Link
-      to="/ai-insights"
+      to="/ai-dashboard"
       className="flex items-center gap-2 rounded-md border border-border bg-card px-4 py-2.5 text-sm text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
     >
       <Sparkles className="h-4 w-4 text-muted-foreground" />
       <span>
-        Want this as a short reading plan? The AI Insights view narrates the
-        board.
+        Want this as a turn-tracking dashboard? AI Dashboard narrates the
+        board without changing its scope.
       </span>
-      <span className="ml-auto text-xs font-medium">AI Insights →</span>
+      <span className="ml-auto text-xs font-medium">AI Dashboard →</span>
     </Link>
   )
 }

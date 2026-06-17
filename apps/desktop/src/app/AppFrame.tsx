@@ -40,7 +40,7 @@ export function AppFrame() {
     queryKey: ["ai-settings"],
     queryFn: getAiSettings,
   })
-  // The AI Insights view exists only while AI mode is active; with it off
+  // The AI Dashboard exists only while AI mode is active; with it off
   // the app frame is unchanged.
   const aiActive = isAiModeActive(aiSettingsQuery.data)
   const { insights } = useReviewerInsights()
@@ -90,9 +90,9 @@ export function AppFrame() {
           />
           {aiActive ? (
             <HeaderNavLink
-              to="/ai-insights"
-              label="AI Insights"
-              active={pathname.startsWith("/ai-insights")}
+              to="/ai-dashboard"
+              label="AI Dashboard"
+              active={pathname.startsWith("/ai-dashboard")}
             />
           ) : null}
         </nav>
