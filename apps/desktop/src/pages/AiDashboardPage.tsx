@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo, useState, type FormEvent } from "react"
 import {
   useMutation,
   useQuery,
@@ -9,8 +9,10 @@ import {
   Clock,
   ExternalLink,
   Loader2,
+  Maximize2,
   RefreshCw,
   RotateCcw,
+  Search,
   Sparkles,
 } from "lucide-react"
 import {
@@ -26,17 +28,23 @@ import {
   type AiDashboardContent,
 } from "@/ai/ai-dashboard"
 import { isAiModeActive } from "@/ai/ai-settings"
+import {
+  setBoardFilterQuery,
+  useBoardFilterQuery,
+} from "@/app/use-board-filter"
 import { useGithubSync } from "@/app/use-github-sync"
-import { useReviewerInsights } from "@/app/use-reviewer-insights"
+import { useBoardScopedItems } from "@/app/use-board-scoped-items"
 import { AuthorAvatar } from "@/components/AuthorAvatar"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { PullRequestDetailModal } from "@/components/PullRequestDetailModal"
 import { githubLabelStyle } from "@/lib/label-color"
 import { cn, externalLinkProps } from "@/lib/utils"
+import { formatSyncStatusLabel } from "@/lib/sync-status"
 import {
   formatRelativeTime,
   type ReviewQueueItemView,
 } from "@/reviewer/view-model"
-import { formatSyncStatusLabel } from "./inbox-helpers"
 
 type DashboardFilter = "all" | "your-move" | "waiting" | "stalled"
 
@@ -55,10 +63,7 @@ export function AiDashboardPage() {
     queryFn: visitInsights,
     staleTime: Infinity,
   })
-  const { allItems } = useReviewerInsights({
-    previousVisitAt: visitQuery.data?.previousVisitAt,
-    scope: "board",
-  })
+  const { items } = useBoardScopedItems()
   const aiActive = isAiModeActive(aiSettingsQuery.data)
   const sinceVisitLabel = visitQuery.data?.previousVisitAt
     ? formatRelativeTime(visitQuery.data.previousVisitAt)
@@ -74,18 +79,19 @@ export function AiDashboardPage() {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-6 py-6">
         {aiSettingsQuery.isLoading ? null : !aiActive ? (
           <AiModeOffCard />
-        ) : !allItems || visitQuery.isLoading ? (
+        ) : !items || visitQuery.isLoading ? (
           <div
             aria-busy="true"
             className="h-32 animate-pulse rounded-md border border-border bg-muted/40"
           />
         ) : (
           <AiDashboardBody
-            allItems={allItems}
+            items={items}
             sinceVisitLabel={sinceVisitLabel}
             syncLabel={syncLabel}
             isSyncing={githubSync.isSyncing}
             onSyncNow={githubSync.syncNow}
+            onApplyQuery={githubSync.syncQuery}
           />
         )}
       </div>
@@ -114,28 +120,31 @@ function AiModeOffCard() {
 }
 
 function AiDashboardBody({
-  allItems,
+  items,
   sinceVisitLabel,
   syncLabel,
   isSyncing,
   onSyncNow,
+  onApplyQuery,
 }: {
-  allItems: ReviewQueueItemView[]
+  items: ReviewQueueItemView[]
   sinceVisitLabel?: string
   syncLabel: string
   isSyncing: boolean
   onSyncNow: () => void
+  onApplyQuery: (githubSearchQuery: string) => Promise<unknown>
 }) {
   const queryClient = useQueryClient()
   const [filter, setFilter] = useState<DashboardFilter>("all")
+  const [selectedId, setSelectedId] = useState("")
   const input = useMemo(
-    () => buildAiDashboardInput(allItems, { sinceVisitLabel }),
-    [allItems, sinceVisitLabel]
+    () => buildAiDashboardInput(items, { sinceVisitLabel }),
+    [items, sinceVisitLabel]
   )
   const inputKey = useMemo(() => JSON.stringify(input), [input])
   const itemById = useMemo(
-    () => new Map(allItems.map((item) => [item.id, item])),
-    [allItems]
+    () => new Map(items.map((item) => [item.id, item])),
+    [items]
   )
   const dashboardQuery = useQuery({
     queryKey: ["ai-dashboard", inputKey],
@@ -158,28 +167,6 @@ function AiDashboardBody({
   )
   const canGenerate = input.items.length > 0 && !generateMutation.isPending
 
-  if (input.items.length === 0) {
-    return (
-      <>
-        <DashboardHeader
-          result={result}
-          isLoadingCache={dashboardQuery.isLoading}
-          isGenerating={generateMutation.isPending}
-          canGenerate={false}
-          error={generateMutation.error}
-          syncLabel={syncLabel}
-          isSyncing={isSyncing}
-          onSyncNow={onSyncNow}
-          onGenerate={() => generateMutation.mutate()}
-        />
-        <div className="rounded-md border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-          Nothing to brief - the applied board filter has no open pull
-          requests right now.
-        </div>
-      </>
-    )
-  }
-
   return (
     <>
       <DashboardHeader
@@ -194,45 +181,153 @@ function AiDashboardBody({
         onGenerate={() => generateMutation.mutate()}
       />
 
-      <div className="grid grid-cols-2 gap-4">
-        <SummaryPanel
-          title="Where things stand"
-          content={result?.content.queueSummary}
-          fallback={buildQueueFallback(input)}
-        />
-        <SummaryPanel
-          title={
-            sinceVisitLabel
-              ? `Since your last visit · ${sinceVisitLabel}`
-              : "Since your last visit"
-          }
-          content={result?.content.sinceLastVisit}
-          fallback={buildSinceFallback(input, openItems)}
-        />
-      </div>
+      <BoardScopeBar onApplyQuery={onApplyQuery} />
 
-      <FilterBar
-        active={filter}
-        metrics={input.metrics}
-        onChange={setFilter}
-      />
-
-      <div className="flex flex-col gap-3">
-        {filteredItems.length === 0 ? (
-          <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-            No pull requests match this dashboard filter.
-          </div>
-        ) : (
-          filteredItems.map((item) => (
-            <PullRequestDashboardCard
-              key={item.id}
-              item={item}
-              generated={cardById.get(item.id)}
+      {input.items.length === 0 ? (
+        <div className="rounded-md border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+          Nothing to brief — the applied board filter has no open pull requests
+          right now.
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-4">
+            <SummaryPanel
+              title="Where things stand"
+              content={result?.content.queueSummary}
+              fallback={buildQueueFallback(input)}
             />
-          ))
-        )}
-      </div>
+            <SummaryPanel
+              title={
+                sinceVisitLabel
+                  ? `Since your last visit · ${sinceVisitLabel}`
+                  : "Since your last visit"
+              }
+              content={result?.content.sinceLastVisit}
+              fallback={buildSinceFallback(input, openItems)}
+            />
+          </div>
+
+          <FilterBar active={filter} metrics={input.metrics} onChange={setFilter} />
+
+          <div className="flex flex-col gap-3">
+            {filteredItems.length === 0 ? (
+              <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                No pull requests match this dashboard filter.
+              </div>
+            ) : (
+              filteredItems.map((item) => (
+                <PullRequestDashboardCard
+                  key={item.id}
+                  item={item}
+                  generated={cardById.get(item.id)}
+                  onExpand={() => setSelectedId(item.id)}
+                />
+              ))
+            )}
+          </div>
+        </>
+      )}
+
+      {selectedId ? (
+        <PullRequestDetailModal
+          pullRequestId={selectedId}
+          onClose={() => setSelectedId("")}
+        />
+      ) : null}
     </>
+  )
+}
+
+/**
+ * Edits the applied board filter — the app-wide scope contract. Applying
+ * first syncs the new query so its membership is durable, then publishes it
+ * to every surface via the board-filter store.
+ */
+function BoardScopeBar({
+  onApplyQuery,
+}: {
+  onApplyQuery: (githubSearchQuery: string) => Promise<unknown>
+}) {
+  const appliedQuery = useBoardFilterQuery()
+  const [draft, setDraft] = useState(appliedQuery)
+  const [isApplying, setIsApplying] = useState(false)
+  const [error, setError] = useState<string>()
+
+  async function applyQuery(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const next = draft.trim()
+    setDraft(next)
+    setError(undefined)
+
+    if (next === appliedQuery) return
+    if (!next) {
+      setBoardFilterQuery("")
+      return
+    }
+
+    setIsApplying(true)
+    try {
+      await onApplyQuery(next)
+      setBoardFilterQuery(next)
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not apply the filter."
+      )
+    } finally {
+      setIsApplying(false)
+    }
+  }
+
+  function resetQuery() {
+    setDraft("")
+    setError(undefined)
+    setBoardFilterQuery("")
+  }
+
+  return (
+    <form
+      className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-card px-3 py-2"
+      onSubmit={applyQuery}
+    >
+      <span className="mr-1 text-xs text-muted-foreground">Board filter</span>
+      <div className="relative min-w-0 flex-1">
+        <Input
+          id="github-review-query"
+          type="search"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="is:open user-review-requested:@me"
+          className="h-8 rounded-lg bg-background pr-3 pl-8 font-mono text-[13px]"
+          aria-label="GitHub review search query"
+        />
+        <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+      </div>
+      <Button
+        type="submit"
+        size="sm"
+        variant="outline"
+        disabled={isApplying}
+        className="h-8"
+      >
+        {isApplying ? "Applying" : "Apply"}
+      </Button>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        disabled={draft.trim().length === 0 || isApplying}
+        onClick={resetQuery}
+        className="h-8 w-8"
+        aria-label="Reset board filter"
+      >
+        <RotateCcw className="h-3.5 w-3.5" />
+      </Button>
+      {error ? (
+        <div className="min-w-[220px] max-w-[360px] text-xs text-destructive">
+          {error}
+        </div>
+      ) : null}
+    </form>
   )
 }
 
@@ -437,9 +532,11 @@ function FilterBar({
 function PullRequestDashboardCard({
   item,
   generated,
+  onExpand,
 }: {
   item: ReviewQueueItemView
   generated: AiDashboardContent["cards"][number] | undefined
+  onExpand: () => void
 }) {
   const laneTone =
     item.waitingOn === "you"
@@ -488,6 +585,15 @@ function PullRequestDashboardCard({
             ·
           </span>
           <span className="whitespace-nowrap">active {item.updatedAt}</span>
+          <button
+            type="button"
+            onClick={onExpand}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label={`Expand ${item.repository} #${item.number} details`}
+            title="Expand details"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </button>
           <a
             href={item.url}
             className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -500,13 +606,13 @@ function PullRequestDashboardCard({
         </div>
       </div>
 
-      <Link
-        to="/pull-requests/$pullRequestId"
-        params={{ pullRequestId: item.id }}
-        className="mt-3 block text-base font-semibold leading-snug text-foreground hover:underline"
+      <button
+        type="button"
+        onClick={onExpand}
+        className="mt-3 block text-left text-base font-semibold leading-snug text-foreground hover:underline"
       >
         {item.title}
-      </Link>
+      </button>
 
       <p className="mt-3 text-sm leading-6 text-foreground">{summary}</p>
 

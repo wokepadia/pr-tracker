@@ -6,11 +6,10 @@ import type { ReviewQueueItemView } from "@/reviewer/view-model"
  * whose court each pull request is in, what happens next, and whether
  * anything is stalled. It never assesses the code itself.
  *
- * The input is derived directly from the board-scoped view-model items — the
- * deterministic exception layer (`reviewer/insights.ts`) is intentionally not
- * a dependency here, so the model gets raw turn facts rather than pre-chewed
- * section labels. Everything is pure so the exact prompt text — and the cache
- * key derived from it — stays deterministic and testable.
+ * The input is derived directly from the board-scoped view-model items, so
+ * the model gets raw turn facts rather than pre-chewed section labels.
+ * Everything is pure so the exact prompt text — and the cache key derived
+ * from it — stays deterministic and testable.
  */
 
 export interface AiDashboardThreadInput {
