@@ -41,6 +41,8 @@ export type SizeBucket = "S" | "M" | "L" | "XL"
 export interface SizeChipView {
   bucket: SizeBucket
   lineCount: number
+  additions: number
+  deletions: number
   fileCount?: number
 }
 
@@ -422,11 +424,19 @@ function buildSizeChip(pullRequest: PullRequestItem): SizeChipView | undefined {
     return undefined
   }
 
-  const lineCount = (pullRequest.additions ?? 0) + (pullRequest.deletions ?? 0)
+  const additions = pullRequest.additions ?? 0
+  const deletions = pullRequest.deletions ?? 0
+  const lineCount = additions + deletions
   const bucket: SizeBucket =
     lineCount <= 50 ? "S" : lineCount <= 250 ? "M" : lineCount <= 1000 ? "L" : "XL"
 
-  return { bucket, lineCount, fileCount: pullRequest.changedFiles }
+  return {
+    bucket,
+    lineCount,
+    additions,
+    deletions,
+    fileCount: pullRequest.changedFiles,
+  }
 }
 
 function countReviewRounds(

@@ -568,7 +568,13 @@ describe("per-turn wait timers", () => {
     sized.pullRequest.changedFiles = 9
     const sizedView = toReviewQueueItemView(sized, sampleActorById(), "viewer")
 
-    expect(sizedView.size).toEqual({ bucket: "L", lineCount: 272, fileCount: 9 })
+    expect(sizedView.size).toEqual({
+      bucket: "L",
+      lineCount: 272,
+      additions: 214,
+      deletions: 58,
+      fileCount: 9,
+    })
 
     const tiny = classifiedItem("pr_tiny", "needs_review")
     tiny.pullRequest.additions = 12
