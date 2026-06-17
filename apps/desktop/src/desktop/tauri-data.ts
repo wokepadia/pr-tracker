@@ -795,12 +795,16 @@ async function initializeDatabase(): Promise<SqlDatabase> {
   // property of the database file itself, so setting it once here is
   // enough: WAL lets readers proceed while another window writes.
   await db.execute("pragma journal_mode = wal")
+  // Drop the stale AI cache before the schema run so create-if-not-exists
+  // rebuilds it with the current kind constraint.
   await dropOutdatedAiSummariesTable(db)
   for (const statement of splitSqlStatements(localDesktopSchemaSql)) {
     await db.execute(statement)
   }
-  await ensureBoardItemNotesColumn(db)
-  await ensureBoardItemAttentionTimestampColumns(db)
+  // Migrations that bring an existing database up to the current shape. Fresh
+  // databases already match the schema, so each step below is a no-op for
+  // them.
+  await migrateLegacyBoardItems(db)
   await ensureReviewThreadLedgerColumns(db)
   await ensurePullRequestSizeColumns(db)
   return db
@@ -820,6 +824,83 @@ async function dropOutdatedAiSummariesTable(db: SqlDatabase): Promise<void> {
   if (createSql && !createSql.includes("'pr-brief'")) {
     await db.execute(`drop table ai_summaries`)
   }
+}
+
+/**
+ * Removes the Kanban board for good: the lanes table (board_columns) and the
+ * per-item placement and triage columns on board_items (column ordering,
+ * snooze, mute, pin, and the denormalized viewer-classification fields). A
+ * board item now records only membership plus the reviewer's last-seen marker
+ * and notes. Uses the standard SQLite table rebuild so the columns and their
+ * data are physically gone, not just unused.
+ */
+async function migrateLegacyBoardItems(db: SqlDatabase): Promise<void> {
+  const columns = await db.select<Array<{ name: string }>>(
+    `pragma table_info(board_items)`
+  )
+  const columnNames = new Set(columns.map((row) => row.name))
+  const legacyColumns = [
+    "column_id",
+    "sort_order",
+    "last_seen_activity_at",
+    "viewer_is_author",
+    "viewer_review_requested",
+    "viewer_review_state",
+    "viewer_has_unresolved_threads",
+    "needs_attention_reason",
+    "is_snoozed",
+    "snoozed_at",
+    "is_muted",
+    "muted_at",
+    "is_pinned",
+    "added_by",
+  ]
+
+  if (legacyColumns.some((name) => columnNames.has(name))) {
+    // notes arrived after the original schema, so guarantee it exists before
+    // the copy reads it; last_seen_at has been present since the beginning.
+    if (!columnNames.has("notes")) {
+      await db.execute(`alter table board_items add column notes text`)
+    }
+    await db.execute(`drop index if exists board_items_column_sort_idx`)
+    await db.execute(`drop index if exists board_items_board_pinned_idx`)
+    // Drop a leftover scratch table from any interrupted earlier run so the
+    // create below cannot collide with it.
+    await db.execute(`drop table if exists board_items_migrated`)
+    await db.execute(
+      `
+        create table board_items_migrated (
+          id text primary key,
+          board_id text not null references boards(id) on delete cascade,
+          pull_request_id text not null references pull_requests(id) on delete cascade,
+          last_seen_at text,
+          notes text,
+          created_at text not null default current_timestamp,
+          updated_at text not null default current_timestamp,
+          archived_at text,
+          unique (board_id, pull_request_id)
+        )
+      `
+    )
+    await db.execute(
+      `
+        insert into board_items_migrated (
+          id, board_id, pull_request_id, last_seen_at, notes,
+          created_at, updated_at, archived_at
+        )
+        select
+          id, board_id, pull_request_id, last_seen_at, notes,
+          created_at, updated_at, archived_at
+        from board_items
+      `
+    )
+    await db.execute(`drop table board_items`)
+    await db.execute(`alter table board_items_migrated rename to board_items`)
+  }
+
+  // The lanes table only ever existed for the Kanban; nothing references it
+  // once board_items no longer carries a column_id.
+  await db.execute(`drop table if exists board_columns`)
 }
 
 async function syncBeforeRead(
@@ -3363,30 +3444,6 @@ function backupTimestamp(now = new Date()): string {
 function cleanOptionalText(value: string | undefined): string | null {
   if (!value?.trim()) return null
   return value.replace(/\r\n?/g, "\n")
-}
-
-async function ensureBoardItemNotesColumn(db: SqlDatabase): Promise<void> {
-  const rows = await db.select<Array<{ name: string }>>(
-    `pragma table_info(board_items)`
-  )
-  if (rows.some((row) => row.name === "notes")) return
-
-  await db.execute(`alter table board_items add column notes text`)
-}
-
-async function ensureBoardItemAttentionTimestampColumns(
-  db: SqlDatabase
-): Promise<void> {
-  const rows = await db.select<Array<{ name: string }>>(
-    `pragma table_info(board_items)`
-  )
-  const columnNames = new Set(rows.map((row) => row.name))
-
-  for (const column of ["snoozed_at", "muted_at"]) {
-    if (!columnNames.has(column)) {
-      await db.execute(`alter table board_items add column ${column} text`)
-    }
-  }
 }
 
 async function ensurePullRequestSizeColumns(db: SqlDatabase): Promise<void> {

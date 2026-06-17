@@ -333,69 +333,20 @@ create unique index if not exists boards_active_name_idx
   on boards (profile_id, name)
   where archived_at is null;
 
-create table if not exists board_columns (
-  id text primary key,
-  board_id text not null references boards(id) on delete cascade,
-  name text not null,
-  color text,
-  sort_order integer not null,
-  width_px integer not null default 232,
-  created_at text not null default current_timestamp,
-  updated_at text not null default current_timestamp,
-  archived_at text,
-  check (width_px between 120 and 1200)
-);
-
-create unique index if not exists board_columns_active_name_idx
-  on board_columns (board_id, name)
-  where archived_at is null;
-
-create index if not exists board_columns_active_sort_idx
-  on board_columns (board_id, sort_order)
-  where archived_at is null;
-
+-- A board item records that a pull request is on the board, plus the
+-- reviewer's private per-PR state (last-seen marker and notes). Board
+-- membership is the scope contract every surface keys on.
 create table if not exists board_items (
   id text primary key,
   board_id text not null references boards(id) on delete cascade,
   pull_request_id text not null references pull_requests(id) on delete cascade,
-  column_id text references board_columns(id) on delete set null,
-  sort_order integer not null default 0,
   last_seen_at text,
-  last_seen_activity_at text,
-  viewer_is_author integer not null default 0,
-  viewer_review_requested integer not null default 0,
-  viewer_review_state text,
-  viewer_has_unresolved_threads integer not null default 0,
-  needs_attention_reason text,
   notes text,
-  is_snoozed integer not null default 0,
-  snoozed_at text,
-  is_muted integer not null default 0,
-  muted_at text,
-  is_pinned integer not null default 0,
-  added_by text not null default 'user',
   created_at text not null default current_timestamp,
   updated_at text not null default current_timestamp,
   archived_at text,
-  unique (board_id, pull_request_id),
-  check (viewer_is_author in (0, 1)),
-  check (viewer_review_requested in (0, 1)),
-  check (viewer_has_unresolved_threads in (0, 1)),
-  check (
-    viewer_review_state is null
-    or viewer_review_state in ('approved', 'changes_requested', 'commented', 'pending')
-  ),
-  check (is_snoozed in (0, 1)),
-  check (is_muted in (0, 1)),
-  check (is_pinned in (0, 1)),
-  check (added_by = 'user')
+  unique (board_id, pull_request_id)
 );
-
-create index if not exists board_items_column_sort_idx
-  on board_items (column_id, sort_order);
-
-create index if not exists board_items_board_pinned_idx
-  on board_items (board_id, is_pinned, updated_at desc);
 
 create table if not exists board_filter_memberships (
   id text primary key,
