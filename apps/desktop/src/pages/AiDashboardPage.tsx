@@ -28,6 +28,7 @@ import {
 import { isAiModeActive } from "@/ai/ai-settings"
 import { useGithubSync } from "@/app/use-github-sync"
 import { useReviewerInsights } from "@/app/use-reviewer-insights"
+import { AuthorAvatar } from "@/components/AuthorAvatar"
 import { Button } from "@/components/ui/button"
 import { githubLabelStyle } from "@/lib/label-color"
 import { cn, externalLinkProps } from "@/lib/utils"
@@ -460,6 +461,16 @@ function PullRequestDashboardCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
+          <span
+            title={`Opened by ${item.authorLogin}`}
+            className="flex items-center"
+          >
+            <AuthorAvatar
+              className="h-6 w-6"
+              login={item.authorLogin}
+              avatarUrl={item.authorAvatarUrl}
+            />
+          </span>
           <LaneTag waitingOn={item.waitingOn} />
           {item.waitingUrgency !== "none" ? (
             <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-[2px] text-xs font-medium text-amber-800">
@@ -527,10 +538,9 @@ function LaneTag({
             label: "Waiting on author",
             className: "border-sky-200 bg-sky-50 text-sky-700",
           }
-        : {
-            label: "Watching",
-            className: "border-border bg-muted/40 text-muted-foreground",
-          }
+        : undefined
+
+  if (!config) return null
 
   return (
     <span
