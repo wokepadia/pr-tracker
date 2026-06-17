@@ -146,7 +146,7 @@ const sinceKinds: PrBriefSinceKind[] = [
 
 const maxChanges = 8
 const maxThreadNotes = 12
-const maxSinceItems = 8
+const maxSinceItems = 5
 const maxNextSteps = 6
 
 export const prBriefSchema: Record<string, unknown> = {
@@ -233,7 +233,7 @@ export const prBriefSchema: Record<string, unknown> = {
       type: "array",
       maxItems: maxSinceItems,
       description:
-        "What moved since the reviewer last looked, one entry per listed event, most important first. Empty array when nothing is new.",
+        "What changed since the reviewer last looked that affects their review decision — synthesized into a few takeaways, not a transcript. Group related events; omit anything that did not change (never a zero or a 'no new commits'). Empty array when nothing material moved.",
       items: {
         type: "object",
         additionalProperties: false,
@@ -243,12 +243,12 @@ export const prBriefSchema: Record<string, unknown> = {
           text: {
             type: "string",
             description:
-              "A friendly one-line restatement of that event, attributed to the actor who did it.",
+              "One takeaway led by its consequence for the review (e.g. \"Your change requests aren't in the code yet — the author replied in discussion instead\"). Name the actors; never headline a raw count.",
           },
           detail: {
             type: "string",
             description:
-              "Optional secondary clause — a file path with +/- counts, a resolved-thread note, or a check result.",
+              "Optional supporting evidence behind the takeaway — the specific thread, file, or count (e.g. \"dropdown-behavior thread, now 21 replies, still unresolved\").",
           },
         },
       },
@@ -293,6 +293,7 @@ export function buildPrBriefPrompt(input: PrBriefPromptInput): {
     "Reference file paths exactly as they appear in the diff or thread list.",
     "Write in a direct, concrete, second-person voice addressed to the reviewer ('you'), naming the actors who acted.",
     "Explain whose turn it is and why, what the pull request does, where the discussion stands, what moved since the reviewer last looked, and exactly what to do next.",
+    "When you report what moved, lead with what it means for the reviewer's decision — whether the author addressed their change requests, whether the ball is back in their court, whether anything invalidated their prior review — never replay the raw event log or headline a count.",
     "The deterministic waiting side, counts, and check state are authoritative; never contradict them.",
     "Do not assess code quality, correctness, implementation risk, or priority.",
   ].join(" ")
@@ -406,7 +407,7 @@ export function buildPrBriefPrompt(input: PrBriefPromptInput): {
     "- yourMove: why it is your turn (or the author's) right now, citing the most recent author action and what still blocks merge.",
     "- whatThisDoes: an overview plus the key changes, each tagged new/refactor/fix/test/docs/chore.",
     "- conversation: an overview of where the threads stand, plus one note per thread keyed by its listed location where you can say something concrete.",
-    "- sinceYouLooked: one entry per listed activity event, restated in plain language with an optional secondary detail.",
+    "- sinceYouLooked: a few synthesized takeaways about what changed that affects your decision — did the author address your change requests in code or only in discussion, is the ball back in your court, did new commits invalidate your prior review. Group related events, lead with the implication, and put any count in the optional detail, never as the message; omit unchanged facts entirely.",
     "- whatsNext: the concrete steps to take, in order, to move this toward merge."
   )
 

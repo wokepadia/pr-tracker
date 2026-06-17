@@ -100,6 +100,8 @@ describe("buildPrBriefPrompt", () => {
     const { system, user } = buildPrBriefPrompt(promptInput())
 
     expect(system).toContain("never invent files")
+    expect(system).toContain("lead with what it means for the reviewer")
+    expect(user).toContain("synthesized takeaways")
     expect(user).toContain("Pull request #2184: Migrate session auth to short-lived JWTs")
     expect(user).toContain("The reviewer reading this brief is you.")
     expect(user).toContain("Size: +265 / -66 across 9 files")
