@@ -175,6 +175,8 @@ describe("buildAiDashboardPrompt", () => {
 
     expect(system).toContain("turn-tracking dashboard")
     expect(system).toContain("Do not assess code quality")
+    expect(system).toContain("lead with its consequence")
+    expect(user).toContain("reviewer-actionable takeaways")
     expect(user).toContain("- open reviews: 1")
     expect(user).toContain("- reviewer last visited: 2h ago")
     expect(user).toContain("- id pr_1 | acme/api#142 | Normalize webhooks")

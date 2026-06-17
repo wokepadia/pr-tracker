@@ -285,7 +285,7 @@ export const aiDashboardSchema: Record<string, unknown> = {
           items: {
             type: "string",
             description:
-              "Recent activity grouped by actor, naming the pull requests and what each person did; add a final bullet for reviews with no movement when relevant.",
+              "A reviewer-actionable takeaway about the movement: which reviews are back in your court (the author addressed your asks or re-requested you) and which have gone quiet on the author, naming the pull requests by #number. Lead with the consequence, not a per-actor activity log, and never headline a raw count.",
           },
         },
       },
@@ -310,7 +310,7 @@ export const aiDashboardSchema: Record<string, unknown> = {
           sinceYouLooked: {
             type: "string",
             description:
-              "One short paragraph on new activity since you last looked. Say 'No changes since your review' only when the listed facts support it.",
+              "One short paragraph on what changed that affects your decision: whether the author addressed your change requests (in code or only in discussion), whether the ball is back in your court, whether anything invalidated your prior review. Lead with the implication, not an event list or counts. Say 'No changes since your review' only when the listed facts support it.",
           },
           nextAction: {
             type: "string",
@@ -331,7 +331,8 @@ export function buildAiDashboardPrompt(input: AiDashboardInput): {
     "You write a turn-tracking dashboard for a code reviewer's pull request queue.",
     "Use only the pull requests, metrics, and facts listed; never invent pull requests, events, statuses, people, or numbers.",
     "Do not assess code quality, implementation risk, reviewer performance, or whether the code is correct.",
-    "Explain what happened since the reviewer last looked, whose court each pull request is in, exactly who does what next, and whether it is stalled.",
+    "Explain what changed since the reviewer last looked and what it means for them, whose court each pull request is in, exactly who does what next, and whether it is stalled.",
+    "When you report movement, lead with its consequence for the reviewer — never replay a per-actor activity log or headline a raw count.",
     "The deterministic waiting side, counts, check state, and flags are authoritative; never contradict them.",
     "Write in a direct, concrete, second-person voice addressed to the reviewer ('you'), naming the actors who acted.",
     "Reference pull requests by their #number in prose, and by their listed id only inside card objects.",
@@ -441,7 +442,7 @@ export function buildAiDashboardPrompt(input: AiDashboardInput): {
     "- queueSummary.body: state the totals (open reviews, repos, how many are in your court vs with their authors), then lead into the priorities.",
     "- queueSummary.bullets: 2-4 callouts, each naming specific pull requests by #number and grouping related ones. Lead with the most urgent blocker on your side (tone urgent), then author-side reviews that have gone quiet and are worth a nudge (tone stalled), then quick wins already addressed that just need a re-review (tone quick_win). End each with a short recommendation.",
     "- sinceLastVisit.body: one sentence on how many of your reviews saw activity and the overall shape of the movement.",
-    "- sinceLastVisit.bullets: group the recent activity by actor, naming the pull requests and what each person did since you last looked; add a final bullet for reviews with no movement when it matters.",
+    "- sinceLastVisit.bullets: turn the movement into reviewer-actionable takeaways — which reviews are back in your court (the author pushed commits addressing your asks, or re-requested you) versus which have gone quiet on the author. Name pull requests by #number, lead with the consequence, and keep counts out of the headline.",
     "- cards: one card for each listed pull request, preserving the listed id. Cover the review state only, never the code's correctness."
   )
 
