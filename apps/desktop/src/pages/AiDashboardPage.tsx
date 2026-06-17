@@ -478,9 +478,6 @@ function PullRequestDashboardCard({
               {item.repository} #{item.number}
             </span>
           </div>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {item.description ?? item.reason}
-          </p>
         </div>
         <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
           <span>active {item.updatedAt}</span>
