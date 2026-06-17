@@ -28,7 +28,6 @@ import {
   useMemo,
   useState,
   type ComponentType,
-  type CSSProperties,
   type FormEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -85,6 +84,7 @@ import {
 import { useBoardInbox } from "@/app/use-board-inbox"
 import { useGithubSync } from "@/app/use-github-sync"
 import { formatCount } from "@/lib/copy"
+import { githubLabelStyle } from "@/lib/label-color"
 import { describeGithubSyncError } from "@/lib/sync-error"
 import { cn } from "@/lib/utils"
 import { PullRequestDetailSurface } from "./PullRequestPage"
@@ -2646,28 +2646,6 @@ function queuePillTooltip(item: ReviewQueueItemView): string {
   if (item.laneId === "caught_up") return "You are caught up on this PR"
   if (item.laneId === "stale") return "No recent activity on this PR"
   return "You are watching this PR"
-}
-
-function githubLabelStyle(color: string | undefined): CSSProperties | undefined {
-  if (!color) return undefined
-
-  const normalized = color.replace(/^#/, "")
-  if (!/^[0-9a-f]{6}$/i.test(normalized)) return undefined
-
-  const backgroundColor = `#${normalized}`
-  return {
-    backgroundColor,
-    borderColor: backgroundColor,
-    color: githubLabelTextColor(normalized),
-  }
-}
-
-function githubLabelTextColor(color: string): string {
-  const red = Number.parseInt(color.slice(0, 2), 16)
-  const green = Number.parseInt(color.slice(2, 4), 16)
-  const blue = Number.parseInt(color.slice(4, 6), 16)
-  const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255
-  return luminance > 0.58 ? "#24292f" : "#ffffff"
 }
 
 function threadsAwaitingReplyCount(item: ReviewQueueItemView): number {
