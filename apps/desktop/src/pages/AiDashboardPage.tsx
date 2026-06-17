@@ -29,6 +29,7 @@ import { isAiModeActive } from "@/ai/ai-settings"
 import { useGithubSync } from "@/app/use-github-sync"
 import { useReviewerInsights } from "@/app/use-reviewer-insights"
 import { Button } from "@/components/ui/button"
+import { githubLabelStyle } from "@/lib/label-color"
 import { cn, externalLinkProps } from "@/lib/utils"
 import {
   formatRelativeTime,
@@ -495,11 +496,6 @@ function PullRequestDashboardCard({
       >
         {item.title}
       </Link>
-      {item.description ? (
-        <p className="mt-1 truncate text-sm text-muted-foreground">
-          {item.description}
-        </p>
-      ) : null}
 
       <p className="mt-3 text-sm leading-6 text-foreground">{summary}</p>
 
@@ -615,7 +611,16 @@ function CardFactRow({ item }: { item: ReviewQueueItemView }) {
             {item.labels.slice(0, 4).map((label) => (
               <span
                 key={label.name}
-                className="rounded-full border border-border bg-muted/30 px-2 py-[2px]"
+                title={
+                  label.description
+                    ? `${label.name}: ${label.description}`
+                    : label.name
+                }
+                className={cn(
+                  "rounded-full border px-2 py-[2px] font-medium",
+                  !label.color && "border-border bg-muted/30 text-muted-foreground"
+                )}
+                style={githubLabelStyle(label.color)}
               >
                 {label.name}
               </span>
