@@ -52,11 +52,14 @@ export function AiDashboardPage() {
     queryFn: visitInsights,
     staleTime: Infinity,
   })
-  const { insights, allItems } = useReviewerInsights({
+  const { allItems } = useReviewerInsights({
     previousVisitAt: visitQuery.data?.previousVisitAt,
     scope: "board",
   })
   const aiActive = isAiModeActive(aiSettingsQuery.data)
+  const sinceVisitLabel = visitQuery.data?.previousVisitAt
+    ? formatRelativeTime(visitQuery.data.previousVisitAt)
+    : undefined
   const syncLabel = formatSyncStatusLabel({
     isSyncing: githubSync.isSyncing,
     lastSyncedAt: githubSync.lastSyncedAt,
@@ -68,15 +71,15 @@ export function AiDashboardPage() {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-6 py-6">
         {aiSettingsQuery.isLoading ? null : !aiActive ? (
           <AiModeOffCard />
-        ) : !insights || !allItems || visitQuery.isLoading ? (
+        ) : !allItems || visitQuery.isLoading ? (
           <div
             aria-busy="true"
             className="h-32 animate-pulse rounded-md border border-border bg-muted/40"
           />
         ) : (
           <AiDashboardBody
-            insights={insights}
             allItems={allItems}
+            sinceVisitLabel={sinceVisitLabel}
             syncLabel={syncLabel}
             isSyncing={githubSync.isSyncing}
             onSyncNow={githubSync.syncNow}
@@ -108,14 +111,14 @@ function AiModeOffCard() {
 }
 
 function AiDashboardBody({
-  insights,
   allItems,
+  sinceVisitLabel,
   syncLabel,
   isSyncing,
   onSyncNow,
 }: {
-  insights: Parameters<typeof buildAiDashboardInput>[0]
   allItems: ReviewQueueItemView[]
+  sinceVisitLabel?: string
   syncLabel: string
   isSyncing: boolean
   onSyncNow: () => void
@@ -123,8 +126,8 @@ function AiDashboardBody({
   const queryClient = useQueryClient()
   const [filter, setFilter] = useState<DashboardFilter>("all")
   const input = useMemo(
-    () => buildAiDashboardInput(insights, allItems),
-    [insights, allItems]
+    () => buildAiDashboardInput(allItems, { sinceVisitLabel }),
+    [allItems, sinceVisitLabel]
   )
   const inputKey = useMemo(() => JSON.stringify(input), [input])
   const itemById = useMemo(
@@ -195,7 +198,11 @@ function AiDashboardBody({
           fallback={buildQueueFallback(input)}
         />
         <SummaryPanel
-          title="Since your last visit"
+          title={
+            sinceVisitLabel
+              ? `Since your last visit · ${sinceVisitLabel}`
+              : "Since your last visit"
+          }
           content={result?.content.sinceLastVisit}
           fallback={buildSinceFallback(input, openItems)}
         />
@@ -493,6 +500,12 @@ function PullRequestDashboardCard({
         </div>
       </div>
 
+      {item.description ? (
+        <p className="mt-2 truncate text-xs text-muted-foreground">
+          {item.description}
+        </p>
+      ) : null}
+
       <p className="mt-3 text-sm leading-6 text-foreground">
         <span className="mr-2 text-xs font-medium text-muted-foreground">
           summary
@@ -505,43 +518,65 @@ function PullRequestDashboardCard({
         <TextInset title="what's next">{nextAction}</TextInset>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
-        {item.size?.lineCount !== undefined ? (
-          <span>{item.size.lineCount} changed lines</span>
-        ) : null}
-        {item.size?.fileCount !== undefined ? (
-          <span>{item.size.fileCount} files</span>
-        ) : null}
-        <span>{formatCount(item.newCommitCount, "new commit")}</span>
-        <span>{formatCount(item.newReplyCount, "new reply")}</span>
-        <span>
-          {item.unresolvedThreadCount === 0
-            ? "no unresolved threads"
-            : formatCount(item.unresolvedThreadCount, "unresolved thread")}
-        </span>
-        {item.checks ? (
-          <span
-            className={
-              item.checks.state === "failure"
-                ? "text-destructive"
-                : item.checks.state === "success"
-                  ? "text-emerald-700"
-                  : "text-muted-foreground"
-            }
-          >
-            CI {item.checks.state}
-          </span>
-        ) : null}
-        {item.labels.slice(0, 4).map((label) => (
-          <span
-            key={label.name}
-            className="rounded-full border border-border bg-muted/30 px-2 py-[2px]"
-          >
-            {label.name}
-          </span>
-        ))}
-      </div>
+      <CardFactRow item={item} />
     </section>
+  )
+}
+
+function CardFactRow({ item }: { item: ReviewQueueItemView }) {
+  const threadsResolved = item.sinceLastReview?.threadsResolvedCount ?? 0
+  const awaitingYourReply = item.reviewThreads.filter(
+    (thread) => thread.status === "unresolved" && thread.awaitingYourReply
+  ).length
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
+      {item.size ? (
+        <span>
+          +{item.size.additions} −{item.size.deletions}
+        </span>
+      ) : null}
+      {item.size?.fileCount !== undefined ? (
+        <span>{item.size.fileCount} files</span>
+      ) : null}
+      <span>
+        {item.newCommitCount > 0
+          ? formatCount(item.newCommitCount, "new commit")
+          : "no new commits"}
+      </span>
+      <span>
+        {item.newReplyCount > 0
+          ? formatCount(item.newReplyCount, "new reply")
+          : "no new replies"}
+      </span>
+      {threadsResolved > 0 ? (
+        <span>{formatCount(threadsResolved, "thread")} resolved</span>
+      ) : null}
+      {awaitingYourReply > 0 ? (
+        <span>{awaitingYourReply} of yours unanswered</span>
+      ) : null}
+      {item.checks ? (
+        <span
+          className={
+            item.checks.state === "failure"
+              ? "text-destructive"
+              : item.checks.state === "success"
+                ? "text-emerald-700"
+                : "text-muted-foreground"
+          }
+        >
+          CI {item.checks.state}
+        </span>
+      ) : null}
+      {item.labels.slice(0, 4).map((label) => (
+        <span
+          key={label.name}
+          className="rounded-full border border-border bg-muted/30 px-2 py-[2px]"
+        >
+          {label.name}
+        </span>
+      ))}
+    </div>
   )
 }
 

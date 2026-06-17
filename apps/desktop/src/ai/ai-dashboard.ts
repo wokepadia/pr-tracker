@@ -1,5 +1,36 @@
-import type { ReviewerInsightsView } from "@/reviewer/insights"
 import type { ReviewQueueItemView } from "@/reviewer/view-model"
+
+/**
+ * Turn-tracking dashboard input/prompt/schema. The dashboard narrates the
+ * board-scoped review queue: what changed since the reviewer last looked,
+ * whose court each pull request is in, what happens next, and whether
+ * anything is stalled. It never assesses the code itself.
+ *
+ * The input is derived directly from the board-scoped view-model items — the
+ * deterministic exception layer (`reviewer/insights.ts`) is intentionally not
+ * a dependency here, so the model gets raw turn facts rather than pre-chewed
+ * section labels. Everything is pure so the exact prompt text — and the cache
+ * key derived from it — stays deterministic and testable.
+ */
+
+export interface AiDashboardThreadInput {
+  excerpt: string
+  lastActorLogin?: string
+  awaitingYourReply: boolean
+}
+
+export interface AiDashboardReviewerInput {
+  login: string
+  decision: string
+}
+
+export interface AiDashboardSinceLastReviewInput {
+  decision: string
+  reviewedAt: string
+  commitCount: number
+  replyCount: number
+  threadsResolvedCount: number
+}
 
 export interface AiDashboardPrInput {
   id: string
@@ -10,27 +41,29 @@ export interface AiDashboardPrInput {
   authorLogin: string
   waitingOn: string
   waitingAge: string
+  waitingUrgency: string
+  isStalled: boolean
   openedAt: string
   updatedAt: string
   state: string
   reason: string
-  chips: string[]
-  unseenEvents: string[]
+  additions?: number
+  deletions?: number
   fileCount?: number
-  lineCount?: number
   newCommitCount: number
   newReplyCount: number
   unresolvedThreadCount: number
   totalThreadCount: number
+  awaitingYourReplyCount: number
   reviewRounds: number
   checksState?: string
+  approvalStale: boolean
+  userLastReviewDecision: string
   labels: string[]
-  unresolvedThreads: Array<{
-    excerpt: string
-    lastActorLogin?: string
-    lastActivityAt?: string
-    awaitingYourReply: boolean
-  }>
+  otherReviewers: AiDashboardReviewerInput[]
+  sinceLastReview?: AiDashboardSinceLastReviewInput
+  unseenEvents: string[]
+  unresolvedThreads: AiDashboardThreadInput[]
   discussionExcerpts?: Array<{
     actor: string
     body: string
@@ -50,7 +83,8 @@ export interface AiDashboardInput {
     stalledCount: number
     activeSinceLastVisitCount: number
     omittedCount: number
-    sinceWindowLabel?: string
+    /** Relative time since the reviewer's previous visit, e.g. "2h ago". */
+    sinceVisitLabel?: string
   }
   items: AiDashboardPrInput[]
 }
@@ -58,7 +92,10 @@ export interface AiDashboardInput {
 export interface AiDashboardContent {
   queueSummary: {
     body: string
-    bullets: Array<{ tone: "urgent" | "stalled" | "quick_win" | "info"; text: string }>
+    bullets: Array<{
+      tone: "urgent" | "stalled" | "quick_win" | "info"
+      text: string
+    }>
   }
   sinceLastVisit: {
     body: string
@@ -73,46 +110,19 @@ export interface AiDashboardContent {
 }
 
 const maxInputItems = 30
-const maxUnseenEventsPerItem = 6
+const maxUnseenEventsPerItem = 8
+const maxUnresolvedThreadsPerItem = 4
 const maxDiscussionExcerptsPerItem = 5
 const maxDiscussionExcerptChars = 500
 const maxSummaryBullets = 4
 const maxSinceBullets = 5
 const maxCards = 18
 
-const sectionLabels: Array<{
-  key:
-    | "needsYouNow"
-    | "mightBeMissing"
-    | "stalledOnYou"
-    | "whileAway"
-    | "hygiene"
-  label: string
-}> = [
-  { key: "needsYouNow", label: "needs you now" },
-  { key: "mightBeMissing", label: "might be missing" },
-  { key: "stalledOnYou", label: "stalled on you" },
-  { key: "whileAway", label: "finished while away" },
-  { key: "hygiene", label: "aging" },
-]
-
 export function buildAiDashboardInput(
-  insights: ReviewerInsightsView,
-  items: ReviewQueueItemView[]
+  items: ReviewQueueItemView[],
+  options: { sinceVisitLabel?: string } = {}
 ): AiDashboardInput {
   const openItems = items.filter((item) => item.state === "open")
-  const itemById = new Map(openItems.map((item) => [item.id, item]))
-  const chipsById = new Map<string, string[]>()
-
-  for (const section of sectionLabels) {
-    for (const row of insights[section.key]) {
-      if (!itemById.has(row.item.id)) continue
-      const chips = chipsById.get(row.item.id) ?? []
-      chips.push(`${section.label}: ${row.whyChip}`)
-      chipsById.set(row.item.id, chips)
-    }
-  }
-
   const ordered = openItems.slice().sort(compareDashboardItems)
   const within = ordered.slice(0, maxInputItems)
 
@@ -124,19 +134,12 @@ export function buildAiDashboardInput(
       waitingOnAuthorCount: openItems.filter(
         (item) => item.waitingOn === "author"
       ).length,
-      stalledCount: openItems.filter(
-        (item) =>
-          item.workflowState === "stale" || item.waitingUrgency === "overdue"
-      ).length,
+      stalledCount: openItems.filter(isStalled).length,
       activeSinceLastVisitCount: openItems.filter(
         (item) => item.unseenEventCount > 0
       ).length,
       omittedCount: Math.max(0, ordered.length - within.length),
-      sinceWindowLabel: insights.digest
-        ? `${insights.digest.updatedPullRequestCount} updated since ${
-            insights.digest.windowStartAt
-          }`
-        : undefined,
+      sinceVisitLabel: options.sinceVisitLabel,
     },
     items: within.map((item) => ({
       id: item.id,
@@ -147,35 +150,58 @@ export function buildAiDashboardInput(
       authorLogin: item.authorLogin,
       waitingOn: item.waitingOn,
       waitingAge: item.waitingAge,
+      waitingUrgency: item.waitingUrgency,
+      isStalled: isStalled(item),
       openedAt: item.openedAt,
       updatedAt: item.updatedAt,
       state: item.state,
       reason: item.reason,
-      chips: chipsById.get(item.id) ?? [],
-      unseenEvents: item.activityEvents
-        .filter((event) => event.isNew)
-        .slice(0, maxUnseenEventsPerItem)
-        .map((event) => `${event.actor} ${event.action}`),
+      additions: item.size?.additions,
+      deletions: item.size?.deletions,
       fileCount: item.size?.fileCount,
-      lineCount: item.size?.lineCount,
       newCommitCount: item.newCommitCount,
       newReplyCount: item.newReplyCount,
       unresolvedThreadCount: item.unresolvedThreadCount,
       totalThreadCount: item.totalThreadCount,
+      awaitingYourReplyCount: item.reviewThreads.filter(
+        (thread) => thread.status === "unresolved" && thread.awaitingYourReply
+      ).length,
       reviewRounds: item.reviewRounds,
       checksState: item.checks?.state,
+      approvalStale: item.approvalStale,
+      userLastReviewDecision: item.userLastReviewDecision,
       labels: item.labels.map((label) => label.name).slice(0, 6),
+      otherReviewers: item.otherReviewers.map((reviewer) => ({
+        login: reviewer.login,
+        decision: reviewer.decision,
+      })),
+      sinceLastReview: item.sinceLastReview
+        ? {
+            decision: item.sinceLastReview.decision,
+            reviewedAt: item.sinceLastReview.reviewedAt,
+            commitCount: item.sinceLastReview.commits.length,
+            replyCount: item.sinceLastReview.replyCount,
+            threadsResolvedCount: item.sinceLastReview.threadsResolvedCount,
+          }
+        : undefined,
+      unseenEvents: item.activityEvents
+        .filter((event) => event.isNew)
+        .slice(0, maxUnseenEventsPerItem)
+        .map((event) => `${event.actor} ${event.action}`),
       unresolvedThreads: item.reviewThreads
         .filter((thread) => thread.status === "unresolved")
-        .slice(0, 4)
+        .slice(0, maxUnresolvedThreadsPerItem)
         .map((thread) => ({
           excerpt: thread.excerpt,
           lastActorLogin: thread.lastActorLogin,
-          lastActivityAt: thread.lastActivityAtIso,
           awaitingYourReply: thread.awaitingYourReply,
         })),
     })),
   }
+}
+
+function isStalled(item: ReviewQueueItemView): boolean {
+  return item.workflowState === "stale" || item.waitingUrgency === "overdue"
 }
 
 function compareDashboardItems(
@@ -220,7 +246,7 @@ export const aiDashboardSchema: Record<string, unknown> = {
         body: {
           type: "string",
           description:
-            "Two short sentences in the style of 'You have 9 open reviews across 4 repos - 4 in your court, 5 with their authors.'",
+            "One or two sentences of totals in the style of 'You have 9 open reviews across 4 repos — 4 in your court, 5 with their authors.', ending with a lead-in like 'A few things deserve attention first:' when there are clear priorities.",
         },
         bullets: {
           type: "array",
@@ -234,7 +260,11 @@ export const aiDashboardSchema: Record<string, unknown> = {
                 type: "string",
                 enum: ["urgent", "stalled", "quick_win", "info"],
               },
-              text: { type: "string" },
+              text: {
+                type: "string",
+                description:
+                  "A priority callout naming specific pull requests by #number, grouping related ones, with a short recommendation (e.g. 'start here', 'worth a nudge', 'just need a re-review').",
+              },
             },
           },
         },
@@ -248,12 +278,16 @@ export const aiDashboardSchema: Record<string, unknown> = {
         body: {
           type: "string",
           description:
-            "One or two sentences about what changed since the reviewer last looked.",
+            "One sentence on how many reviews saw activity since the reviewer last looked and the overall shape of the movement.",
         },
         bullets: {
           type: "array",
           maxItems: maxSinceBullets,
-          items: { type: "string" },
+          items: {
+            type: "string",
+            description:
+              "Recent activity grouped by actor, naming the pull requests and what each person did; add a final bullet for reviews with no movement when relevant.",
+          },
         },
       },
     },
@@ -272,17 +306,17 @@ export const aiDashboardSchema: Record<string, unknown> = {
           summary: {
             type: "string",
             description:
-              "Two concise sentences explaining the review state, not the code quality.",
+              "Two or three sentences: when it opened, what you raised, what the author has done since, and the current blocking state. Review flow only, never code quality.",
           },
           sinceYouLooked: {
             type: "string",
             description:
-              "One concise paragraph describing new activity since the reviewer last looked. Say 'No changes since your review' only when the listed facts support it.",
+              "One short paragraph on new activity since you last looked. Say 'No changes since your review' only when the listed facts support it.",
           },
           nextAction: {
             type: "string",
             description:
-              "One concrete next step for the reviewer or author, based only on the waiting side and listed facts.",
+              "One concrete next step for the reviewer or author, grounded in the waiting side and listed facts.",
           },
         },
       },
@@ -295,13 +329,13 @@ export function buildAiDashboardPrompt(input: AiDashboardInput): {
   user: string
 } {
   const system = [
-    "You write a pure turn-tracking dashboard for a code reviewer's pull request queue.",
-    "Use only the pull requests, metrics, and facts listed; never invent pull requests, events, statuses, or people.",
+    "You write a turn-tracking dashboard for a code reviewer's pull request queue.",
+    "Use only the pull requests, metrics, and facts listed; never invent pull requests, events, statuses, people, or numbers.",
     "Do not assess code quality, implementation risk, reviewer performance, or whether the code is correct.",
-    "Explain what happened since the reviewer looked, whose court each pull request is in, exactly who does what next, and whether it is stalled.",
-    "The deterministic waiting side, counts, check state, and flags are authoritative.",
-    "Reference pull requests only by their listed id in card objects.",
-    "Keep wording direct and concrete, similar to a review-flow wireframe, but do not mention the wireframe.",
+    "Explain what happened since the reviewer last looked, whose court each pull request is in, exactly who does what next, and whether it is stalled.",
+    "The deterministic waiting side, counts, check state, and flags are authoritative; never contradict them.",
+    "Write in a direct, concrete, second-person voice addressed to the reviewer ('you'), naming the actors who acted.",
+    "Reference pull requests by their #number in prose, and by their listed id only inside card objects.",
   ].join(" ")
 
   const lines: string[] = [
@@ -313,51 +347,79 @@ export function buildAiDashboardPrompt(input: AiDashboardInput): {
     `- stalled: ${input.metrics.stalledCount}`,
     `- saw activity since last visit: ${input.metrics.activeSinceLastVisitCount}`,
   ]
-  if (input.metrics.sinceWindowLabel) {
-    lines.push(`- since-window: ${input.metrics.sinceWindowLabel}`)
+  if (input.metrics.sinceVisitLabel) {
+    lines.push(`- reviewer last visited: ${input.metrics.sinceVisitLabel}`)
   }
   if (input.metrics.omittedCount > 0) {
-    lines.push(`- omitted lower-priority open reviews: ${input.metrics.omittedCount}`)
+    lines.push(
+      `- omitted lower-priority open reviews: ${input.metrics.omittedCount}`
+    )
   }
 
-  lines.push("", "Pull requests:")
+  lines.push("", "Pull requests, highest priority first:")
   for (const item of input.items) {
     lines.push(
       `- id ${item.id} | ${item.repository}#${item.number} | ${item.title}`,
       `  author: ${item.authorLogin}`,
       `  waiting on: ${item.waitingOn}${
         item.waitingOn === "none" ? "" : ` for ${item.waitingAge}`
-      }`,
+      } (urgency ${item.waitingUrgency}${item.isStalled ? ", stalled" : ""})`,
       `  opened: ${item.openedAt}; active: ${item.updatedAt}`,
       `  reason: ${item.reason}`
     )
     if (item.description) {
       lines.push(`  description: ${truncateText(item.description, 220)}`)
     }
-    if (item.chips.length > 0) {
-      for (const chip of item.chips) lines.push(`  flag - ${chip}`)
+    lines.push(
+      `  your last review: ${item.userLastReviewDecision}${
+        item.approvalStale ? " (now stale — branch moved after you approved)" : ""
+      }`
+    )
+    if (item.otherReviewers.length > 0) {
+      lines.push(
+        `  other reviewers: ${item.otherReviewers
+          .map((reviewer) => `${reviewer.login} ${reviewer.decision}`)
+          .join(", ")}`
+      )
     }
     lines.push(
-      `  facts: ${formatMaybeNumber(item.fileCount, "files")}; ${formatMaybeNumber(
-        item.lineCount,
-        "changed lines"
+      `  facts: ${formatDiff(item.additions, item.deletions)}; ${formatMaybeNumber(
+        item.fileCount,
+        "files"
       )}; ${formatCount(item.newCommitCount, "new commit")}; ${formatCount(
         item.newReplyCount,
         "new reply"
-      )}; ${item.unresolvedThreadCount}/${item.totalThreadCount} unresolved threads; ${item.reviewRounds} review rounds; checks ${item.checksState ?? "unknown"}`
+      )}; ${item.unresolvedThreadCount}/${item.totalThreadCount} unresolved threads (${
+        item.awaitingYourReplyCount
+      } awaiting your reply); ${item.reviewRounds} changes-requested rounds; checks ${
+        item.checksState ?? "unknown"
+      }`
     )
+    if (item.sinceLastReview) {
+      lines.push(
+        `  since your last review (${item.sinceLastReview.decision} ${item.sinceLastReview.reviewedAt}): ${formatCount(
+          item.sinceLastReview.commitCount,
+          "commit"
+        )}, ${formatCount(item.sinceLastReview.replyCount, "reply")}, ${formatCount(
+          item.sinceLastReview.threadsResolvedCount,
+          "thread"
+        )} resolved`
+      )
+    }
     if (item.labels.length > 0) {
       lines.push(`  labels: ${item.labels.join(", ")}`)
     }
     if (item.unseenEvents.length > 0) {
-      lines.push(`  since last seen: ${item.unseenEvents.join("; ")}`)
+      lines.push(`  since you last looked: ${item.unseenEvents.join("; ")}`)
     }
     for (const thread of item.unresolvedThreads) {
       lines.push(
         `  unresolved thread: ${thread.excerpt}; last actor ${
           thread.lastActorLogin ?? "unknown"
-        }${thread.lastActivityAt ? ` at ${thread.lastActivityAt}` : ""}; ${
-          thread.awaitingYourReply ? "awaiting reviewer reply" : "awaiting author reply"
+        }; ${
+          thread.awaitingYourReply
+            ? "awaiting your reply"
+            : "awaiting author reply"
         }`
       )
     }
@@ -376,10 +438,25 @@ export function buildAiDashboardPrompt(input: AiDashboardInput): {
 
   lines.push(
     "",
-    "Write the dashboard fields. The queue summary should call out the most important blockers, author-side stalls, and quick wins when supported. The since-last-visit section should only describe listed activity. Create one card for each listed pull request that matters to the review flow, preserving the listed id. Leave out low-signal cards only when there are too many."
+    "Write the dashboard fields:",
+    "- queueSummary.body: state the totals (open reviews, repos, how many are in your court vs with their authors), then lead into the priorities.",
+    "- queueSummary.bullets: 2-4 callouts, each naming specific pull requests by #number and grouping related ones. Lead with the most urgent blocker on your side (tone urgent), then author-side reviews that have gone quiet and are worth a nudge (tone stalled), then quick wins already addressed that just need a re-review (tone quick_win). End each with a short recommendation.",
+    "- sinceLastVisit.body: one sentence on how many of your reviews saw activity and the overall shape of the movement.",
+    "- sinceLastVisit.bullets: group the recent activity by actor, naming the pull requests and what each person did since you last looked; add a final bullet for reviews with no movement when it matters.",
+    "- cards: one card for each listed pull request, preserving the listed id. Cover the review state only, never the code's correctness."
   )
 
   return { system, user: lines.join("\n") }
+}
+
+function formatDiff(
+  additions: number | undefined,
+  deletions: number | undefined
+): string {
+  if (additions === undefined && deletions === undefined) {
+    return "unknown diff size"
+  }
+  return `+${additions ?? 0} -${deletions ?? 0}`
 }
 
 function formatCount(count: number, noun: string): string {
@@ -432,7 +509,11 @@ export function normalizeAiDashboardContent(
         typeof candidate.pullRequestId === "string"
           ? candidate.pullRequestId.trim()
           : ""
-      if (!pullRequestId || !allowed.has(pullRequestId) || seen.has(pullRequestId)) {
+      if (
+        !pullRequestId ||
+        !allowed.has(pullRequestId) ||
+        seen.has(pullRequestId)
+      ) {
         continue
       }
       const summary = text(candidate.summary)
@@ -470,7 +551,9 @@ function normalizeTextBlock(
   maxBullets: number
 ): {
   body: string
-  bullets: Array<string | { tone: "urgent" | "stalled" | "quick_win" | "info"; text: string }>
+  bullets: Array<
+    string | { tone: "urgent" | "stalled" | "quick_win" | "info"; text: string }
+  >
 } {
   const parsed = (value ?? {}) as { body?: unknown; bullets?: unknown }
   const body = text(parsed.body)

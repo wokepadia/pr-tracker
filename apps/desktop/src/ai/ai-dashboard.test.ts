@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest"
 
-import type { ReviewerInsightsView, InsightRowView } from "@/reviewer/insights"
 import type { ReviewQueueItemView } from "@/reviewer/view-model"
 import {
   buildAiDashboardInput,
@@ -27,6 +26,10 @@ function makeItem(
     openedAt: "3d ago",
     reason: "You are requested as a reviewer.",
     labels: [],
+    assignees: [],
+    otherReviewers: [],
+    userLastReviewDecision: "pending",
+    approvalStale: false,
     unseenEventCount: 0,
     newCommitCount: 0,
     newReplyCount: 0,
@@ -39,26 +42,8 @@ function makeItem(
   } as ReviewQueueItemView
 }
 
-function makeRow(item: ReviewQueueItemView, whyChip: string): InsightRowView {
-  return { id: item.id, kind: "overdue_review", item, whyChip }
-}
-
-function makeInsights(
-  overrides: Partial<ReviewerInsightsView> = {}
-): ReviewerInsightsView {
-  return {
-    needsYouNow: [],
-    mightBeMissing: [],
-    stalledOnYou: [],
-    whileAway: [],
-    hygiene: [],
-    totalCount: 0,
-    ...overrides,
-  }
-}
-
 describe("buildAiDashboardInput", () => {
-  it("keeps the board-scoped open review universe and aggregates flags", () => {
+  it("keeps only the board-scoped open review universe and computes metrics", () => {
     const urgent = makeItem({ id: "pr_urgent" })
     const waiting = makeItem({
       id: "pr_waiting",
@@ -67,26 +52,21 @@ describe("buildAiDashboardInput", () => {
       workflowState: "waiting_on_author",
     })
     const closed = makeItem({ id: "pr_closed", state: "merged" })
-    const offBoard = makeItem({ id: "pr_off_board" })
-    const insights = makeInsights({
-      needsYouNow: [
-        makeRow(urgent, "Your turn for 4d"),
-        makeRow(offBoard, "Outside scope"),
-      ],
-      hygiene: [makeRow(waiting, "No movement for 8d")],
-    })
 
-    const input = buildAiDashboardInput(insights, [urgent, waiting, closed])
+    const input = buildAiDashboardInput([urgent, waiting, closed], {
+      sinceVisitLabel: "2h ago",
+    })
 
     expect(input.items.map((item) => item.id)).toEqual([
       "pr_urgent",
       "pr_waiting",
     ])
-    expect(input.items[0]?.chips).toEqual(["needs you now: Your turn for 4d"])
-    expect(input.items[1]?.chips).toEqual(["aging: No movement for 8d"])
     expect(input.metrics.openReviewCount).toBe(2)
     expect(input.metrics.yourMoveCount).toBe(1)
     expect(input.metrics.waitingOnAuthorCount).toBe(1)
+    expect(input.metrics.stalledCount).toBe(1)
+    expect(input.metrics.sinceVisitLabel).toBe("2h ago")
+    expect(input.items[0]?.isStalled).toBe(true)
   })
 
   it("orders reviewer-owned work first and caps long queues", () => {
@@ -100,27 +80,75 @@ describe("buildAiDashboardInput", () => {
       workflowState: "waiting_on_author",
     })
 
-    const input = buildAiDashboardInput(makeInsights(), [waiting, ...yourMove])
+    const input = buildAiDashboardInput([waiting, ...yourMove])
 
     expect(input.items).toHaveLength(30)
     expect(input.items[0]?.id).toBe("pr_you_0")
     expect(input.metrics.omittedCount).toBe(3)
   })
+
+  it("surfaces diff size, since-last-review deltas, and awaiting-reply counts", () => {
+    const item = makeItem({
+      id: "pr_rich",
+      size: { bucket: "M", lineCount: 331, additions: 265, deletions: 66, fileCount: 9 },
+      newReplyCount: 3,
+      unresolvedThreadCount: 2,
+      totalThreadCount: 4,
+      otherReviewers: [{ login: "priya", decision: "approved" }],
+      sinceLastReview: {
+        decision: "changes_requested",
+        reviewedAt: "3d ago",
+        commits: [
+          { id: "c1", title: "fix", occurredAt: "1d ago" },
+          { id: "c2", title: "more", occurredAt: "1d ago" },
+        ],
+        replyCount: 2,
+        threadsResolvedCount: 2,
+      },
+      reviewThreads: [
+        {
+          id: "t1",
+          author: "maya",
+          status: "unresolved",
+          authorReplied: true,
+          excerpt: "src/auth.ts:44",
+          awaitingYourReply: true,
+          isOutdated: false,
+          lastActorLogin: "maya",
+        },
+      ] as ReviewQueueItemView["reviewThreads"],
+    })
+
+    const input = buildAiDashboardInput([item])
+    const promptItem = input.items[0]
+    if (!promptItem) throw new Error("Expected dashboard input item.")
+
+    expect(promptItem.additions).toBe(265)
+    expect(promptItem.deletions).toBe(66)
+    expect(promptItem.awaitingYourReplyCount).toBe(1)
+    expect(promptItem.sinceLastReview?.commitCount).toBe(2)
+    expect(promptItem.sinceLastReview?.threadsResolvedCount).toBe(2)
+    expect(promptItem.otherReviewers).toEqual([
+      { login: "priya", decision: "approved" },
+    ])
+  })
 })
 
 describe("buildAiDashboardPrompt", () => {
-  it("lists metrics, facts, flags, unseen activity, and excerpts", () => {
+  it("lists metrics, diff facts, reviewers, unseen activity, and excerpts", () => {
     const item = makeItem({
       id: "pr_1",
       repository: "acme/api",
       number: 142,
       title: "Normalize webhooks",
       labels: [{ name: "backend" }],
+      size: { bucket: "M", lineCount: 90, additions: 64, deletions: 26, fileCount: 3 },
       newCommitCount: 2,
       newReplyCount: 1,
       unresolvedThreadCount: 1,
       totalThreadCount: 3,
       checks: { state: "failure", totalCount: 1 },
+      otherReviewers: [{ login: "lin", decision: "pending" }],
       activityEvents: [
         {
           actor: "maya",
@@ -129,10 +157,7 @@ describe("buildAiDashboardPrompt", () => {
         },
       ] as ReviewQueueItemView["activityEvents"],
     })
-    const input = buildAiDashboardInput(
-      makeInsights({ needsYouNow: [makeRow(item, "Your turn for 4d")] }),
-      [item]
-    )
+    const input = buildAiDashboardInput([item], { sinceVisitLabel: "2h ago" })
     const promptItem = input.items[0]
     if (!promptItem) throw new Error("Expected dashboard input item.")
     promptItem.discussionExcerpts = [
@@ -148,15 +173,17 @@ describe("buildAiDashboardPrompt", () => {
 
     const { system, user } = buildAiDashboardPrompt(input)
 
-    expect(system).toContain("pure turn-tracking dashboard")
+    expect(system).toContain("turn-tracking dashboard")
     expect(system).toContain("Do not assess code quality")
     expect(user).toContain("- open reviews: 1")
+    expect(user).toContain("- reviewer last visited: 2h ago")
     expect(user).toContain("- id pr_1 | acme/api#142 | Normalize webhooks")
-    expect(user).toContain("flag - needs you now: Your turn for 4d")
+    expect(user).toContain("+64 -26")
     expect(user).toContain("2 new commits")
     expect(user).toContain("checks failure")
+    expect(user).toContain("other reviewers: lin pending")
     expect(user).toContain("labels: backend")
-    expect(user).toContain("since last seen: maya pushed 2 commits")
+    expect(user).toContain("since you last looked: maya pushed 2 commits")
     expect(user).toContain(
       "discussion - [2026-06-10T09:00:00.000Z] review_comment on src/webhooks.ts:44 by maya:"
     )
