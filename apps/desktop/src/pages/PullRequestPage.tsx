@@ -708,12 +708,15 @@ function WhatThisDoesCard({
     <AiSectionCard title="What this PR does">
       <p className="text-sm leading-6 text-foreground">{content.overview}</p>
       {content.changes.length > 0 ? (
-        <ul className="mt-3 space-y-2 text-sm leading-5 text-foreground">
+        <ul className="mt-3 space-y-2 text-sm leading-6 text-foreground">
           {content.changes.map((change, index) => (
-            <li key={`${change.tag}-${index}`} className="flex gap-2">
+            <li
+              key={`${change.tag}-${index}`}
+              className="grid grid-cols-[64px_1fr] items-start gap-3"
+            >
               <span
                 className={cn(
-                  "mt-0.5 inline-flex shrink-0 items-center rounded-full border px-2 py-[1px] text-[11px] font-medium leading-4",
+                  "mt-[3px] inline-flex w-full items-center justify-center rounded-full border px-2 py-[2px] text-[11px] font-medium leading-4",
                   changeTagClasses[change.tag]
                 )}
               >
