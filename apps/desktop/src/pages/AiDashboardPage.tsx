@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import {
+  Clock,
   ExternalLink,
   Loader2,
   RefreshCw,
@@ -344,8 +345,8 @@ function SummaryPanel({
 
   return (
     <section className="rounded-md border border-border bg-card p-4">
-      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-        <Sparkles className="h-4 w-4 text-muted-foreground" />
+      <div className="mb-3 flex items-center gap-2 border-b border-border pb-2.5 text-sm font-semibold text-foreground">
+        <Sparkles className="h-4 w-4 text-violet-500" />
         {title}
       </div>
       <p className="text-sm leading-6 text-foreground">
@@ -444,12 +445,6 @@ function PullRequestDashboardCard({
       : item.waitingOn === "author"
         ? "border-l-sky-500"
         : "border-l-muted-foreground/30"
-  const laneLabel =
-    item.waitingOn === "you"
-      ? "Your move"
-      : item.waitingOn === "author"
-        ? "Waiting on author"
-        : "Watching"
   const summary = generated?.summary ?? item.reason
   const sinceYouLooked =
     generated?.sinceYouLooked ?? deterministicSinceYouLooked(item)
@@ -458,36 +453,29 @@ function PullRequestDashboardCard({
   return (
     <section
       className={cn(
-        "rounded-md border border-l-4 border-border bg-card p-4",
+        "rounded-md border border-l-4 border-border bg-card p-5",
         laneTone
       )}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-foreground">
-              {laneLabel}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <LaneTag waitingOn={item.waitingOn} />
+          {item.waitingUrgency !== "none" ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-[2px] text-xs font-medium text-amber-800">
+              <Clock className="h-3 w-3" />
+              {item.waitingUrgency === "overdue" ? "stalled" : "aging"}{" "}
+              {item.waitingAge} · on {item.waitingOn}
             </span>
-            {item.waitingUrgency !== "none" ? (
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-[2px] text-xs font-medium text-amber-800">
-                {item.waitingUrgency === "overdue" ? "stalled" : "aging"}{" "}
-                {item.waitingAge} · on {item.waitingOn}
-              </span>
-            ) : null}
-            <Link
-              to="/pull-requests/$pullRequestId"
-              params={{ pullRequestId: item.id }}
-              className="min-w-0 truncate text-sm font-semibold text-foreground hover:underline"
-            >
-              {item.title}
-            </Link>
-            <span className="text-xs text-muted-foreground">
-              {item.repository} #{item.number}
-            </span>
-          </div>
+          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-          <span>active {item.updatedAt}</span>
+          <span className="whitespace-nowrap">
+            {item.repository} #{item.number}
+          </span>
+          <span aria-hidden className="text-muted-foreground/40">
+            ·
+          </span>
+          <span className="whitespace-nowrap">active {item.updatedAt}</span>
           <a
             href={item.url}
             className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -500,26 +488,63 @@ function PullRequestDashboardCard({
         </div>
       </div>
 
+      <Link
+        to="/pull-requests/$pullRequestId"
+        params={{ pullRequestId: item.id }}
+        className="mt-3 block text-base font-semibold leading-snug text-foreground hover:underline"
+      >
+        {item.title}
+      </Link>
       {item.description ? (
-        <p className="mt-2 truncate text-xs text-muted-foreground">
+        <p className="mt-1 truncate text-sm text-muted-foreground">
           {item.description}
         </p>
       ) : null}
 
-      <p className="mt-3 text-sm leading-6 text-foreground">
-        <span className="mr-2 text-xs font-medium text-muted-foreground">
-          summary
-        </span>
-        {summary}
-      </p>
+      <p className="mt-3 text-sm leading-6 text-foreground">{summary}</p>
 
-      <div className="mt-3 grid grid-cols-2 gap-3">
-        <TextInset title="since you looked">{sinceYouLooked}</TextInset>
-        <TextInset title="what's next">{nextAction}</TextInset>
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <TextInset title="Since you looked" accent>
+          {sinceYouLooked}
+        </TextInset>
+        <TextInset title="What's next">{nextAction}</TextInset>
       </div>
 
       <CardFactRow item={item} />
     </section>
+  )
+}
+
+function LaneTag({
+  waitingOn,
+}: {
+  waitingOn: ReviewQueueItemView["waitingOn"]
+}) {
+  const config =
+    waitingOn === "you"
+      ? {
+          label: "Your move",
+          className: "border-rose-200 bg-rose-50 text-rose-700",
+        }
+      : waitingOn === "author"
+        ? {
+            label: "Waiting on author",
+            className: "border-sky-200 bg-sky-50 text-sky-700",
+          }
+        : {
+            label: "Watching",
+            className: "border-border bg-muted/40 text-muted-foreground",
+          }
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full border px-2.5 py-[3px] text-xs font-semibold",
+        config.className
+      )}
+    >
+      {config.label}
+    </span>
   )
 }
 
@@ -529,67 +554,99 @@ function CardFactRow({ item }: { item: ReviewQueueItemView }) {
     (thread) => thread.status === "unresolved" && thread.awaitingYourReply
   ).length
 
+  const facts: string[] = []
+  if (item.size) {
+    facts.push(`+${item.size.additions} −${item.size.deletions}`)
+  }
+  if (item.size?.fileCount !== undefined) {
+    facts.push(`${item.size.fileCount} files`)
+  }
+  facts.push(
+    item.newCommitCount > 0
+      ? formatCount(item.newCommitCount, "new commit")
+      : "no new commits"
+  )
+  facts.push(
+    item.newReplyCount > 0
+      ? formatCount(item.newReplyCount, "new reply")
+      : "no new replies"
+  )
+  if (threadsResolved > 0) {
+    facts.push(`${formatCount(threadsResolved, "thread")} resolved`)
+  }
+  if (awaitingYourReply > 0) {
+    facts.push(`${awaitingYourReply} of yours unanswered`)
+  }
+
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
-      {item.size ? (
-        <span>
-          +{item.size.additions} −{item.size.deletions}
-        </span>
-      ) : null}
-      {item.size?.fileCount !== undefined ? (
-        <span>{item.size.fileCount} files</span>
-      ) : null}
-      <span>
-        {item.newCommitCount > 0
-          ? formatCount(item.newCommitCount, "new commit")
-          : "no new commits"}
-      </span>
-      <span>
-        {item.newReplyCount > 0
-          ? formatCount(item.newReplyCount, "new reply")
-          : "no new replies"}
-      </span>
-      {threadsResolved > 0 ? (
-        <span>{formatCount(threadsResolved, "thread")} resolved</span>
-      ) : null}
-      {awaitingYourReply > 0 ? (
-        <span>{awaitingYourReply} of yours unanswered</span>
-      ) : null}
-      {item.checks ? (
-        <span
-          className={
-            item.checks.state === "failure"
-              ? "text-destructive"
-              : item.checks.state === "success"
-                ? "text-emerald-700"
-                : "text-muted-foreground"
-          }
-        >
-          CI {item.checks.state}
-        </span>
-      ) : null}
-      {item.labels.slice(0, 4).map((label) => (
-        <span
-          key={label.name}
-          className="rounded-full border border-border bg-muted/30 px-2 py-[2px]"
-        >
-          {label.name}
+    <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-border pt-3 text-xs text-muted-foreground">
+      {facts.map((fact, index) => (
+        <span key={`fact-${index}`} className="inline-flex items-center gap-2">
+          {index > 0 ? (
+            <span aria-hidden className="text-muted-foreground/40">
+              ·
+            </span>
+          ) : null}
+          {fact}
         </span>
       ))}
+      {item.checks ? (
+        <span className="inline-flex items-center gap-2">
+          <span aria-hidden className="text-muted-foreground/40">
+            ·
+          </span>
+          <span
+            className={
+              item.checks.state === "failure"
+                ? "font-medium text-destructive"
+                : item.checks.state === "success"
+                  ? "font-medium text-emerald-700"
+                  : "text-muted-foreground"
+            }
+          >
+            CI {item.checks.state}
+          </span>
+        </span>
+      ) : null}
+      {item.labels.length > 0 ? (
+        <span className="inline-flex items-center gap-2">
+          <span aria-hidden className="mx-0.5 h-3 w-px bg-border" />
+          <span className="flex flex-wrap items-center gap-1">
+            {item.labels.slice(0, 4).map((label) => (
+              <span
+                key={label.name}
+                className="rounded-full border border-border bg-muted/30 px-2 py-[2px]"
+              >
+                {label.name}
+              </span>
+            ))}
+          </span>
+        </span>
+      ) : null}
     </div>
   )
 }
 
 function TextInset({
   title,
+  accent = false,
   children,
 }: {
   title: string
+  accent?: boolean
   children: string
 }) {
   return (
-    <div className="rounded-md border border-border bg-muted/20 p-3">
-      <div className="mb-1 text-xs font-medium text-muted-foreground">
+    <div
+      className={cn(
+        "rounded-md border p-3",
+        accent
+          ? "border-violet-100 bg-violet-50/50"
+          : "border-border bg-muted/20"
+      )}
+    >
+      <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        {accent ? <Sparkles className="h-3 w-3 text-violet-500" /> : null}
         {title}
       </div>
       <p className="text-sm leading-6 text-foreground">{children}</p>
