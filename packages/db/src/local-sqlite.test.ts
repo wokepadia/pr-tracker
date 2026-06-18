@@ -8,7 +8,6 @@ import {
   defaultLocalBoardId,
   listLocalActivityEventRows,
   listLocalBoardItemStateRows,
-  listLocalBoardColumnRows,
   listLocalIssueCommentRows,
   listLocalPullRequestAssigneeRows,
   listLocalPullRequestLabelRows,
@@ -20,7 +19,6 @@ import {
   listLocalReviewThreadRows,
   markLocalPullRequestSeen,
   openLocalDatabase,
-  saveLocalBoardState,
   seedLocalSampleData
 } from "./local-sqlite";
 import { syncPullRequestsToLocalSqlite } from "./local-github-sync";
@@ -103,7 +101,7 @@ describe("local SQLite storage", () => {
       `);
       insert.run(
         "pr_1",
-        "pr-summary",
+        "pr-brief",
         "hash-a",
         "anthropic/claude-sonnet-4.6",
         '{"overview":"first"}',
@@ -111,7 +109,7 @@ describe("local SQLite storage", () => {
       );
       insert.run(
         "pr_1",
-        "pr-summary",
+        "pr-brief",
         "hash-b",
         "anthropic/claude-sonnet-4.6",
         '{"overview":"second"}',
@@ -123,7 +121,7 @@ describe("local SQLite storage", () => {
           `select cache_key, content_json from ai_summaries
            where pull_request_id = ? and kind = ?`
         )
-        .all("pr_1", "pr-summary") as Array<{
+        .all("pr_1", "pr-brief") as Array<{
         cache_key: string;
         content_json: string;
       }>;
@@ -228,69 +226,6 @@ describe("local SQLite storage", () => {
         (row) => row.pull_request_id === "pr_1"
       );
       expect(state?.last_seen_at).toBe("2026-06-01T12:00:00.000Z");
-    } finally {
-      local.close();
-    }
-  });
-
-  it("persists local board columns and item state", () => {
-    const local = openLocalDatabase({ path: ":memory:" });
-
-    try {
-      seedLocalSampleData(local.db);
-      saveLocalBoardState(local.db, {
-        columns: [
-          { id: "inbox", name: "Inbox", sortOrder: 0, widthPx: 260 },
-          { id: "custom", name: "Custom", sortOrder: 1, widthPx: 310 }
-        ],
-        items: [
-          {
-            pullRequestId: "pr_1",
-            columnId: "custom",
-            sortOrder: 0,
-            pinned: true,
-            notes: "Ask Maya about the migration window."
-          },
-          {
-            pullRequestId: "pr_2",
-            columnId: "inbox",
-            sortOrder: 0,
-            muted: true
-          },
-          {
-            pullRequestId: "pr_3",
-            columnId: "inbox",
-            sortOrder: 1,
-            snoozed: true
-          }
-        ]
-      });
-
-      expect(listLocalBoardColumnRows(local.db)).toEqual([
-        { id: "inbox", name: "Inbox", sort_order: 0, width_px: 260 },
-        { id: "custom", name: "Custom", sort_order: 1, width_px: 310 }
-      ]);
-      expect(listLocalBoardItemStateRows(local.db)).toMatchObject([
-        {
-          pull_request_id: "pr_1",
-          column_id: "custom",
-          sort_order: 0,
-          notes: "Ask Maya about the migration window.",
-          is_pinned: 1
-        },
-        {
-          pull_request_id: "pr_2",
-          column_id: "inbox",
-          sort_order: 0,
-          is_muted: 1
-        },
-        {
-          pull_request_id: "pr_3",
-          column_id: "inbox",
-          sort_order: 1,
-          is_snoozed: 1
-        }
-      ]);
     } finally {
       local.close();
     }
@@ -462,8 +397,7 @@ describe("local SQLite storage", () => {
       );
       expect(listLocalBoardItemStateRows(local.db)).toMatchObject([
         {
-          pull_request_id: "github:acme~web:42",
-          column_id: "inbox"
+          pull_request_id: "github:acme~web:42"
         }
       ]);
     } finally {

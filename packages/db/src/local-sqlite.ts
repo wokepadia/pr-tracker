@@ -154,44 +154,9 @@ interface ReviewCommentInput {
 
 export interface LocalBoardItemStateRow {
   pull_request_id: string;
-  column_id: string | null;
-  sort_order: number;
   last_seen_at: string | null;
   notes: string | null;
-  is_snoozed: number;
-  is_muted: number;
-  is_pinned: number;
   archived_at: string | null;
-}
-
-export interface LocalBoardColumnRow {
-  id: string;
-  name: string;
-  sort_order: number;
-  width_px: number;
-}
-
-export interface SaveLocalBoardColumnInput {
-  id: string;
-  name: string;
-  sortOrder: number;
-  widthPx: number;
-}
-
-export interface SaveLocalBoardItemInput {
-  pullRequestId: string;
-  columnId: string;
-  sortOrder: number;
-  snoozed?: boolean;
-  muted?: boolean;
-  pinned?: boolean;
-  notes?: string;
-}
-
-export interface SaveLocalBoardStateInput {
-  boardId?: string;
-  columns: SaveLocalBoardColumnInput[];
-  items: SaveLocalBoardItemInput[];
 }
 
 export interface UpsertLocalPullRequestSnapshotResult {
@@ -711,136 +676,15 @@ export function listLocalBoardItemStateRows(
       `
         select
           pull_request_id,
-          column_id,
-          sort_order,
           last_seen_at,
           notes,
-          is_snoozed,
-          is_muted,
-          is_pinned,
           archived_at
         from board_items
         where board_id = ? and archived_at is null
-        order by column_id asc, sort_order asc, pull_request_id asc
+        order by pull_request_id asc
       `
     )
     .all(boardId) as unknown as LocalBoardItemStateRow[];
-}
-
-export function listLocalBoardColumnRows(
-  db: DatabaseSync,
-  boardId = defaultLocalBoardId
-): LocalBoardColumnRow[] {
-  return db
-    .prepare(
-      `
-        select id, name, sort_order, width_px
-        from board_columns
-        where board_id = ? and archived_at is null
-        order by sort_order asc, created_at asc
-      `
-    )
-    .all(boardId) as unknown as LocalBoardColumnRow[];
-}
-
-export function saveLocalBoardState(
-  db: DatabaseSync,
-  input: SaveLocalBoardStateInput
-): void {
-  const boardId = input.boardId ?? defaultLocalBoardId;
-  const now = new Date().toISOString();
-  const activeColumnIds = new Set(input.columns.map((column) => column.id));
-
-  transaction(db, () => {
-    for (const column of input.columns) {
-      db.prepare(
-        `
-          insert into board_columns (
-            id,
-            board_id,
-            name,
-            sort_order,
-            width_px,
-            created_at,
-            updated_at,
-            archived_at
-          )
-          values (?, ?, ?, ?, ?, ?, ?, null)
-          on conflict(id)
-          do update set
-            name = excluded.name,
-            sort_order = excluded.sort_order,
-            width_px = excluded.width_px,
-            archived_at = null,
-            updated_at = excluded.updated_at
-        `
-      ).run(
-        column.id,
-        boardId,
-        column.name,
-        column.sortOrder,
-        column.widthPx,
-        now,
-        now
-      );
-    }
-
-    for (const column of listLocalBoardColumnRows(db, boardId)) {
-      if (!activeColumnIds.has(column.id)) {
-        db.prepare(
-          `
-            update board_columns
-            set archived_at = ?, updated_at = ?
-            where id = ? and board_id = ?
-          `
-        ).run(now, now, column.id, boardId);
-      }
-    }
-
-    for (const item of input.items) {
-      db.prepare(
-        `
-          insert into board_items (
-            id,
-            board_id,
-            pull_request_id,
-            column_id,
-            sort_order,
-            notes,
-            is_snoozed,
-            is_muted,
-            is_pinned,
-            created_at,
-            updated_at,
-            archived_at
-          )
-          values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)
-          on conflict(board_id, pull_request_id)
-          do update set
-            column_id = excluded.column_id,
-            sort_order = excluded.sort_order,
-            notes = excluded.notes,
-            is_snoozed = excluded.is_snoozed,
-            is_muted = excluded.is_muted,
-            is_pinned = excluded.is_pinned,
-            archived_at = null,
-            updated_at = excluded.updated_at
-        `
-      ).run(
-        deterministicUuid(`board-item:${boardId}:${item.pullRequestId}`),
-        boardId,
-        item.pullRequestId,
-        item.columnId,
-        item.sortOrder,
-        cleanOptionalText(item.notes),
-        boolToSqlite(Boolean(item.snoozed)),
-        boolToSqlite(Boolean(item.muted)),
-        boolToSqlite(Boolean(item.pinned)),
-        now,
-        now
-      );
-    }
-  });
 }
 
 export function markLocalPullRequestSeen(
@@ -923,36 +767,6 @@ function ensureDefaultBoard(
       on conflict(id) do update set updated_at = excluded.updated_at
     `
   ).run(defaultLocalBoardId, profileId, "Default", 1, 0, now, now);
-
-  const columns = [
-    ["inbox", "Inbox", 0],
-    ["reviewing", "Reviewing", 1],
-    ["waiting", "Waiting", 2],
-    ["later", "Later", 3],
-    ["done", "Done", 4]
-  ] as const;
-
-  for (const [id, name, sortOrder] of columns) {
-    db.prepare(
-      `
-        insert into board_columns (
-          id,
-          board_id,
-          name,
-          sort_order,
-          width_px,
-          created_at,
-          updated_at
-        )
-        values (?, ?, ?, ?, ?, ?, ?)
-        on conflict(id)
-        do update set
-          name = excluded.name,
-          sort_order = excluded.sort_order,
-          updated_at = excluded.updated_at
-      `
-    ).run(id, defaultLocalBoardId, name, sortOrder, 232, now, now);
-  }
 }
 
 function upsertLocalPullRequest(
@@ -1540,12 +1354,10 @@ function ensureDefaultBoardItem(
         id,
         board_id,
         pull_request_id,
-        column_id,
-        sort_order,
         created_at,
         updated_at
       )
-      values (?, ?, ?, ?, ?, ?, ?)
+      values (?, ?, ?, ?, ?)
       on conflict(board_id, pull_request_id)
       do update set updated_at = excluded.updated_at
     `
@@ -1553,8 +1365,6 @@ function ensureDefaultBoardItem(
     deterministicUuid(`board-item:${defaultLocalBoardId}:${pullRequest.id}`),
     defaultLocalBoardId,
     pullRequest.id,
-    "inbox",
-    0,
     now,
     now
   );
@@ -2045,9 +1855,4 @@ function transaction<T>(db: DatabaseSync, callback: () => T): T {
 
 function boolToSqlite(value: boolean): number {
   return value ? 1 : 0;
-}
-
-function cleanOptionalText(value: string | undefined): string | null {
-  if (!value?.trim()) return null;
-  return value.replace(/\r\n?/g, "\n");
 }
