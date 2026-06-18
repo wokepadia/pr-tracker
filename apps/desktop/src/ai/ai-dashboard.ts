@@ -245,7 +245,7 @@ export const aiDashboardSchema: Record<string, unknown> = {
         body: {
           type: "string",
           description:
-            "Two to three sentences of totals in the style of 'You have 9 open reviews across 4 repos — 4 in your court, 5 with their authors.', noting the overall shape of the queue and ending with a lead-in like 'A few things deserve attention first:' when there are clear priorities.",
+            "Two to three sentences: the totals worth knowing (how many reviews are in your court versus with their authors) and the overall shape, ending with a lead-in like 'A few things deserve attention first:' when there are clear priorities. Do not mention how many reviews 'saw activity' or how many were omitted from the view.",
         },
         bullets: {
           type: "array",
@@ -262,7 +262,7 @@ export const aiDashboardSchema: Record<string, unknown> = {
               text: {
                 type: "string",
                 description:
-                  "A priority callout of a sentence or two, naming specific pull requests by #number, grouping related ones, with a short recommendation (e.g. 'start here', 'worth a nudge', 'just need a re-review').",
+                  "A priority callout of a sentence or two, naming the specific pull requests by #number with a short recommendation (e.g. 'start here', 'worth a nudge', 'just need a re-review'). Never enumerate a long list of #numbers — when a group is large (e.g. stalled drafts), collapse it into a count and one characterization rather than listing them all.",
               },
             },
           },
@@ -277,7 +277,7 @@ export const aiDashboardSchema: Record<string, unknown> = {
         body: {
           type: "string",
           description:
-            "Two to three sentences on how many reviews saw activity since the reviewer last looked and the overall shape of the movement.",
+            "Two to three sentences on the shape of what moved since you last looked — which way the queue tilted (back to you versus still with their authors) and the few reviews that now need you. Do not open with a raw 'N reviews saw activity' count.",
         },
         bullets: {
           type: "array",
@@ -285,7 +285,7 @@ export const aiDashboardSchema: Record<string, unknown> = {
           items: {
             type: "string",
             description:
-              "A reviewer-actionable takeaway of a sentence or two about the movement: which reviews are back in your court (the author addressed your asks or re-requested you) and which have gone quiet on the author, naming the pull requests by #number. Lead with the consequence, not a per-actor activity log, and never headline a raw count.",
+              "A reviewer-actionable takeaway of a sentence or two about the movement: which reviews are back in your court (the author addressed your asks or re-requested you) and why, naming those pull requests by #number. Lead with the consequence, not a per-actor activity log; never headline a raw count, and never re-list the same stalled #numbers another bullet already covered.",
           },
         },
       },
@@ -305,12 +305,12 @@ export const aiDashboardSchema: Record<string, unknown> = {
           summary: {
             type: "string",
             description:
-              "Three to four sentences: when it opened, what you raised, what the author has done since, and the current blocking state. Review flow only, never code quality.",
+              "Three to four sentences on what this PR is about and where your review stands: what it changes (from its title, description, and threads), what you raised, what the author has done since, and the single open point blocking your sign-off. No age or turn-state recitation, no raw counts.",
           },
           sinceYouLooked: {
             type: "string",
             description:
-              "A short paragraph of two to four sentences on what changed that affects your decision: whether the author addressed your change requests (in code or only in discussion), whether the ball is back in your court, whether anything invalidated your prior review. Lead with the implication, not an event list or counts. Say 'No changes since your review' only when the listed facts support it.",
+              "A short paragraph of two to four sentences on what changed that affects your decision: whether the author addressed your change requests (in code or only in discussion), whether the ball is back in your court, whether anything invalidated your prior review. Lead with the implication; never restate raw counts (e.g. 'N replies, no new commits'), an unknown or green check status, or turn mechanics. Say 'No changes since your review' only when the listed facts support it.",
           },
           nextAction: {
             type: "string",
@@ -328,12 +328,13 @@ export function buildAiDashboardPrompt(input: AiDashboardInput): {
   user: string
 } {
   const system = [
-    "You write a turn-tracking dashboard for a code reviewer's pull request queue.",
+    "You write a reviewer's queue brief: orient a reviewer to which of their open pull requests need action and why, with real substance.",
     "Use only the pull requests, metrics, and facts listed; never invent pull requests, events, statuses, people, or numbers.",
-    "Do not assess code quality, implementation risk, reviewer performance, or whether the code is correct.",
-    "Explain what changed since the reviewer last looked and what it means for them, whose court each pull request is in, exactly who does what next, and whether it is stalled.",
-    "When you report movement, lead with its consequence for the reviewer — never replay a per-actor activity log or headline a raw count.",
-    "The deterministic waiting side, counts, check state, and flags are authoritative; never contradict them.",
+    "Do not declare code correct or incorrect or invent risks; you may say what a pull request is about and what is contested, grounded in the listed titles, descriptions, threads, and discussion.",
+    "Lead with what matters to the reviewer: which reviews are back in their court and why, and the open point on each — not turn bookkeeping.",
+    "Never pad with stats or absent data: do not recite raw counts (new commits, replies, thread totals), the waiting age or how long a PR has been open, or an unknown or green check status; never enumerate a long list of pull-request numbers — collapse a large group into a count and one characterization (for example '~20 stalled drafts still with their authors').",
+    "State each fact once; do not repeat the same pull requests across bullets and fields.",
+    "The deterministic waiting side is authoritative; never contradict it.",
     "Write in a direct, concrete, second-person voice addressed to the reviewer ('you'), naming the actors who acted.",
     "Reference pull requests by their #number in prose, and by their listed id only inside card objects.",
   ].join(" ")
@@ -345,15 +346,9 @@ export function buildAiDashboardPrompt(input: AiDashboardInput): {
     `- in your court: ${input.metrics.yourMoveCount}`,
     `- with their authors: ${input.metrics.waitingOnAuthorCount}`,
     `- stalled: ${input.metrics.stalledCount}`,
-    `- saw activity since last visit: ${input.metrics.activeSinceLastVisitCount}`,
   ]
   if (input.metrics.sinceVisitLabel) {
     lines.push(`- reviewer last visited: ${input.metrics.sinceVisitLabel}`)
-  }
-  if (input.metrics.omittedCount > 0) {
-    lines.push(
-      `- omitted lower-priority open reviews: ${input.metrics.omittedCount}`
-    )
   }
 
   lines.push("", "Pull requests, highest priority first:")
@@ -383,18 +378,24 @@ export function buildAiDashboardPrompt(input: AiDashboardInput): {
       )
     }
     lines.push(
-      `  facts: ${formatDiff(item.additions, item.deletions)}; ${formatMaybeNumber(
-        item.fileCount,
-        "files"
-      )}; ${formatCount(item.newCommitCount, "new commit")}; ${formatCount(
+      `  facts (grounding only — do not recite as stats): ${formatDiff(
+        item.additions,
+        item.deletions
+      )} across ${formatMaybeNumber(item.fileCount, "files")}; ${formatCount(
+        item.newCommitCount,
+        "new commit"
+      )} and ${formatCount(
         item.newReplyCount,
         "new reply"
-      )}; ${item.unresolvedThreadCount}/${item.totalThreadCount} unresolved threads (${
-        item.awaitingYourReplyCount
-      } awaiting your reply); ${item.reviewRounds} changes-requested rounds; checks ${
-        item.checksState ?? "unknown"
-      }`
+      )} since you last looked; ${item.unresolvedThreadCount}/${
+        item.totalThreadCount
+      } unresolved threads (${item.awaitingYourReplyCount} awaiting your reply); ${
+        item.reviewRounds
+      } changes-requested rounds`
     )
+    if (item.checksState === "failure" || item.checksState === "pending") {
+      lines.push(`  checks: ${item.checksState}`)
+    }
     if (item.sinceLastReview) {
       lines.push(
         `  since your last review (${item.sinceLastReview.decision} ${item.sinceLastReview.reviewedAt}): ${formatCount(
@@ -439,11 +440,11 @@ export function buildAiDashboardPrompt(input: AiDashboardInput): {
   lines.push(
     "",
     "Write the dashboard fields:",
-    "- queueSummary.body: state the totals (open reviews, repos, how many are in your court vs with their authors), then lead into the priorities.",
-    "- queueSummary.bullets: 2-4 callouts, each naming specific pull requests by #number and grouping related ones. Lead with the most urgent blocker on your side (tone urgent), then author-side reviews that have gone quiet and are worth a nudge (tone stalled), then quick wins already addressed that just need a re-review (tone quick_win). End each with a short recommendation.",
-    "- sinceLastVisit.body: two to three sentences on how many of your reviews saw activity and the overall shape of the movement.",
-    "- sinceLastVisit.bullets: turn the movement into reviewer-actionable takeaways — which reviews are back in your court (the author pushed commits addressing your asks, or re-requested you) versus which have gone quiet on the author. Name pull requests by #number, lead with the consequence, and keep counts out of the headline.",
-    "- cards: one card for each listed pull request, preserving the listed id. Cover the review state only, never the code's correctness."
+    "- queueSummary.body: state the totals worth knowing (in your court vs with their authors), then lead into the priorities. No 'saw activity' or 'omitted' counts.",
+    "- queueSummary.bullets: 2-4 callouts. Lead with the most urgent blocker on your side (tone urgent), then author-side reviews worth a nudge (tone stalled), then quick wins that just need a re-review (tone quick_win). Name the specific pull requests by #number with a short recommendation, but collapse any large group (e.g. stalled drafts) into a count and one characterization instead of listing every #number.",
+    "- sinceLastVisit.body: two to three sentences on which way the queue tilted since you last looked; no raw 'N saw activity' count.",
+    "- sinceLastVisit.bullets: reviewer-actionable takeaways — which reviews are back in your court and why. Name those pull requests by #number, lead with the consequence, keep counts out of the headline, and do not re-list the stalled #numbers another bullet already covered.",
+    "- cards: one card for each listed pull request, preserving the listed id. Say what the PR is about and the open point blocking your sign-off; no age/turn-state recitation, no raw counts, no unknown-check nagging."
   )
 
   return { system, user: lines.join("\n") }
