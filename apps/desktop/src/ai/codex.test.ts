@@ -5,6 +5,7 @@ import {
   buildCodexPrompt,
   parseCodexJsonOutput,
   requestCodexStructuredCompletion,
+  unwrapSchemaEnvelope,
   type CodexExecResult,
 } from "./codex"
 
@@ -153,5 +154,28 @@ describe("requestCodexStructuredCompletion", () => {
     ).rejects.toThrow(
       "Codex returned a response that was not valid JSON. Try again or switch models in Settings."
     )
+  })
+
+  it("unwraps a payload Codex nested under the schema name", async () => {
+    const wrapped =
+      '{"type":"item.completed","item":{"type":"agent_message","text":"{\\"pr_summary\\":{\\"ok\\":true}}"}}'
+    await expect(
+      requestCodexStructuredCompletion(
+        completionInput(runner({ stdout: wrapped }))
+      )
+    ).resolves.toEqual({ ok: true })
+  })
+})
+
+describe("unwrapSchemaEnvelope", () => {
+  it("unwraps a single-key envelope matching the schema name", () => {
+    expect(unwrapSchemaEnvelope({ pr_brief: { yourMove: "go" } }, "pr_brief")).toEqual({
+      yourMove: "go",
+    })
+  })
+
+  it("leaves a bare payload untouched", () => {
+    const bare = { yourMove: "go", pr_brief: "a field that happens to share the name" }
+    expect(unwrapSchemaEnvelope(bare, "pr_brief")).toBe(bare)
   })
 })

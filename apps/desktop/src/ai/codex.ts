@@ -93,13 +93,36 @@ export async function requestCodexStructuredCompletion<T>(
     throw new Error("Codex returned no response. Try again.")
   }
 
+  let value: unknown
   try {
-    return JSON.parse(stripCodeFences(parsed.agentMessage)) as T
+    value = JSON.parse(stripCodeFences(parsed.agentMessage))
   } catch {
     throw new Error(
       "Codex returned a response that was not valid JSON. Try again or switch models in Settings."
     )
   }
+  return unwrapSchemaEnvelope(value, input.schemaName) as T
+}
+
+/**
+ * Codex is told to return "a single JSON object named <schemaName>" and
+ * sometimes takes that literally, wrapping the payload as
+ * `{ "<schemaName>": { ... } }`. Unwrap that envelope so the domain
+ * normalizers see the object they expect instead of failing as if a required
+ * field were missing.
+ */
+export function unwrapSchemaEnvelope(value: unknown, schemaName: string): unknown {
+  if (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 1 &&
+    schemaName in value
+  ) {
+    const inner = (value as Record<string, unknown>)[schemaName]
+    if (inner && typeof inner === "object") return inner
+  }
+  return value
 }
 
 /**
