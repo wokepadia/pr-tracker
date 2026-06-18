@@ -250,7 +250,7 @@ function YourMoveCard({
 }) {
   const toneClass =
     item.waitingOn === "you"
-      ? "border-rose-200 bg-rose-50/60"
+      ? "border-indigo-200 bg-indigo-50/60"
       : item.waitingOn === "author"
         ? "border-sky-200 bg-sky-50/50"
         : "border-border bg-muted/30"

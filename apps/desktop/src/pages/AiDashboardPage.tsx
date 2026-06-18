@@ -161,7 +161,11 @@ function AiDashboardBody({
     const item = itemById.get(entry.id)
     return item ? [item] : []
   })
-  const filteredItems = openItems.filter((item) => matchesFilter(item, filter))
+  const filteredItems = openItems
+    .filter((item) => matchesFilter(item, filter))
+    .sort(
+      (a, b) => Date.parse(b.updatedAtIso) - Date.parse(a.updatedAtIso)
+    )
   const cardById = new Map(
     (result?.content.cards ?? []).map((card) => [card.pullRequestId, card])
   )
@@ -540,7 +544,7 @@ function PullRequestDashboardCard({
 }) {
   const laneTone =
     item.waitingOn === "you"
-      ? "border-l-rose-500"
+      ? "border-l-indigo-500"
       : item.waitingOn === "author"
         ? "border-l-sky-500"
         : "border-l-muted-foreground/30"
@@ -637,7 +641,7 @@ function LaneTag({
     waitingOn === "you"
       ? {
           label: "Your move",
-          className: "border-rose-200 bg-rose-50 text-rose-700",
+          className: "border-indigo-200 bg-indigo-50 text-indigo-700",
         }
       : waitingOn === "author"
         ? {
