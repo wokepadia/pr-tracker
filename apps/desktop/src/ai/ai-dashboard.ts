@@ -245,7 +245,7 @@ export const aiDashboardSchema: Record<string, unknown> = {
         body: {
           type: "string",
           description:
-            "One or two sentences of totals in the style of 'You have 9 open reviews across 4 repos — 4 in your court, 5 with their authors.', ending with a lead-in like 'A few things deserve attention first:' when there are clear priorities.",
+            "Two to three sentences of totals in the style of 'You have 9 open reviews across 4 repos — 4 in your court, 5 with their authors.', noting the overall shape of the queue and ending with a lead-in like 'A few things deserve attention first:' when there are clear priorities.",
         },
         bullets: {
           type: "array",
@@ -262,7 +262,7 @@ export const aiDashboardSchema: Record<string, unknown> = {
               text: {
                 type: "string",
                 description:
-                  "A priority callout naming specific pull requests by #number, grouping related ones, with a short recommendation (e.g. 'start here', 'worth a nudge', 'just need a re-review').",
+                  "A priority callout of a sentence or two, naming specific pull requests by #number, grouping related ones, with a short recommendation (e.g. 'start here', 'worth a nudge', 'just need a re-review').",
               },
             },
           },
@@ -277,7 +277,7 @@ export const aiDashboardSchema: Record<string, unknown> = {
         body: {
           type: "string",
           description:
-            "One sentence on how many reviews saw activity since the reviewer last looked and the overall shape of the movement.",
+            "Two to three sentences on how many reviews saw activity since the reviewer last looked and the overall shape of the movement.",
         },
         bullets: {
           type: "array",
@@ -285,7 +285,7 @@ export const aiDashboardSchema: Record<string, unknown> = {
           items: {
             type: "string",
             description:
-              "A reviewer-actionable takeaway about the movement: which reviews are back in your court (the author addressed your asks or re-requested you) and which have gone quiet on the author, naming the pull requests by #number. Lead with the consequence, not a per-actor activity log, and never headline a raw count.",
+              "A reviewer-actionable takeaway of a sentence or two about the movement: which reviews are back in your court (the author addressed your asks or re-requested you) and which have gone quiet on the author, naming the pull requests by #number. Lead with the consequence, not a per-actor activity log, and never headline a raw count.",
           },
         },
       },
@@ -305,17 +305,17 @@ export const aiDashboardSchema: Record<string, unknown> = {
           summary: {
             type: "string",
             description:
-              "Two or three sentences: when it opened, what you raised, what the author has done since, and the current blocking state. Review flow only, never code quality.",
+              "Three to four sentences: when it opened, what you raised, what the author has done since, and the current blocking state. Review flow only, never code quality.",
           },
           sinceYouLooked: {
             type: "string",
             description:
-              "One short paragraph on what changed that affects your decision: whether the author addressed your change requests (in code or only in discussion), whether the ball is back in your court, whether anything invalidated your prior review. Lead with the implication, not an event list or counts. Say 'No changes since your review' only when the listed facts support it.",
+              "A short paragraph of two to four sentences on what changed that affects your decision: whether the author addressed your change requests (in code or only in discussion), whether the ball is back in your court, whether anything invalidated your prior review. Lead with the implication, not an event list or counts. Say 'No changes since your review' only when the listed facts support it.",
           },
           nextAction: {
             type: "string",
             description:
-              "One concrete next step for the reviewer or author, grounded in the waiting side and listed facts.",
+              "One or two sentences spelling out the concrete next step for the reviewer or author, grounded in the waiting side and listed facts.",
           },
         },
       },
@@ -441,7 +441,7 @@ export function buildAiDashboardPrompt(input: AiDashboardInput): {
     "Write the dashboard fields:",
     "- queueSummary.body: state the totals (open reviews, repos, how many are in your court vs with their authors), then lead into the priorities.",
     "- queueSummary.bullets: 2-4 callouts, each naming specific pull requests by #number and grouping related ones. Lead with the most urgent blocker on your side (tone urgent), then author-side reviews that have gone quiet and are worth a nudge (tone stalled), then quick wins already addressed that just need a re-review (tone quick_win). End each with a short recommendation.",
-    "- sinceLastVisit.body: one sentence on how many of your reviews saw activity and the overall shape of the movement.",
+    "- sinceLastVisit.body: two to three sentences on how many of your reviews saw activity and the overall shape of the movement.",
     "- sinceLastVisit.bullets: turn the movement into reviewer-actionable takeaways — which reviews are back in your court (the author pushed commits addressing your asks, or re-requested you) versus which have gone quiet on the author. Name pull requests by #number, lead with the consequence, and keep counts out of the headline.",
     "- cards: one card for each listed pull request, preserving the listed id. Cover the review state only, never the code's correctness."
   )

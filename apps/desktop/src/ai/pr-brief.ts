@@ -163,7 +163,7 @@ export const prBriefSchema: Record<string, unknown> = {
     yourMove: {
       type: "string",
       description:
-        "Two to four sentences, addressed to the reviewer as 'you', explaining whose turn it is and why: what the author did most recently, what is still pending, and — when stalled — why it has waited. Review flow only.",
+        "Three to five sentences, addressed to the reviewer as 'you', explaining whose turn it is and why: what the author did most recently, what is still pending, and — when stalled — why it has waited. Give enough context that the reviewer understands the situation without reopening GitHub. Review flow only.",
     },
     whatThisDoes: {
       type: "object",
@@ -173,7 +173,7 @@ export const prBriefSchema: Record<string, unknown> = {
         overview: {
           type: "string",
           description:
-            "Two to three plain sentences on what the pull request changes and why, grounded in the diff and description.",
+            "Three to four plain sentences on what the pull request changes and why, grounded in the diff and description — cover the overall approach and the main areas it touches, not just a one-line gist.",
         },
         changes: {
           type: "array",
@@ -189,7 +189,7 @@ export const prBriefSchema: Record<string, unknown> = {
               text: {
                 type: "string",
                 description:
-                  "One sentence on that change, citing a file path from the diff where it helps.",
+                  "One or two sentences on that change — what it does and why it matters — citing a file path from the diff where it helps.",
               },
             },
           },
@@ -204,7 +204,7 @@ export const prBriefSchema: Record<string, unknown> = {
         overview: {
           type: "string",
           description:
-            "Two to four sentences: how many threads there are, what is settled, what is still open, and who is waiting on whom. Empty string when there are no threads.",
+            "Three to five sentences: how many threads there are, what is settled, what is still open, and who is waiting on whom. Empty string when there are no threads.",
         },
         threads: {
           type: "array",
@@ -222,7 +222,8 @@ export const prBriefSchema: Record<string, unknown> = {
               },
               note: {
                 type: "string",
-                description: "One sentence on where that discussion stands.",
+                description:
+                  "One or two sentences on where that discussion stands and what it would take to resolve it.",
               },
             },
           },
@@ -243,7 +244,7 @@ export const prBriefSchema: Record<string, unknown> = {
           text: {
             type: "string",
             description:
-              "One takeaway led by its consequence for the review (e.g. \"Your change requests aren't in the code yet — the author replied in discussion instead\"). Name the actors; never headline a raw count.",
+              "One or two sentences, led by the consequence for your review (e.g. \"Your change requests aren't in the code yet — the author replied in discussion instead\") and then the context behind it. Name the actors; never headline a raw count.",
           },
           detail: {
             type: "string",
@@ -257,7 +258,7 @@ export const prBriefSchema: Record<string, unknown> = {
       type: "array",
       maxItems: maxNextSteps,
       description:
-        "Concrete next steps in the order the reviewer should take them, grounded in the waiting side and listed facts.",
+        "Concrete next steps in the order the reviewer should take them, each a full sentence with enough specifics to act on, grounded in the waiting side and listed facts.",
       items: { type: "string" },
     },
   },
