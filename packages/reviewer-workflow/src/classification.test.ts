@@ -22,6 +22,19 @@ describe("reviewer workflow classification", () => {
     ]);
   });
 
+  it("matches the viewer case-insensitively for requested reviews", () => {
+    // GitHub logins are case-insensitive: a viewer stored as "VIEWER" (the
+    // casing the user typed) must still match a "viewer" review request synced
+    // from GitHub, or the pull request silently drops out of "your move".
+    const item = classifyPullRequest(samplePullRequests[0]!, {
+      ...baseViewerContext,
+      viewerId: "VIEWER"
+    });
+
+    expect(item.workflowState).toBe("needs_review");
+    expect(item.turn.owner).toBe("viewer");
+  });
+
   it("detects commits pushed after the viewer approval", () => {
     const item = classifyPullRequest(samplePullRequests[1]!, {
       viewerId: "viewer",

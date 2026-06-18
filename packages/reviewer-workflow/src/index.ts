@@ -73,6 +73,28 @@ const activeStates: WorkflowState[] = [
   "inactive"
 ];
 
+/**
+ * Identity comparison for the login-keyed actor space. GitHub logins are
+ * case-insensitive, so a viewer stored as "Shubham-padia" and the synced
+ * canonical "shubham-padia" are the same person. Comparing case-sensitively
+ * hides the viewer from their own review requests, reviews, and threads, which
+ * silently drops pull requests out of the "your move" turn.
+ */
+export function sameActorId(
+  a: string | undefined,
+  b: string | undefined
+): boolean {
+  return (
+    typeof a === "string" &&
+    typeof b === "string" &&
+    a.toLowerCase() === b.toLowerCase()
+  );
+}
+
+export function actorIdsInclude(ids: string[], target: string): boolean {
+  return ids.some((id) => sameActorId(id, target));
+}
+
 export function classifyPullRequest(
   pullRequest: PullRequestItem,
   viewer: ViewerContext
@@ -128,7 +150,7 @@ export function classifyPullRequest(
   }
 
   const viewerReviews = pullRequest.reviews
-    .filter((review) => review.reviewerId === viewer.viewerId)
+    .filter((review) => sameActorId(review.reviewerId, viewer.viewerId))
     .sort((a, b) => Date.parse(b.submittedAt) - Date.parse(a.submittedAt));
   const latestViewerReview = viewerReviews[0];
   const hasKnownReviewedHead =
@@ -140,13 +162,14 @@ export function classifyPullRequest(
   const isCaughtUpWithLatestActivity =
     unseenActivityCount === 0 && isSeenAtOrAfterUpdate(lastSeenAt, pullRequest.updatedAt);
   const openViewerThreads = pullRequest.threads.filter(
-    (thread) => !thread.isResolved && thread.participantIds.includes(viewer.viewerId)
+    (thread) =>
+      !thread.isResolved && actorIdsInclude(thread.participantIds, viewer.viewerId)
   );
   // A thread only puts the ball in the viewer's court when someone else
   // acted last. Unknown last actors stay included so missing data never
   // hides a thread that may need attention.
   const threadsAwaitingViewer = openViewerThreads.filter(
-    (thread) => thread.lastActorId !== viewer.viewerId
+    (thread) => !sameActorId(thread.lastActorId, viewer.viewerId)
   );
 
   if (latestViewerReview?.decision === "changes_requested") {
@@ -196,7 +219,7 @@ export function classifyPullRequest(
     );
   }
 
-  if (pullRequest.requestedReviewerIds.includes(viewer.viewerId)) {
+  if (actorIdsInclude(pullRequest.requestedReviewerIds, viewer.viewerId)) {
     const requestEvent = latestActivityOfType(pullRequest, "review_request");
     return make(
       "needs_review",

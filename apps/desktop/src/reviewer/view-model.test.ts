@@ -298,6 +298,66 @@ describe("reviewer view model", () => {
     expect(view.otherReviewers).toEqual([{ login: "sam", decision: "approved" }])
   })
 
+  it("treats the viewer case-insensitively across reviews, threads, and reviewer state", () => {
+    const actorById = new Map([
+      ["viewer", { id: "viewer", login: "you" }],
+      ["maya", { id: "maya", login: "maya" }],
+    ])
+    const view = toReviewQueueItemView(
+      {
+        workflowState: "needs_review",
+        reason: "You are requested as a reviewer.",
+        turn: { owner: "viewer" as const },
+        evidence: [],
+        lastSeenAt: "2026-06-01T08:00:00.000Z",
+        unseenActivityCount: 0,
+        pullRequest: {
+          id: "pr_case",
+          repository: "acme/api",
+          number: 145,
+          title: "Case-insensitive viewer identity",
+          url: "https://github.com/acme/api/pull/145",
+          authorId: "maya",
+          state: "open",
+          isDraft: false,
+          createdAt: "2026-05-30T08:00:00.000Z",
+          updatedAt: "2026-06-02T11:00:00.000Z",
+          latestCommitSha: "c3",
+          // GitHub's canonical lower-case login, while the viewer is passed
+          // through as the upper-case casing the user typed at onboarding.
+          requestedReviewerIds: ["viewer"],
+          reviews: [
+            {
+              id: "v1",
+              reviewerId: "viewer",
+              decision: "changes_requested",
+              submittedAt: "2026-06-01T10:00:00.000Z",
+            },
+          ],
+          threads: [
+            {
+              id: "t1",
+              isResolved: false,
+              participantIds: ["viewer", "maya"],
+              lastActorId: "viewer",
+              lastActivityAt: "2026-06-02T09:00:00.000Z",
+            },
+          ],
+          activity: [],
+        },
+      },
+      actorById,
+      "VIEWER"
+    )
+
+    // The viewer's own review is recognized despite the casing difference,
+    expect(view.userLastReviewDecision).toBe("changes_requested")
+    // they are not double-listed as another reviewer,
+    expect(view.otherReviewers).toEqual([])
+    // and a thread they replied to last does not await their reply.
+    expect(view.reviewThreads[0]?.awaitingYourReply).toBe(false)
+  })
+
   it("guards caught-up actions to items with unseen activity", () => {
     expect(canMarkReviewItemCaughtUp(undefined, false)).toBe(false)
     expect(canMarkReviewItemCaughtUp({ unseenEventCount: 0 }, false)).toBe(false)

@@ -14,6 +14,7 @@ import type {
   TurnState,
   WorkflowState,
 } from "@pr-tracker/reviewer-workflow"
+import { sameActorId } from "@pr-tracker/reviewer-workflow"
 
 export type ReviewLaneId =
   | "needs_review"
@@ -201,7 +202,7 @@ export function toReviewQueueItemView(
   )
   const latestNewActivity = maxByIsoDate(newActivity, (event) => event.occurredAt)
   const viewerReviews = pullRequest.reviews
-    .filter((review) => review.reviewerId === viewerId)
+    .filter((review) => sameActorId(review.reviewerId, viewerId))
     .sort((a, b) => Date.parse(b.submittedAt) - Date.parse(a.submittedAt))
   const latestViewerReview = viewerReviews[0]
   const authorLogin = actorLogin(actorById, pullRequest.authorId)
@@ -282,7 +283,7 @@ export function toReviewQueueItemView(
           ? `${thread.filePath}${thread.line ? `:${thread.line}` : ""}`
           : "Review thread",
         awaitingYourReply:
-          !thread.isResolved && thread.lastActorId !== viewerId,
+          !thread.isResolved && !sameActorId(thread.lastActorId, viewerId),
         isOutdated: thread.isOutdated ?? false,
         lastActorLogin: thread.lastActorId
           ? actorLogin(actorById, thread.lastActorId)
@@ -440,7 +441,7 @@ function buildSinceLastReview(
   const replyCount = activitySinceReview.filter(
     (event) =>
       ["comment", "review"].includes(event.type) &&
-      event.actorId !== review.reviewerId
+      !sameActorId(event.actorId, review.reviewerId)
   ).length
   const threadsResolvedCount = activitySinceReview.filter(
     (event) => event.type === "thread_resolved"
@@ -510,13 +511,14 @@ function buildReviewerStates(
     .sort((a, b) => Date.parse(b.submittedAt) - Date.parse(a.submittedAt))
 
   for (const review of reviewsNewestFirst) {
-    if (review.reviewerId === viewerId) continue
+    if (sameActorId(review.reviewerId, viewerId)) continue
     if (latestByReviewer.has(review.reviewerId)) continue
     latestByReviewer.set(review.reviewerId, review.decision)
   }
 
   for (const reviewerId of pullRequest.requestedReviewerIds) {
-    if (reviewerId === viewerId || latestByReviewer.has(reviewerId)) continue
+    if (sameActorId(reviewerId, viewerId) || latestByReviewer.has(reviewerId))
+      continue
     latestByReviewer.set(reviewerId, "pending")
   }
 
@@ -539,7 +541,7 @@ function toActivityEventView(
     id: event.id,
     type: event.type,
     actor,
-    isViewer: event.actorId === viewerId,
+    isViewer: sameActorId(event.actorId, viewerId),
     actorAvatarUrl: actorById.get(event.actorId)?.avatarUrl,
     action: withoutActorPrefix(event.title, actor),
     occurredAt: formatRelativeTime(event.occurredAt),
