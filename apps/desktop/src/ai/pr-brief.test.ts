@@ -100,7 +100,7 @@ describe("buildPrBriefPrompt", () => {
     const { system, user } = buildPrBriefPrompt(promptInput())
 
     expect(system).toContain("never invent files")
-    expect(system).toContain("lead with what it means for the reviewer")
+    expect(system).toContain("do not recite the waiting age")
     expect(user).toContain("synthesized takeaways")
     expect(user).toContain("Pull request #2184: Migrate session auth to short-lived JWTs")
     expect(user).toContain("The reviewer reading this brief is you.")
@@ -119,6 +119,21 @@ describe("buildPrBriefPrompt", () => {
     expect(user).toContain("--- auth/middleware.ts (modified, +128 / -64)")
     expect(user).toContain("--- assets/logo.png (added, +0 / -0)")
     expect(user).toContain("(no text patch available)")
+  })
+
+  it("surfaces failing or pending checks but omits green or unknown ones", () => {
+    expect(buildPrBriefPrompt(promptInput({ checksState: "failure" })).user).toContain(
+      "Head-commit checks: failure"
+    )
+    expect(buildPrBriefPrompt(promptInput({ checksState: "pending" })).user).toContain(
+      "Head-commit checks: pending"
+    )
+    expect(buildPrBriefPrompt(promptInput({ checksState: "success" })).user).not.toContain(
+      "Head-commit checks"
+    )
+    expect(buildPrBriefPrompt(promptInput({ checksState: undefined })).user).not.toContain(
+      "Head-commit checks"
+    )
   })
 
   it("is deterministic for identical input", () => {

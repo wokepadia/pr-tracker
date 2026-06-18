@@ -163,7 +163,7 @@ export const prBriefSchema: Record<string, unknown> = {
     yourMove: {
       type: "string",
       description:
-        "Three to five sentences, addressed to the reviewer as 'you', explaining whose turn it is and why: what the author did most recently, what is still pending, and — when stalled — why it has waited. Give enough context that the reviewer understands the situation without reopening GitHub. Review flow only.",
+        "Three to five sentences orienting you to what matters on this PR right now: what the author changed or resolved since your last pass, the key open question or disagreement you must settle, and the one thing to look at first. State whose turn it is in at most a single clause — never recite the waiting age, the 'requested as a reviewer' mechanics, or an unknown check status. Lead with substance, not turn bookkeeping.",
     },
     whatThisDoes: {
       type: "object",
@@ -173,7 +173,7 @@ export const prBriefSchema: Record<string, unknown> = {
         overview: {
           type: "string",
           description:
-            "Three to four plain sentences on what the pull request changes and why, grounded in the diff and description — cover the overall approach and the main areas it touches, not just a one-line gist.",
+            "Three to four plain sentences on what the pull request changes and why, grounded in the diff and description — cover the overall approach, the main areas it touches, and which change is the most substantial or subtle for a reviewer to scrutinize first.",
         },
         changes: {
           type: "array",
@@ -204,13 +204,13 @@ export const prBriefSchema: Record<string, unknown> = {
         overview: {
           type: "string",
           description:
-            "Three to five sentences: how many threads there are, what is settled, what is still open, and who is waiting on whom. Empty string when there are no threads.",
+            "Three to five sentences on where the discussion stands: what is contested or still open, what is settled, and who is waiting on whom. Do not open with a raw thread count. Empty string when there are no threads.",
         },
         threads: {
           type: "array",
           maxItems: maxThreadNotes,
           description:
-            "One short note per review thread you can say something concrete about, keyed by the thread's location exactly as listed.",
+            "One short note per review thread you can say something concrete about, keyed by the thread's location exactly as listed. Skip any thread you cannot say something concrete about — never emit a placeholder telling the reviewer to go look it up.",
           items: {
             type: "object",
             additionalProperties: false,
@@ -234,7 +234,7 @@ export const prBriefSchema: Record<string, unknown> = {
       type: "array",
       maxItems: maxSinceItems,
       description:
-        "What changed since the reviewer last looked that affects their review decision — synthesized into a few takeaways, not a transcript. Group related events; omit anything that did not change (never a zero or a 'no new commits'). Empty array when nothing material moved.",
+        "What changed since the reviewer last looked that affects their review decision — synthesized into a few takeaways, not a transcript. Each entry must be a real change to the code or discussion; never emit an entry that only restates turn mechanics (e.g. 'they re-requested your review') or absent data (e.g. 'checks are unknown'). Group related events; omit anything that did not change (never a zero or a 'no new commits'). Empty array when nothing material moved.",
       items: {
         type: "object",
         additionalProperties: false,
@@ -289,14 +289,15 @@ export function buildPrBriefPrompt(input: PrBriefPromptInput): {
   user: string
 } {
   const system = [
-    "You write a turn-tracking brief for a code reviewer reading one GitHub pull request.",
+    "You write a reviewer's brief for one GitHub pull request: orient an experienced reviewer to what this PR actually does and what they must decide, with real technical substance.",
     "Use only the metadata, diff, threads, comments, and events provided; never invent files, behavior, events, people, or numbers.",
     "Reference file paths exactly as they appear in the diff or thread list.",
     "Write in a direct, concrete, second-person voice addressed to the reviewer ('you'), naming the actors who acted.",
-    "Explain whose turn it is and why, what the pull request does, where the discussion stands, what moved since the reviewer last looked, and exactly what to do next.",
-    "When you report what moved, lead with what it means for the reviewer's decision — whether the author addressed their change requests, whether the ball is back in their court, whether anything invalidated their prior review — never replay the raw event log or headline a count.",
-    "The deterministic waiting side, counts, and check state are authoritative; never contradict them.",
-    "Do not assess code quality, correctness, implementation risk, or priority.",
+    "Lead with substance the reviewer cannot get from a glance: what the code does, what is contested, what changed since they last looked, and what to look at first.",
+    "You may highlight which changes are the most substantial, subtle, or worth scrutinizing, and where the open questions are, as long as every call-out is grounded in the provided diff or discussion. Do not declare the code correct or incorrect, well- or badly-written, or invent risks that the diff and discussion do not show.",
+    "Never pad the brief with turn bookkeeping or absent data: do not recite the waiting age, do not explain that it is the reviewer's turn because they were requested, and never tell the reviewer to go check something the data does not contain (for example an unknown check status) — simply omit it.",
+    "State each fact once, in the single field where it belongs; do not repeat the same point across fields.",
+    "The deterministic waiting side and counts are authoritative; never contradict them.",
   ].join(" ")
 
   const lines: string[] = [
@@ -327,9 +328,13 @@ export function buildPrBriefPrompt(input: PrBriefPromptInput): {
       input.approvalStale ? " (now stale — branch moved after the approval)" : ""
     }`,
     `Changes-requested rounds so far: ${input.reviewRounds}`,
-    `Head-commit checks: ${input.checksState ?? "unknown"}`,
     `Reviewer last looked: ${input.lastSeenLabel ?? "never"}`
   )
+  // Only surface checks worth acting on; an unknown or green status is not
+  // reviewer-useful and only invites "go verify CI" filler.
+  if (input.checksState === "failure" || input.checksState === "pending") {
+    lines.push(`Head-commit checks: ${input.checksState}`)
+  }
   if (input.otherReviewers.length > 0) {
     lines.push(
       `Other reviewers: ${input.otherReviewers
@@ -405,11 +410,11 @@ export function buildPrBriefPrompt(input: PrBriefPromptInput): {
   lines.push(
     "",
     "Write the brief fields:",
-    "- yourMove: why it is your turn (or the author's) right now, citing the most recent author action and what still blocks merge.",
-    "- whatThisDoes: an overview plus the key changes, each tagged new/refactor/fix/test/docs/chore.",
-    "- conversation: an overview of where the threads stand, plus one note per thread keyed by its listed location where you can say something concrete.",
-    "- sinceYouLooked: a few synthesized takeaways about what changed that affects your decision — did the author address your change requests in code or only in discussion, is the ball back in your court, did new commits invalidate your prior review. Group related events, lead with the implication, and put any count in the optional detail, never as the message; omit unchanged facts entirely.",
-    "- whatsNext: the concrete steps to take, in order, to move this toward merge."
+    "- yourMove: orient yourself to what matters now — what the author changed or resolved, the key open question to settle, and what to look at first. Keep turn mechanics to a single clause; no waiting age, no 'requested as a reviewer', no unknown-check nagging.",
+    "- whatThisDoes: an overview plus the key changes, each tagged new/refactor/fix/test/docs/chore; call out the most substantial or subtle change to scrutinize first.",
+    "- conversation: an overview of where the threads stand (do not open with a raw thread count), plus one note per thread you can say something concrete about; skip threads you cannot.",
+    "- sinceYouLooked: a few synthesized takeaways about what changed that affects your decision — did the author address your change requests in code or only in discussion, is the ball back in your court, did new commits invalidate your prior review. Group related events, lead with the implication, put any count in the optional detail; never a turn-mechanics-only or unknown-data entry, and omit unchanged facts entirely.",
+    "- whatsNext: the concrete steps to take, in order, to move this toward merge. Do not include a 'check CI/checks' step unless a check is actually failing."
   )
 
   return { system, user: lines.join("\n") }
