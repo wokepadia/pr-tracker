@@ -101,6 +101,53 @@ export const migrations: Migration[] = [
       { kind: "addColumn", table: "pull_requests", column: "merged_at", definition: "text" },
     ],
   },
+  {
+    // Persisted dashboard chat conversations.
+    id: "0006-chat",
+    ops: [
+      {
+        kind: "exec",
+        sql: `
+          create table if not exists chat_threads (
+            id text primary key,
+            board_fingerprint text not null,
+            title text,
+            created_at text not null default current_timestamp,
+            updated_at text not null default current_timestamp,
+            archived_at text
+          )
+        `,
+      },
+      {
+        kind: "exec",
+        sql: `
+          create index if not exists chat_threads_board_idx
+            on chat_threads (board_fingerprint, archived_at, updated_at desc)
+        `,
+      },
+      {
+        kind: "exec",
+        sql: `
+          create table if not exists chat_messages (
+            id text primary key,
+            thread_id text not null references chat_threads(id) on delete cascade,
+            role text not null,
+            content text not null,
+            model text,
+            created_at text not null default current_timestamp,
+            check (role in ('user', 'assistant', 'system'))
+          )
+        `,
+      },
+      {
+        kind: "exec",
+        sql: `
+          create index if not exists chat_messages_thread_idx
+            on chat_messages (thread_id, created_at)
+        `,
+      },
+    ],
+  },
 ];
 
 /**

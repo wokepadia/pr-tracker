@@ -103,6 +103,36 @@ export interface BoardItemLocalState {
 
 export type BoardScopeState = Partial<Record<string, BoardItemLocalState>>
 
+export type ChatRole = "user" | "assistant" | "system"
+
+export interface ChatMessageRecord {
+  id: string
+  role: ChatRole
+  content: string
+  model?: string
+  createdAt: string
+}
+
+/** The active chat conversation for a board scope. An empty threadId means
+ * no conversation exists yet; one is created lazily on the first message. */
+export interface ChatThreadState {
+  threadId: string
+  messages: ChatMessageRecord[]
+}
+
+export interface SendChatMessageInput {
+  threadId: string
+  boardFingerprint: string
+  message: string
+  dashboardInput: AiDashboardInput
+}
+
+export interface SendChatMessageResult {
+  threadId: string
+  userMessage: ChatMessageRecord
+  assistantMessage: ChatMessageRecord
+}
+
 let desktopApiPromise: Promise<typeof import("./desktop/tauri-data")> | undefined
 
 function getDesktopApi(): Promise<typeof import("./desktop/tauri-data")> {
@@ -216,6 +246,24 @@ export async function generateAiDashboard(
   input: AiDashboardInput
 ): Promise<AiGenerated<AiDashboardContent>> {
   return (await getDesktopApi()).generateDesktopAiDashboard(input)
+}
+
+export async function getChatThread(
+  boardFingerprint: string
+): Promise<ChatThreadState> {
+  return (await getDesktopApi()).getDesktopChatThread(boardFingerprint)
+}
+
+export async function sendChatMessage(
+  input: SendChatMessageInput
+): Promise<SendChatMessageResult> {
+  return (await getDesktopApi()).sendDesktopChatMessage(input)
+}
+
+export async function clearChatThread(
+  boardFingerprint: string
+): Promise<ChatThreadState> {
+  return (await getDesktopApi()).clearDesktopChatThread(boardFingerprint)
 }
 
 export async function getOnboardingState(): Promise<OnboardingState> {

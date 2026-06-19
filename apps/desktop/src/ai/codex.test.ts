@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  buildCodexChatPrompt,
   buildCodexExecArgs,
   buildCodexPrompt,
   parseCodexJsonOutput,
+  requestCodexChat,
   requestCodexStructuredCompletion,
   unwrapSchemaEnvelope,
   type CodexExecResult,
@@ -39,6 +41,57 @@ function completionInput(run: ReturnType<typeof runner>) {
     run,
   }
 }
+
+describe("buildCodexChatPrompt", () => {
+  it("renders the grounding block and the transcript into one prompt", () => {
+    const prompt = buildCodexChatPrompt({
+      system: "Board context.",
+      messages: [
+        { role: "user", content: "Which PRs need me?" },
+        { role: "assistant", content: "PR #42 does." },
+        { role: "user", content: "Why?" },
+      ],
+    })
+    expect(prompt).toContain("Board context.")
+    expect(prompt).toContain("Conversation so far:")
+    expect(prompt).toContain("User: Which PRs need me?")
+    expect(prompt).toContain("Assistant: PR #42 does.")
+    expect(prompt).toContain("User: Why?")
+    expect(prompt).toContain("Write the Assistant's next reply as plain text")
+  })
+})
+
+describe("requestCodexChat", () => {
+  const chatStdout = [
+    '{"type":"turn.started"}',
+    '{"type":"item.completed","item":{"id":"i0","type":"agent_message","text":"PR #42 is waiting on you."}}',
+    '{"type":"turn.completed"}',
+  ].join("\n")
+
+  it("returns the agent message as plain text", async () => {
+    const answer = await requestCodexChat({
+      model: "gpt-5.5",
+      system: "ctx",
+      messages: [{ role: "user", content: "Which PR?" }],
+      run: runner({ code: 0, stdout: chatStdout }),
+    })
+    expect(answer).toBe("PR #42 is waiting on you.")
+  })
+
+  it("maps a not-signed-in failure to actionable guidance", async () => {
+    await expect(
+      requestCodexChat({
+        model: "gpt-5.5",
+        system: "ctx",
+        messages: [{ role: "user", content: "Which PR?" }],
+        run: runner({
+          code: 1,
+          stdout: '{"type":"error","message":"401 unauthorized: not signed in"}',
+        }),
+      })
+    ).rejects.toThrow("Codex is not signed in.")
+  })
+})
 
 describe("buildCodexExecArgs", () => {
   it("locks down the exec invocation and passes the model explicitly", () => {

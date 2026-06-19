@@ -412,4 +412,33 @@ create table if not exists ai_summaries (
   primary key (pull_request_id, kind),
   check (kind in ('pr-brief', 'ai-dashboard'))
 );
+
+-- Persisted chat conversations for the dashboard chat overlay. A thread is
+-- scoped to the board filter it was started under (board_fingerprint) so
+-- reopening the overlay restores the matching conversation. Messages are the
+-- durable transcript: the AI provider is never relied on to remember history.
+create table if not exists chat_threads (
+  id text primary key,
+  board_fingerprint text not null,
+  title text,
+  created_at text not null default current_timestamp,
+  updated_at text not null default current_timestamp,
+  archived_at text
+);
+
+create index if not exists chat_threads_board_idx
+  on chat_threads (board_fingerprint, archived_at, updated_at desc);
+
+create table if not exists chat_messages (
+  id text primary key,
+  thread_id text not null references chat_threads(id) on delete cascade,
+  role text not null,
+  content text not null,
+  model text,
+  created_at text not null default current_timestamp,
+  check (role in ('user', 'assistant', 'system'))
+);
+
+create index if not exists chat_messages_thread_idx
+  on chat_messages (thread_id, created_at);
 `;

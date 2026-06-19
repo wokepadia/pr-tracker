@@ -85,6 +85,73 @@ export async function requestStructuredCompletion<T>(
   }
 }
 
+export interface ChatTurn {
+  role: "user" | "assistant"
+  content: string
+}
+
+export interface OpenRouterChatInput {
+  apiKey: string
+  model: string
+  system: string
+  messages: ChatTurn[]
+  /** Injectable for tests; defaults to the global fetch. */
+  fetchImpl?: typeof fetch
+}
+
+/**
+ * Free-form (non-structured) multi-turn chat completion. Unlike
+ * `requestStructuredCompletion`, this returns the assistant's plain text so the
+ * chat overlay can render a conversational answer. Grounding is the caller's
+ * job: the board-scoped context is carried in the system prompt.
+ */
+export async function requestOpenRouterChat(
+  input: OpenRouterChatInput
+): Promise<string> {
+  const fetchImpl = input.fetchImpl ?? globalThis.fetch
+  let response: Response
+  try {
+    response = await fetchImpl(openRouterCompletionsUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${input.apiKey}`,
+        "Content-Type": "application/json",
+        "X-Title": "Review Ninja",
+      },
+      body: JSON.stringify({
+        model: input.model,
+        messages: [
+          { role: "system", content: input.system },
+          ...input.messages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+        ],
+      }),
+    })
+  } catch {
+    throw new Error(
+      "Could not reach OpenRouter. Check your network connection and try again."
+    )
+  }
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response))
+  }
+
+  const payload = (await response.json()) as OpenRouterCompletionPayload
+  if (payload.error?.message) {
+    throw new Error(`OpenRouter error: ${payload.error.message}`)
+  }
+
+  const content = payload.choices?.[0]?.message?.content
+  if (!content || !content.trim()) {
+    throw new Error("OpenRouter returned an empty response. Try again.")
+  }
+
+  return content.trim()
+}
+
 async function readErrorMessage(response: Response): Promise<string> {
   let detail: string | undefined
   try {

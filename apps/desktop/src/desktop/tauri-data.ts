@@ -34,12 +34,16 @@ import type {
   AiSettingsStatus,
   AttentionSettings,
   BoardState,
+  ChatMessageRecord,
+  ChatThreadState,
   GithubSettingsStatus,
   OnboardingState,
   PullRequestDetailResponse,
   InsightsVisit,
   SaveAiSettingsInput,
   SaveGithubSettingsInput,
+  SendChatMessageInput,
+  SendChatMessageResult,
   SqliteBackupResult,
   SyncGithubDataResult,
   SyncStatus,
@@ -52,11 +56,17 @@ import {
   type StoredAiSettings,
 } from "@/ai/ai-settings"
 import {
+  requestCodexChat,
   requestCodexStructuredCompletion,
   type CodexExecResult,
 } from "@/ai/codex"
 import { hashContent } from "@/ai/content-hash"
-import { requestStructuredCompletion } from "@/ai/openrouter"
+import {
+  requestOpenRouterChat,
+  requestStructuredCompletion,
+  type ChatTurn,
+} from "@/ai/openrouter"
+import { buildChatSystemPrompt } from "@/ai/chat"
 import {
   aiDashboardSchema,
   aiDashboardSchemaName,
@@ -766,6 +776,208 @@ export async function generateDesktopAiDashboard(
   })
 
   return { content, generatedAt, model: config.model, isStale: false }
+}
+
+const maxChatHistoryMessages = 40
+
+export async function getDesktopChatThread(
+  boardFingerprint: string
+): Promise<ChatThreadState> {
+  const db = await getDatabase()
+  const thread = await loadActiveChatThread(db, boardFingerprint)
+  if (!thread) {
+    return { threadId: "", messages: [] }
+  }
+  return { threadId: thread, messages: await loadChatMessages(db, thread) }
+}
+
+export async function sendDesktopChatMessage(
+  input: SendChatMessageInput
+): Promise<SendChatMessageResult> {
+  const db = await getDatabase()
+  const config = await requireActiveAiConfig(db)
+  const message = input.message.trim()
+  if (!message) {
+    throw new Error("Type a question to ask about your board.")
+  }
+
+  // Resolve the thread up front but do not persist the user turn until the AI
+  // call succeeds, so a failed request never leaves a dangling message.
+  let threadId = input.threadId
+  if (threadId) {
+    const exists = await db.select<Array<{ id: string }>>(
+      `select id from chat_threads where id = $1 and archived_at is null`,
+      [threadId]
+    )
+    if (exists.length === 0) {
+      threadId = ""
+    }
+  }
+
+  const history = threadId ? await loadChatMessages(db, threadId) : []
+  const turns: ChatTurn[] = [
+    ...history
+      .filter((entry) => entry.role === "user" || entry.role === "assistant")
+      .slice(-maxChatHistoryMessages)
+      .map((entry) => ({
+        role: entry.role as "user" | "assistant",
+        content: entry.content,
+      })),
+    { role: "user", content: message },
+  ]
+
+  const enrichedInput = await enrichAiDashboardInputWithComments(
+    db,
+    input.dashboardInput
+  )
+  const system = buildChatSystemPrompt(enrichedInput)
+  const answer = (await runChatAiCompletion(config, { system, messages: turns })).trim()
+  if (!answer) {
+    throw new Error("The model returned an empty answer. Try again.")
+  }
+
+  const now = new Date().toISOString()
+  if (!threadId) {
+    threadId = await createChatThread(db, {
+      boardFingerprint: input.boardFingerprint,
+      title: chatThreadTitle(message),
+      now,
+    })
+  }
+
+  const userMessage = await appendChatMessage(db, {
+    threadId,
+    role: "user",
+    content: message,
+    createdAt: now,
+  })
+  const assistantMessage = await appendChatMessage(db, {
+    threadId,
+    role: "assistant",
+    content: answer,
+    model: config.model,
+    createdAt: new Date().toISOString(),
+  })
+  await db.execute(`update chat_threads set updated_at = $1 where id = $2`, [
+    assistantMessage.createdAt,
+    threadId,
+  ])
+
+  return { threadId, userMessage, assistantMessage }
+}
+
+export async function clearDesktopChatThread(
+  boardFingerprint: string
+): Promise<ChatThreadState> {
+  const db = await getDatabase()
+  await db.execute(
+    `
+      update chat_threads
+      set archived_at = $1
+      where board_fingerprint = $2 and archived_at is null
+    `,
+    [new Date().toISOString(), boardFingerprint]
+  )
+  return { threadId: "", messages: [] }
+}
+
+async function loadActiveChatThread(
+  db: SqlDatabase,
+  boardFingerprint: string
+): Promise<string | undefined> {
+  const rows = await db.select<Array<{ id: string }>>(
+    `
+      select id from chat_threads
+      where board_fingerprint = $1 and archived_at is null
+      order by updated_at desc
+      limit 1
+    `,
+    [boardFingerprint]
+  )
+  return rows[0]?.id
+}
+
+async function loadChatMessages(
+  db: SqlDatabase,
+  threadId: string
+): Promise<ChatMessageRecord[]> {
+  const rows = await db.select<
+    Array<{
+      id: string
+      role: string
+      content: string
+      model: string | null
+      created_at: string
+    }>
+  >(
+    `
+      select id, role, content, model, created_at
+      from chat_messages
+      where thread_id = $1
+      order by created_at asc, id asc
+    `,
+    [threadId]
+  )
+  return rows.map((row) => ({
+    id: row.id,
+    role: row.role as ChatMessageRecord["role"],
+    content: row.content,
+    model: row.model ?? undefined,
+    createdAt: row.created_at,
+  }))
+}
+
+async function createChatThread(
+  db: SqlDatabase,
+  input: { boardFingerprint: string; title: string; now: string }
+): Promise<string> {
+  const id = deterministicUuid(
+    `chat-thread:${input.boardFingerprint}:${input.now}:${Math.random()}`
+  )
+  await db.execute(
+    `
+      insert into chat_threads (
+        id, board_fingerprint, title, created_at, updated_at
+      )
+      values ($1, $2, $3, $4, $5)
+    `,
+    [id, input.boardFingerprint, input.title, input.now, input.now]
+  )
+  return id
+}
+
+async function appendChatMessage(
+  db: SqlDatabase,
+  input: {
+    threadId: string
+    role: ChatMessageRecord["role"]
+    content: string
+    model?: string
+    createdAt: string
+  }
+): Promise<ChatMessageRecord> {
+  const id = deterministicUuid(
+    `chat-message:${input.threadId}:${input.role}:${input.createdAt}:${Math.random()}`
+  )
+  await db.execute(
+    `
+      insert into chat_messages (id, thread_id, role, content, model, created_at)
+      values ($1, $2, $3, $4, $5, $6)
+    `,
+    [id, input.threadId, input.role, input.content, input.model ?? null, input.createdAt]
+  )
+  return {
+    id,
+    role: input.role,
+    content: input.content,
+    model: input.model,
+    createdAt: input.createdAt,
+  }
+}
+
+function chatThreadTitle(message: string): string {
+  const collapsed = message.replace(/\s+/g, " ").trim()
+  return collapsed.length > 60 ? `${collapsed.slice(0, 60)}…` : collapsed
 }
 
 export async function getDesktopOnboardingState(): Promise<OnboardingState> {
@@ -2767,6 +2979,28 @@ async function runStructuredAiCompletion<T>(
     apiKey: config.apiKey ?? "",
     model: config.model,
     ...request,
+  })
+}
+
+/** Routes a free-form chat completion to the configured provider. */
+async function runChatAiCompletion(
+  config: ActiveAiConfig,
+  request: { system: string; messages: ChatTurn[] }
+): Promise<string> {
+  if (config.provider === "codex") {
+    return requestCodexChat({
+      model: config.model,
+      system: request.system,
+      messages: request.messages,
+      run: runCodexCommand,
+    })
+  }
+
+  return requestOpenRouterChat({
+    apiKey: config.apiKey ?? "",
+    model: config.model,
+    system: request.system,
+    messages: request.messages,
   })
 }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { hashContent } from "./content-hash"
 import {
+  requestOpenRouterChat,
   requestStructuredCompletion,
   type StructuredCompletionInput,
 } from "./openrouter"
@@ -109,6 +110,55 @@ describe("requestStructuredCompletion", () => {
     ).rejects.toThrow(
       "Could not reach OpenRouter. Check your network connection and try again."
     )
+  })
+})
+
+describe("requestOpenRouterChat", () => {
+  it("sends the system prompt plus turns and returns plain text", async () => {
+    let captured: { init: RequestInit } | undefined
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      captured = { init: init ?? {} }
+      return jsonResponse({
+        choices: [{ message: { content: "  PR #42 is in your court.  " } }],
+      })
+    }
+
+    const answer = await requestOpenRouterChat({
+      apiKey: "sk-or-test",
+      model: "anthropic/claude-sonnet-4.6",
+      system: "Board context here.",
+      messages: [
+        { role: "user", content: "Which PRs need me?" },
+        { role: "assistant", content: "One does." },
+        { role: "user", content: "Which one?" },
+      ],
+      fetchImpl,
+    })
+
+    expect(answer).toBe("PR #42 is in your court.")
+    const body = JSON.parse(String(captured?.init.body))
+    // System prompt is prepended; no structured-output formatting for chat.
+    expect(body.response_format).toBeUndefined()
+    expect(body.messages[0]).toEqual({
+      role: "system",
+      content: "Board context here.",
+    })
+    expect(body.messages).toHaveLength(4)
+  })
+
+  it("rejects an empty chat response", async () => {
+    const fetchImpl: typeof fetch = async () =>
+      jsonResponse({ choices: [{ message: { content: "   " } }] })
+
+    await expect(
+      requestOpenRouterChat({
+        apiKey: "sk-or-test",
+        model: "anthropic/claude-sonnet-4.6",
+        system: "ctx",
+        messages: [{ role: "user", content: "hi" }],
+        fetchImpl,
+      })
+    ).rejects.toThrow("OpenRouter returned an empty response. Try again.")
   })
 })
 

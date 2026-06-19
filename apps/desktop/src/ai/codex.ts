@@ -104,6 +104,68 @@ export async function requestCodexStructuredCompletion<T>(
   return unwrapSchemaEnvelope(value, input.schemaName) as T
 }
 
+export interface CodexChatTurn {
+  role: "user" | "assistant"
+  content: string
+}
+
+export interface CodexChatInput {
+  model: string
+  system: string
+  messages: CodexChatTurn[]
+  run: CodexRunner
+}
+
+/**
+ * `codex exec` is single-shot: it takes one prompt, not a message array. So a
+ * multi-turn chat is rendered into a single prompt — the grounding system
+ * block, the prior turns as a transcript, then a final cue for the assistant
+ * reply. The answer is returned as plain text (no JSON envelope), since the
+ * chat overlay renders conversational prose.
+ */
+export function buildCodexChatPrompt(input: {
+  system: string
+  messages: CodexChatTurn[]
+}): string {
+  const lines = [input.system, "", "Conversation so far:"]
+  for (const message of input.messages) {
+    const speaker = message.role === "assistant" ? "Assistant" : "User"
+    lines.push(`${speaker}: ${message.content}`)
+  }
+  lines.push(
+    "",
+    "Write the Assistant's next reply as plain text. Do not prefix it with 'Assistant:'."
+  )
+  return lines.join("\n")
+}
+
+export async function requestCodexChat(input: CodexChatInput): Promise<string> {
+  const prompt = buildCodexChatPrompt({
+    system: input.system,
+    messages: input.messages,
+  })
+  let result: CodexExecResult
+  try {
+    result = await input.run(buildCodexExecArgs({ model: input.model, prompt }))
+  } catch {
+    throw new Error(
+      "Could not run the Codex CLI. Install it and sign in with `codex login`, then try again."
+    )
+  }
+
+  const parsed = parseCodexJsonOutput(result.stdout)
+  if (parsed.errorMessage || result.code !== 0) {
+    throw new Error(
+      mapCodexErrorMessage(parsed.errorMessage ?? result.stderr.trim())
+    )
+  }
+  if (!parsed.agentMessage || !parsed.agentMessage.trim()) {
+    throw new Error("Codex returned no response. Try again.")
+  }
+
+  return parsed.agentMessage.trim()
+}
+
 /**
  * Codex is told to return "a single JSON object named <schemaName>" and
  * sometimes takes that literally, wrapping the payload as

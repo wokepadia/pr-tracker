@@ -41,6 +41,8 @@ describe("schema migrations", () => {
         "board_items",
         "board_filter_memberships",
         "ai_summaries",
+        "chat_threads",
+        "chat_messages",
         "schema_migrations",
       ]) {
         expect(tables).toContain(table);
