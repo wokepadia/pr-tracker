@@ -1,7 +1,16 @@
 # Local Storage Completeness + Grounded Dashboard Chat — Research & Plan
 
-Status: planning (2026-06-19). This document captures the research behind, and
-the execution plan for, two linked pieces of work:
+Status: implemented (2026-06-19). All five checkpoints below landed on
+`feature/local-storage-and-chat`. Notes on final scope: storage completeness
+covered base/head ref, `closed_at`, `merged_at`, `review_decision`,
+`mergeable_state` (captured when the detail endpoint reports it), and individual
+check runs (both CheckRun and StatusContext shapes) into
+`pull_request_check_runs`. The chat overlay uses `@assistant-ui/react`'s local
+runtime, grounded on the board-scoped dashboard projection, and was verified end
+to end in the browser shim against the emulated Codex provider.
+
+This document captures the research behind, and the execution plan for, two
+linked pieces of work:
 
 1. **Storage completeness + versioned migrations + round-trip tests** — persist
    every pull-request fact we fetch from GitHub, behind a real migration
