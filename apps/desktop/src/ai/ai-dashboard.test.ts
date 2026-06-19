@@ -20,6 +20,7 @@ function makeItem(
     waitingAge: "4d",
     state: "open",
     workflowState: "needs_review",
+    unansweredReviewRequest: false,
     waitingUrgency: "overdue",
     updatedAt: "2h ago",
     updatedAtIso: "2026-06-11T10:00:00.000Z",

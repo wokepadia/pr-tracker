@@ -23,6 +23,18 @@ export interface ReviewDecisionEvent {
   body?: string;
 }
 
+export interface ReviewRequestEvent {
+  reviewerId: string;
+  /** When GitHub recorded the request (from the pull request timeline). */
+  requestedAt: string;
+}
+
+export interface PullRequestComment {
+  id: string;
+  authorId: string;
+  createdAt: string;
+}
+
 export interface ReviewThread {
   id: string;
   isResolved: boolean;
@@ -84,8 +96,20 @@ export interface PullRequestItem {
    * sync source did not provide it or the commit has no checks. */
   statusCheckRollup?: StatusCheckRollup;
   requestedReviewerIds: string[];
+  /**
+   * Outstanding review requests with the time GitHub recorded each one.
+   * Optional because pull requests synced before timeline ingestion lack the
+   * timestamp; classification then treats an outstanding request as
+   * unanswered rather than inventing a request time.
+   */
+  reviewRequests?: ReviewRequestEvent[];
   reviews: ReviewDecisionEvent[];
   threads: ReviewThread[];
+  /**
+   * Issue and inline review comments, used to detect whether the viewer has
+   * already responded to a review request. Optional for older synced data.
+   */
+  comments?: PullRequestComment[];
   activity: PullRequestActivity[];
 }
 
@@ -131,8 +155,12 @@ export const samplePullRequests: PullRequestItem[] = [
     deletions: 6,
     changedFiles: 3,
     requestedReviewerIds: ["viewer"],
+    reviewRequests: [
+      { reviewerId: "viewer", requestedAt: "2026-06-01T11:30:00.000Z" }
+    ],
     reviews: [],
     threads: [],
+    comments: [],
     activity: [
       {
         id: "a1",

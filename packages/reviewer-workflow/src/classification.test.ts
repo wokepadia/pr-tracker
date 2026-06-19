@@ -22,6 +22,74 @@ describe("reviewer workflow classification", () => {
     ]);
   });
 
+  it("flags an outstanding request the viewer has not answered", () => {
+    const item = classifyPullRequest(samplePullRequests[0]!, baseViewerContext);
+
+    expect(item.workflowState).toBe("needs_review");
+    expect(item.unansweredReviewRequest).toBe(true);
+  });
+
+  it("clears the flag once the viewer comments after the request", () => {
+    const item = classifyPullRequest(
+      {
+        ...samplePullRequests[0]!,
+        comments: [
+          {
+            id: "c1",
+            authorId: "viewer",
+            createdAt: "2026-06-01T12:00:00.000Z"
+          }
+        ]
+      },
+      baseViewerContext
+    );
+
+    expect(item.workflowState).toBe("needs_review");
+    expect(item.unansweredReviewRequest).toBe(false);
+  });
+
+  it("keeps the flag when the viewer's comment predates the request", () => {
+    const item = classifyPullRequest(
+      {
+        ...samplePullRequests[0]!,
+        comments: [
+          {
+            id: "c0",
+            authorId: "viewer",
+            createdAt: "2026-05-30T09:00:00.000Z"
+          }
+        ]
+      },
+      baseViewerContext
+    );
+
+    expect(item.unansweredReviewRequest).toBe(true);
+  });
+
+  it("re-elevates a re-requested review above a prior changes-requested review", () => {
+    // The viewer requested changes, then the author re-requested review. The
+    // explicit re-request with no response since must outrank the stale
+    // changes-requested state and sort to the very top.
+    const reRequested: PullRequestItem = {
+      ...samplePullRequests[2]!,
+      requestedReviewerIds: ["viewer"],
+      reviewRequests: [
+        { reviewerId: "viewer", requestedAt: "2026-05-31T09:00:00.000Z" }
+      ]
+    };
+    const inbox = buildReviewerInbox({
+      viewer: { id: "viewer", login: "you" },
+      actors: [],
+      pullRequests: [samplePullRequests[1]!, reRequested],
+      now: "2026-06-01T12:00:00.000Z"
+    });
+
+    const reClassified = classifyPullRequest(reRequested, baseViewerContext);
+    expect(reClassified.workflowState).toBe("needs_review");
+    expect(reClassified.unansweredReviewRequest).toBe(true);
+    expect(inbox.items[0]!.pullRequest.id).toBe("pr_3");
+  });
+
   it("matches the viewer case-insensitively for requested reviews", () => {
     // GitHub logins are case-insensitive: a viewer stored as "VIEWER" (the
     // casing the user typed) must still match a "viewer" review request synced
@@ -130,7 +198,7 @@ describe("turn ownership and evidence", () => {
 
   it("leaves the turn anchor empty when no request event was ingested", () => {
     const item = classifyPullRequest(
-      { ...samplePullRequests[0]!, activity: [] },
+      { ...samplePullRequests[0]!, activity: [], reviewRequests: [] },
       baseViewerContext
     );
 

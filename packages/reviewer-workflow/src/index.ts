@@ -49,6 +49,13 @@ export interface ClassifiedPullRequest {
   evidence: ClassificationEvidence[];
   lastSeenAt?: string;
   unseenActivityCount: number;
+  /**
+   * True when the author has an outstanding review request to the viewer and
+   * the viewer has not responded — by comment or review — since that request.
+   * This is the strongest "your move" signal, so the inbox sorts these ahead
+   * of every other pull request.
+   */
+  unansweredReviewRequest: boolean;
 }
 
 export interface ReviewerInbox {
@@ -106,7 +113,8 @@ export function classifyPullRequest(
     workflowState: WorkflowState,
     reason: string,
     turn: TurnState,
-    evidence: ClassificationEvidence[]
+    evidence: ClassificationEvidence[],
+    unansweredReviewRequest = false
   ): ClassifiedPullRequest => ({
     pullRequest,
     workflowState,
@@ -114,7 +122,8 @@ export function classifyPullRequest(
     turn,
     evidence,
     lastSeenAt,
-    unseenActivityCount
+    unseenActivityCount,
+    unansweredReviewRequest
   });
 
   if (pullRequest.state !== "open") {
@@ -146,6 +155,42 @@ export function classifyPullRequest(
           actorId: pullRequest.authorId
         }
       ]
+    );
+  }
+
+  // An outstanding request the viewer has not answered (by comment or
+  // review) since it was made is the strongest "your move" signal, so it is
+  // resolved before any prior-review state. An explicit re-request therefore
+  // pulls a pull request back to the top even if the viewer reviewed earlier.
+  const latestRequestToViewerAt = maxIsoDate(
+    (pullRequest.reviewRequests ?? [])
+      .filter((request) => sameActorId(request.reviewerId, viewer.viewerId))
+      .map((request) => request.requestedAt)
+  );
+  const isRequestedFromViewer = actorIdsInclude(
+    pullRequest.requestedReviewerIds,
+    viewer.viewerId
+  );
+  const unansweredReviewRequest =
+    isRequestedFromViewer &&
+    !viewerRespondedAfter(pullRequest, viewer.viewerId, latestRequestToViewerAt);
+
+  if (unansweredReviewRequest) {
+    const requestEvent = latestActivityOfType(pullRequest, "review_request");
+    const requestedAt = latestRequestToViewerAt ?? requestEvent?.occurredAt;
+    return make(
+      "needs_review",
+      "Your review was requested and you have not responded yet.",
+      { owner: "viewer", since: requestedAt },
+      [
+        {
+          id: "requested",
+          label: "Your review was requested.",
+          occurredAt: requestedAt,
+          actorId: requestEvent?.actorId
+        }
+      ],
+      true
     );
   }
 
@@ -430,6 +475,35 @@ function buildPushedAfterReviewEvidence(
   };
 }
 
+/**
+ * Whether the viewer responded — by a formal review or any comment — after
+ * the given moment. When the request time is unknown (older synced data
+ * carries no timeline), there is nothing to compare against, so the request
+ * is treated as still unanswered rather than silently cleared.
+ */
+function viewerRespondedAfter(
+  pullRequest: PullRequestItem,
+  viewerId: string,
+  sinceIso: string | undefined
+): boolean {
+  if (!sinceIso) return false;
+  const since = Date.parse(sinceIso);
+  if (Number.isNaN(since)) return false;
+
+  const reviewed = pullRequest.reviews.some(
+    (review) =>
+      sameActorId(review.reviewerId, viewerId) &&
+      Date.parse(review.submittedAt) > since
+  );
+  if (reviewed) return true;
+
+  return (pullRequest.comments ?? []).some(
+    (comment) =>
+      sameActorId(comment.authorId, viewerId) &&
+      Date.parse(comment.createdAt) > since
+  );
+}
+
 function latestActivityOfType(
   pullRequest: PullRequestItem,
   type: PullRequestActivity["type"]
@@ -469,6 +543,10 @@ function compareClassifiedPullRequests(
   a: ClassifiedPullRequest,
   b: ClassifiedPullRequest
 ): number {
+  if (a.unansweredReviewRequest !== b.unansweredReviewRequest) {
+    return a.unansweredReviewRequest ? -1 : 1;
+  }
+
   const stateDelta = stateRank(a.workflowState) - stateRank(b.workflowState);
   if (stateDelta !== 0) {
     return stateDelta;

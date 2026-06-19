@@ -75,6 +75,7 @@ describe("reviewer view model", () => {
         turn: { owner: "viewer" as const },
         evidence: [],
         unseenActivityCount: 0,
+        unansweredReviewRequest: false,
         pullRequest: {
           id: "pr_avatar",
           repository: "acme/api",
@@ -154,6 +155,7 @@ describe("reviewer view model", () => {
         evidence: [],
         lastSeenAt: "2026-06-01T08:00:00.000Z",
         unseenActivityCount: 2,
+        unansweredReviewRequest: false,
         pullRequest: {
           id: "pr_unsorted",
           repository: "acme/api",
@@ -207,6 +209,7 @@ describe("reviewer view model", () => {
         evidence: [],
         lastSeenAt: "2026-06-01T08:00:00.000Z",
         unseenActivityCount: 1,
+        unansweredReviewRequest: false,
         pullRequest: {
           id: "pr_linked_activity",
           repository: "acme/api",
@@ -260,6 +263,7 @@ describe("reviewer view model", () => {
         evidence: [],
         lastSeenAt: "2026-06-01T08:00:00.000Z",
         unseenActivityCount: 0,
+        unansweredReviewRequest: false,
         pullRequest: {
           id: "pr_reviewers",
           repository: "acme/api",
@@ -311,6 +315,7 @@ describe("reviewer view model", () => {
         evidence: [],
         lastSeenAt: "2026-06-01T08:00:00.000Z",
         unseenActivityCount: 0,
+        unansweredReviewRequest: false,
         pullRequest: {
           id: "pr_case",
           repository: "acme/api",
@@ -668,6 +673,7 @@ function classifiedItem(
     evidence: [],
     lastSeenAt: "2026-06-01T08:00:00.000Z",
     unseenActivityCount: 0,
+    unansweredReviewRequest: false,
     pullRequest: {
       id,
       repository: "acme/api",

@@ -127,6 +127,9 @@ export interface ReviewQueueItemView {
   state: PullRequestState
   workflowState: WorkflowState
   laneId: ReviewLaneId | "approved" | "caught_up" | "watching" | "stale"
+  /** Author requested the viewer's review and the viewer has not responded
+   * since; these sort ahead of everything else. */
+  unansweredReviewRequest: boolean
   reason: string
   evidence: EvidenceLineView[]
   waitingOn: WaitingOn
@@ -235,6 +238,7 @@ export function toReviewQueueItemView(
     state: pullRequest.state,
     workflowState: item.workflowState,
     laneId: getLaneId(item.workflowState),
+    unansweredReviewRequest: item.unansweredReviewRequest,
     reason: item.reason,
     evidence: item.evidence.map((entry) =>
       toEvidenceLineView(entry, actorById)

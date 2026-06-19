@@ -207,6 +207,9 @@ function compareDashboardItems(
   a: ReviewQueueItemView,
   b: ReviewQueueItemView
 ): number {
+  if (a.unansweredReviewRequest !== b.unansweredReviewRequest) {
+    return a.unansweredReviewRequest ? -1 : 1
+  }
   return (
     turnWeight(a) - turnWeight(b) ||
     urgencyWeight(a) - urgencyWeight(b) ||
