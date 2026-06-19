@@ -1380,14 +1380,15 @@ async function upsertPullRequestItem(
     `
       insert into pull_requests (
         id, github_node_id, repository_id, number, title, body, url,
-        author_account_id, state, is_draft, latest_commit_sha,
+        author_account_id, state, is_draft, mergeable_state, review_decision,
+        status_check_summary_json, base_ref, head_ref, latest_commit_sha,
         additions, deletions, changed_files,
-        github_created_at, github_updated_at, merged_at,
-        status_check_summary_json, raw_payload_json, created_at, updated_at
+        github_created_at, github_updated_at, closed_at, merged_at,
+        raw_payload_json, created_at, updated_at
       )
       values (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-        $17, $18, $19, $20, $21
+        $17, $18, $19, $20, $21, $22, $23, $24, $25, $26
       )
       on conflict(github_node_id)
       do update set
@@ -1398,14 +1399,19 @@ async function upsertPullRequestItem(
         author_account_id = excluded.author_account_id,
         state = excluded.state,
         is_draft = excluded.is_draft,
+        mergeable_state = excluded.mergeable_state,
+        review_decision = excluded.review_decision,
+        status_check_summary_json = excluded.status_check_summary_json,
+        base_ref = excluded.base_ref,
+        head_ref = excluded.head_ref,
         latest_commit_sha = excluded.latest_commit_sha,
         additions = excluded.additions,
         deletions = excluded.deletions,
         changed_files = excluded.changed_files,
         github_created_at = excluded.github_created_at,
         github_updated_at = excluded.github_updated_at,
+        closed_at = excluded.closed_at,
         merged_at = excluded.merged_at,
-        status_check_summary_json = excluded.status_check_summary_json,
         raw_payload_json = excluded.raw_payload_json,
         updated_at = excluded.updated_at
     `,
@@ -1422,14 +1428,20 @@ async function upsertPullRequestItem(
       // round trip through merged_at.
       pullRequest.state === "merged" ? "closed" : pullRequest.state,
       boolToSqlite(pullRequest.isDraft),
+      pullRequest.mergeableState ?? null,
+      pullRequest.reviewDecision ?? null,
+      JSON.stringify(pullRequest.statusCheckRollup ?? {}),
+      pullRequest.baseRef ?? null,
+      pullRequest.headRef ?? null,
       pullRequest.latestCommitSha,
       pullRequest.additions ?? null,
       pullRequest.deletions ?? null,
       pullRequest.changedFiles ?? null,
       pullRequest.createdAt,
       pullRequest.updatedAt,
-      pullRequest.state === "merged" ? pullRequest.updatedAt : null,
-      JSON.stringify(pullRequest.statusCheckRollup ?? {}),
+      pullRequest.closedAt ?? null,
+      pullRequest.mergedAt ??
+        (pullRequest.state === "merged" ? pullRequest.updatedAt : null),
       JSON.stringify(options.rawPayload ?? pullRequest),
       now,
       now,
@@ -1448,6 +1460,7 @@ async function upsertPullRequestItem(
   await replaceLabels(db, repositoryId, storedPullRequest, now)
   await replaceAssignees(db, storedPullRequest, now)
   await replaceReviewRequests(db, storedPullRequest, now)
+  await replaceCheckRuns(db, storedPullRequest, now)
   await replaceReviews(db, storedPullRequest.reviews, storedPullRequest.id, now)
   if (!options.skipThreads) {
     await replaceThreads(db, storedPullRequest.threads, storedPullRequest.id, now)
@@ -1670,6 +1683,55 @@ async function replaceReviewRequests(
         "user",
         accountId,
         requestedAtByReviewer.get(reviewerId.toLowerCase()) ?? null,
+        now,
+      ]
+    )
+  }
+}
+
+async function replaceCheckRuns(
+  db: SqlDatabase,
+  pullRequest: PullRequestItem,
+  now: string
+): Promise<void> {
+  await db.execute(
+    `delete from pull_request_check_runs where pull_request_id = $1`,
+    [pullRequest.id]
+  )
+
+  for (const checkRun of pullRequest.checkRuns ?? []) {
+    const appSlug = checkRun.appSlug ?? ""
+    await db.execute(
+      `
+        insert into pull_request_check_runs (
+          id, pull_request_id, name, app_slug, head_sha, status, conclusion,
+          started_at, completed_at, details_url, raw_payload_json,
+          created_at, updated_at
+        )
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        on conflict(pull_request_id, name, head_sha, app_slug)
+        do update set
+          status = excluded.status,
+          conclusion = excluded.conclusion,
+          started_at = excluded.started_at,
+          completed_at = excluded.completed_at,
+          details_url = excluded.details_url,
+          raw_payload_json = excluded.raw_payload_json,
+          updated_at = excluded.updated_at
+      `,
+      [
+        deterministicUuid(`check-run:${pullRequest.id}:${checkRun.id}`),
+        pullRequest.id,
+        checkRun.name,
+        appSlug,
+        checkRun.headSha,
+        checkRun.status,
+        checkRun.conclusion ?? null,
+        checkRun.startedAt ?? null,
+        checkRun.completedAt ?? null,
+        checkRun.detailsUrl ?? null,
+        JSON.stringify(checkRun),
+        now,
         now,
       ]
     )
@@ -3185,6 +3247,14 @@ function snapshotToPullRequestItem(
     isDraft: pullRequest.draft ?? false,
     createdAt: pullRequest.created_at ?? updatedAt,
     updatedAt,
+    closedAt: pullRequest.closed_at ?? undefined,
+    mergedAt:
+      pullRequest.merged_at ??
+      (pullRequest.merged ? updatedAt : undefined),
+    baseRef: pullRequest.base?.ref ?? undefined,
+    headRef: pullRequest.head?.ref ?? undefined,
+    mergeableState: pullRequest.mergeable_state ?? undefined,
+    reviewDecision: snapshot.review_decision ?? undefined,
     latestCommitSha: pullRequest.head?.sha ?? "",
     labels: (pullRequest.labels ?? [])
       .map(mapSnapshotLabel)
@@ -3201,6 +3271,17 @@ function snapshotToPullRequestItem(
           totalCount: snapshot.status_check_rollup.total_count,
         }
       : undefined,
+    checkRuns: (snapshot.check_runs ?? []).map((checkRun) => ({
+      id: checkRun.id,
+      name: checkRun.name,
+      appSlug: checkRun.app_slug,
+      headSha: checkRun.head_sha,
+      status: checkRun.status,
+      conclusion: checkRun.conclusion,
+      startedAt: checkRun.started_at,
+      completedAt: checkRun.completed_at,
+      detailsUrl: checkRun.details_url,
+    })),
     requestedReviewerIds: (pullRequest.requested_reviewers ?? [])
       .map((reviewer) => reviewer.login)
       .filter((login): login is string => Boolean(login)),

@@ -51,13 +51,33 @@ export interface LocalPullRequestRow {
   author_login: string;
   state: string;
   is_draft: number;
+  mergeable_state: string | null;
+  review_decision: string | null;
+  status_check_summary_json: string | null;
+  base_ref: string | null;
+  head_ref: string | null;
   latest_commit_sha: string | null;
   additions: number | null;
   deletions: number | null;
   changed_files: number | null;
   github_created_at: string | null;
   github_updated_at: string | null;
+  closed_at: string | null;
+  merged_at: string | null;
   raw_payload_json: string;
+}
+
+export interface LocalCheckRunRow {
+  id: string;
+  pull_request_id: string;
+  name: string;
+  app_slug: string;
+  head_sha: string;
+  status: string;
+  conclusion: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  details_url: string | null;
 }
 
 export interface LocalReviewRequestRow {
@@ -440,12 +460,19 @@ export function listLocalPullRequestRows(
           coalesce(author.login, 'unknown') as author_login,
           pr.state,
           pr.is_draft,
+          pr.mergeable_state,
+          pr.review_decision,
+          pr.status_check_summary_json,
+          pr.base_ref,
+          pr.head_ref,
           pr.latest_commit_sha,
           pr.additions,
           pr.deletions,
           pr.changed_files,
           pr.github_created_at,
           pr.github_updated_at,
+          pr.closed_at,
+          pr.merged_at,
           pr.raw_payload_json
         from pull_requests pr
         join github_repositories repo on repo.id = pr.repository_id
@@ -543,6 +570,32 @@ export function listLocalReviewEventRows(
       `
     )
     .all(pullRequestId) as unknown as LocalReviewEventRow[];
+}
+
+export function listLocalCheckRunRows(
+  db: DatabaseSync,
+  pullRequestId: string
+): LocalCheckRunRow[] {
+  return db
+    .prepare(
+      `
+        select
+          id,
+          pull_request_id,
+          name,
+          app_slug,
+          head_sha,
+          status,
+          conclusion,
+          started_at,
+          completed_at,
+          details_url
+        from pull_request_check_runs
+        where pull_request_id = ?
+        order by name collate nocase asc
+      `
+    )
+    .all(pullRequestId) as unknown as LocalCheckRunRow[];
 }
 
 export function listLocalReviewThreadRows(
@@ -872,17 +925,24 @@ function upsertLocalPullRequest(
         author_account_id,
         state,
         is_draft,
+        mergeable_state,
+        review_decision,
+        status_check_summary_json,
+        base_ref,
+        head_ref,
         latest_commit_sha,
         additions,
         deletions,
         changed_files,
         github_created_at,
         github_updated_at,
+        closed_at,
+        merged_at,
         raw_payload_json,
         created_at,
         updated_at
       )
-      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       on conflict(github_node_id)
       do update set
         repository_id = excluded.repository_id,
@@ -892,12 +952,19 @@ function upsertLocalPullRequest(
         author_account_id = excluded.author_account_id,
         state = excluded.state,
         is_draft = excluded.is_draft,
+        mergeable_state = excluded.mergeable_state,
+        review_decision = excluded.review_decision,
+        status_check_summary_json = excluded.status_check_summary_json,
+        base_ref = excluded.base_ref,
+        head_ref = excluded.head_ref,
         latest_commit_sha = excluded.latest_commit_sha,
         additions = excluded.additions,
         deletions = excluded.deletions,
         changed_files = excluded.changed_files,
         github_created_at = excluded.github_created_at,
         github_updated_at = excluded.github_updated_at,
+        closed_at = excluded.closed_at,
+        merged_at = excluded.merged_at,
         raw_payload_json = excluded.raw_payload_json,
         updated_at = excluded.updated_at
     `
@@ -912,12 +979,19 @@ function upsertLocalPullRequest(
     authorAccountId,
     pullRequest.state === "merged" ? "closed" : pullRequest.state,
     boolToSqlite(pullRequest.isDraft),
+    pullRequest.mergeableState ?? null,
+    normalizeStoredReviewDecision(pullRequest.reviewDecision),
+    JSON.stringify(pullRequest.statusCheckRollup ?? {}),
+    pullRequest.baseRef ?? null,
+    pullRequest.headRef ?? null,
     pullRequest.latestCommitSha,
     pullRequest.additions ?? null,
     pullRequest.deletions ?? null,
     pullRequest.changedFiles ?? null,
     pullRequest.createdAt,
     pullRequest.updatedAt,
+    pullRequest.closedAt ?? null,
+    pullRequest.mergedAt ?? null,
     JSON.stringify(options.rawPayload ?? pullRequest),
     now,
     now
@@ -935,6 +1009,7 @@ function upsertLocalPullRequest(
   replaceLocalLabels(db, repositoryId, storedPullRequest, now);
   replaceLocalAssignees(db, storedPullRequest, now);
   replaceLocalReviewRequests(db, storedPullRequest, now);
+  replaceLocalCheckRuns(db, storedPullRequest, now);
   replaceLocalReviews(db, storedPullRequest.reviews, storedPullRequest.id, now);
   if (!options.skipThreads) {
     replaceLocalThreads(db, storedPullRequest.threads, storedPullRequest.id, now);
@@ -968,6 +1043,10 @@ function snapshotToPullRequestItem(snapshot: GitHubPullRequestSnapshot): PullReq
   const reviews = compactReviewsForInbox(snapshot.reviews ?? []);
   const url = pullRequest.html_url ?? `https://github.com/${repository}/pull/${number}`;
 
+  const state = pullRequest.merged
+    ? "merged"
+    : normalizeSnapshotPullRequestState(pullRequest.state);
+
   return {
     id: livePullRequestId(repository, number),
     repository,
@@ -976,11 +1055,35 @@ function snapshotToPullRequestItem(snapshot: GitHubPullRequestSnapshot): PullReq
     description: cleanPullRequestDescription(pullRequest.body),
     url,
     authorId: pullRequest.user?.login ?? "unknown",
-    state: pullRequest.merged ? "merged" : normalizeSnapshotPullRequestState(pullRequest.state),
+    state,
     isDraft: pullRequest.draft ?? false,
     createdAt: pullRequest.created_at ?? updatedAt,
     updatedAt,
+    closedAt: pullRequest.closed_at ?? undefined,
+    mergedAt:
+      pullRequest.merged_at ?? (state === "merged" ? updatedAt : undefined),
+    baseRef: pullRequest.base?.ref ?? undefined,
+    headRef: pullRequest.head?.ref ?? undefined,
+    mergeableState: pullRequest.mergeable_state ?? undefined,
+    reviewDecision: snapshot.review_decision ?? undefined,
     latestCommitSha: pullRequest.head?.sha ?? "",
+    statusCheckRollup: snapshot.status_check_rollup
+      ? {
+          state: snapshot.status_check_rollup.state,
+          totalCount: snapshot.status_check_rollup.total_count,
+        }
+      : undefined,
+    checkRuns: (snapshot.check_runs ?? []).map((checkRun) => ({
+      id: checkRun.id,
+      name: checkRun.name,
+      appSlug: checkRun.app_slug,
+      headSha: checkRun.head_sha,
+      status: checkRun.status,
+      conclusion: checkRun.conclusion,
+      startedAt: checkRun.started_at,
+      completedAt: checkRun.completed_at,
+      detailsUrl: checkRun.details_url,
+    })),
     labels: (pullRequest.labels ?? [])
       .map(mapSnapshotLabel)
       .filter((label): label is PullRequestLabel => Boolean(label)),
@@ -1546,6 +1649,69 @@ function replaceLocalReviewRequests(
       "user",
       accountId,
       requestedAtByReviewer.get(reviewerId.toLowerCase()) ?? null,
+      now
+    );
+  }
+}
+
+function normalizeStoredReviewDecision(
+  decision: PullRequestItem["reviewDecision"]
+): string | null {
+  return decision ?? null;
+}
+
+function replaceLocalCheckRuns(
+  db: DatabaseSync,
+  pullRequest: PullRequestItem,
+  now: string
+): void {
+  db.prepare(`delete from pull_request_check_runs where pull_request_id = ?`).run(
+    pullRequest.id
+  );
+
+  for (const checkRun of pullRequest.checkRuns ?? []) {
+    const appSlug = checkRun.appSlug ?? "";
+    db.prepare(
+      `
+        insert into pull_request_check_runs (
+          id,
+          pull_request_id,
+          name,
+          app_slug,
+          head_sha,
+          status,
+          conclusion,
+          started_at,
+          completed_at,
+          details_url,
+          raw_payload_json,
+          created_at,
+          updated_at
+        )
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(pull_request_id, name, head_sha, app_slug)
+        do update set
+          status = excluded.status,
+          conclusion = excluded.conclusion,
+          started_at = excluded.started_at,
+          completed_at = excluded.completed_at,
+          details_url = excluded.details_url,
+          raw_payload_json = excluded.raw_payload_json,
+          updated_at = excluded.updated_at
+      `
+    ).run(
+      deterministicUuid(`check-run:${pullRequest.id}:${checkRun.id}`),
+      pullRequest.id,
+      checkRun.name,
+      appSlug,
+      checkRun.headSha,
+      checkRun.status,
+      checkRun.conclusion ?? null,
+      checkRun.startedAt ?? null,
+      checkRun.completedAt ?? null,
+      checkRun.detailsUrl ?? null,
+      JSON.stringify(checkRun),
+      now,
       now
     );
   }

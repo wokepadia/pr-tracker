@@ -369,6 +369,123 @@ describe("GitHub token pull request source", () => {
     });
   });
 
+  it("maps the review decision and individual check-run contexts", async () => {
+    const source = createGithubTokenPullRequestSource({
+      token: "token",
+      repositories: ["acme/web"],
+      request: async <T = unknown>(route: string) => {
+        if (route === "GET /repos/{owner}/{repo}/pulls") {
+          return {
+            data: [
+              {
+                id: 1,
+                number: 42,
+                title: "Ship reviewer inbox",
+                state: "open",
+                updated_at: "2026-06-01T09:00:00.000Z",
+                user: { login: "author" },
+                head: { sha: "head-sha", ref: "feature/inbox" },
+                base: { ref: "main" }
+              }
+            ] as T
+          };
+        }
+
+        if (route === "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews") {
+          return { data: [] as T };
+        }
+
+        if (route === "POST /graphql") {
+          return {
+            data: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    reviewDecision: "CHANGES_REQUESTED",
+                    commits: {
+                      nodes: [
+                        {
+                          commit: {
+                            oid: "head-sha",
+                            statusCheckRollup: {
+                              state: "FAILURE",
+                              contexts: {
+                                totalCount: 2,
+                                nodes: [
+                                  {
+                                    __typename: "CheckRun",
+                                    id: "CR_1",
+                                    name: "build",
+                                    status: "COMPLETED",
+                                    conclusion: "FAILURE",
+                                    startedAt: "2026-06-01T08:50:00.000Z",
+                                    completedAt: "2026-06-01T08:58:00.000Z",
+                                    detailsUrl: "https://github.com/acme/web/runs/build",
+                                    checkSuite: { app: { slug: "github-actions" } }
+                                  },
+                                  {
+                                    __typename: "StatusContext",
+                                    id: "SC_1",
+                                    context: "ci/legacy",
+                                    state: "SUCCESS",
+                                    targetUrl: "https://legacy.example/status",
+                                    createdAt: "2026-06-01T08:40:00.000Z"
+                                  }
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    reviewThreads: {
+                      pageInfo: { hasNextPage: false, endCursor: null },
+                      nodes: []
+                    }
+                  }
+                }
+              }
+            } as T
+          };
+        }
+
+        throw new Error(`Unexpected route: ${route}`);
+      }
+    });
+
+    if (!source.listOpenPullRequests) {
+      throw new Error("Expected token source to support listOpenPullRequests.");
+    }
+
+    const snapshots = await source.listOpenPullRequests();
+
+    expect(snapshots[0]?.pull_request.head?.ref).toBe("feature/inbox");
+    expect(snapshots[0]?.pull_request.base?.ref).toBe("main");
+    expect(snapshots[0]?.review_decision).toBe("changes_requested");
+    expect(snapshots[0]?.check_runs).toEqual([
+      {
+        id: "CR_1",
+        name: "build",
+        app_slug: "github-actions",
+        head_sha: "head-sha",
+        status: "completed",
+        conclusion: "failure",
+        started_at: "2026-06-01T08:50:00.000Z",
+        completed_at: "2026-06-01T08:58:00.000Z",
+        details_url: "https://github.com/acme/web/runs/build"
+      },
+      {
+        id: "SC_1",
+        name: "ci/legacy",
+        head_sha: "head-sha",
+        status: "completed",
+        conclusion: "success",
+        completed_at: "2026-06-01T08:40:00.000Z",
+        details_url: "https://legacy.example/status"
+      }
+    ]);
+  });
+
   it("keeps review threads undefined when the GraphQL fetch fails", async () => {
     const source = createGithubTokenPullRequestSource({
       token: "token",

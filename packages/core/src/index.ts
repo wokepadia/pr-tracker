@@ -73,6 +73,37 @@ export interface StatusCheckRollup {
   totalCount?: number;
 }
 
+export type PullRequestReviewDecision =
+  | "approved"
+  | "changes_requested"
+  | "review_required";
+
+export interface PullRequestCheckRun {
+  id: string;
+  name: string;
+  appSlug?: string;
+  headSha: string;
+  status:
+    | "queued"
+    | "in_progress"
+    | "completed"
+    | "waiting"
+    | "requested"
+    | "pending";
+  conclusion?:
+    | "action_required"
+    | "cancelled"
+    | "failure"
+    | "neutral"
+    | "success"
+    | "skipped"
+    | "stale"
+    | "timed_out";
+  startedAt?: string;
+  completedAt?: string;
+  detailsUrl?: string;
+}
+
 export interface PullRequestItem {
   id: string;
   repository: string;
@@ -85,6 +116,19 @@ export interface PullRequestItem {
   isDraft: boolean;
   createdAt: string;
   updatedAt: string;
+  /** When GitHub closed the pull request; undefined while it is open. */
+  closedAt?: string;
+  /** When GitHub merged the pull request; undefined unless it was merged. */
+  mergedAt?: string;
+  /** Branch the pull request targets (base) and the branch it comes from
+   * (head); undefined when the sync source did not provide them. */
+  baseRef?: string;
+  headRef?: string;
+  /** GitHub's mergeability state for the pull request (e.g. "clean",
+   * "dirty", "blocked"); only the single-PR detail endpoint reports it. */
+  mergeableState?: string;
+  /** GitHub's aggregate review decision; undefined when not fetched. */
+  reviewDecision?: PullRequestReviewDecision;
   latestCommitSha: string;
   labels?: PullRequestLabel[];
   assigneeIds?: string[];
@@ -95,6 +139,9 @@ export interface PullRequestItem {
   /** Combined check/status rollup for the head commit; undefined when the
    * sync source did not provide it or the commit has no checks. */
   statusCheckRollup?: StatusCheckRollup;
+  /** Individual check runs / status contexts for the head commit; undefined
+   * when the sync source did not provide them. */
+  checkRuns?: PullRequestCheckRun[];
   requestedReviewerIds: string[];
   /**
    * Outstanding review requests with the time GitHub recorded each one.

@@ -60,8 +60,12 @@ export interface GitHubPullRequestSnapshot {
     draft?: boolean;
     created_at?: string;
     updated_at?: string;
+    closed_at?: string | null;
+    merged_at?: string | null;
     user?: { login?: string; avatar_url?: string };
-    head?: { sha?: string };
+    head?: { sha?: string; ref?: string };
+    base?: { ref?: string };
+    mergeable_state?: string;
     merged?: boolean;
     additions?: number;
     deletions?: number;
@@ -98,6 +102,45 @@ export interface GitHubPullRequestSnapshot {
    * Undefined means the rollup was unavailable or the commit has no checks.
    */
   status_check_rollup?: GitHubStatusCheckRollupSnapshot;
+  /**
+   * The aggregate review decision GitHub computes for the pull request
+   * (approved / changes_requested / review_required), fetched via GraphQL.
+   * Undefined means the GraphQL facts were unavailable; null means GitHub
+   * reported no decision (e.g. no reviewers assigned).
+   */
+  review_decision?: GitHubReviewDecision | null;
+  /**
+   * Individual check runs and status contexts for the head commit, fetched
+   * via GraphQL. Undefined means the rollup contexts were unavailable.
+   */
+  check_runs?: GitHubCheckRunSnapshot[];
+}
+
+export type GitHubReviewDecision =
+  | "approved"
+  | "changes_requested"
+  | "review_required";
+
+export interface GitHubCheckRunSnapshot {
+  /** Stable identifier: the GraphQL node id, or a context name fallback. */
+  id: string;
+  name: string;
+  /** GitHub app/source that produced the check, when known. */
+  app_slug?: string;
+  head_sha: string;
+  status: "queued" | "in_progress" | "completed" | "waiting" | "requested" | "pending";
+  conclusion?:
+    | "action_required"
+    | "cancelled"
+    | "failure"
+    | "neutral"
+    | "success"
+    | "skipped"
+    | "stale"
+    | "timed_out";
+  started_at?: string;
+  completed_at?: string;
+  details_url?: string;
 }
 
 export interface GitHubStatusCheckRollupSnapshot {
@@ -213,11 +256,14 @@ interface GitHubPullRequestFromApi {
   draft?: boolean;
   created_at?: string;
   updated_at?: string;
+  closed_at?: string | null;
   user?: { login?: string; avatar_url?: string };
-  head?: { sha?: string };
+  head?: { sha?: string; ref?: string };
+  base?: { ref?: string };
   merged?: boolean;
   merged_at?: string | null;
   // Only present on the single-PR detail endpoint, not the list endpoint.
+  mergeable_state?: string;
   additions?: number;
   deletions?: number;
   changed_files?: number;
@@ -443,7 +489,9 @@ async function listConfiguredRepositoryPullRequests(
           review_requests: graphqlFacts.reviewRequests,
           review_threads: graphqlFacts.reviewThreads,
           issue_comments: issueComments,
-          status_check_rollup: graphqlFacts.statusCheckRollup
+          status_check_rollup: graphqlFacts.statusCheckRollup,
+          review_decision: graphqlFacts.reviewDecision,
+          check_runs: graphqlFacts.checkRuns
         };
       }
     );
@@ -778,7 +826,9 @@ async function getTokenPullRequest(
       review_requests: graphqlFacts.reviewRequests,
       review_threads: graphqlFacts.reviewThreads,
       issue_comments: issueComments,
-      status_check_rollup: graphqlFacts.statusCheckRollup
+      status_check_rollup: graphqlFacts.statusCheckRollup,
+      review_decision: graphqlFacts.reviewDecision,
+      check_runs: graphqlFacts.checkRuns
     };
   } catch (error) {
     if (isGithubNotFoundError(error)) {
@@ -866,13 +916,35 @@ const reviewThreadsGraphqlQuery = `
         additions
         deletions
         changedFiles
+        reviewDecision
         commits(last: 1) {
           nodes {
             commit {
+              oid
               statusCheckRollup {
                 state
-                contexts(first: 0) {
+                contexts(first: 100) {
                   totalCount
+                  nodes {
+                    __typename
+                    ... on CheckRun {
+                      id
+                      name
+                      status
+                      conclusion
+                      startedAt
+                      completedAt
+                      detailsUrl
+                      checkSuite { app { slug } }
+                    }
+                    ... on StatusContext {
+                      id
+                      context
+                      state
+                      targetUrl
+                      createdAt
+                    }
+                  }
                 }
               }
             }
@@ -925,12 +997,17 @@ interface GitHubReviewThreadsGraphqlResponse {
         additions?: number;
         deletions?: number;
         changedFiles?: number;
+        reviewDecision?: string | null;
         commits?: {
           nodes?: Array<{
             commit?: {
+              oid?: string;
               statusCheckRollup?: {
                 state?: string;
-                contexts?: { totalCount?: number };
+                contexts?: {
+                  totalCount?: number;
+                  nodes?: Array<GitHubStatusCheckContextNode | null>;
+                };
               } | null;
             };
           } | null>;
@@ -972,6 +1049,22 @@ interface GitHubReviewThreadsGraphqlResponse {
   errors?: unknown[];
 }
 
+interface GitHubStatusCheckContextNode {
+  __typename?: string;
+  id?: string;
+  name?: string;
+  status?: string;
+  conclusion?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  detailsUrl?: string | null;
+  checkSuite?: { app?: { slug?: string } | null } | null;
+  context?: string;
+  state?: string;
+  targetUrl?: string | null;
+  createdAt?: string | null;
+}
+
 interface PullRequestGraphqlFacts {
   reviewThreads?: GitHubReviewThreadSnapshot[];
   reviewRequests?: GitHubReviewRequestEventSnapshot[];
@@ -981,6 +1074,8 @@ interface PullRequestGraphqlFacts {
     changed_files?: number;
   };
   statusCheckRollup?: GitHubStatusCheckRollupSnapshot;
+  reviewDecision?: GitHubReviewDecision | null;
+  checkRuns?: GitHubCheckRunSnapshot[];
 }
 
 /**
@@ -1031,6 +1126,146 @@ function toStatusCheckRollupSnapshot(
   return { state, total_count: rollup.contexts?.totalCount };
 }
 
+function toReviewDecision(
+  value: string | null | undefined
+): GitHubReviewDecision | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+  switch (value.toUpperCase()) {
+    case "APPROVED":
+      return "approved";
+    case "CHANGES_REQUESTED":
+      return "changes_requested";
+    case "REVIEW_REQUIRED":
+      return "review_required";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Flattens the head commit's status-check rollup contexts into individual
+ * check-run records. GitHub returns two context shapes: CheckRun (GitHub
+ * Actions and check apps) and StatusContext (the legacy commit-status API);
+ * both are normalized to the same persisted shape.
+ */
+function toCheckRunSnapshots(
+  commit:
+    | {
+        oid?: string;
+        statusCheckRollup?: {
+          contexts?: { nodes?: Array<GitHubStatusCheckContextNode | null> };
+        } | null;
+      }
+    | null
+    | undefined
+): GitHubCheckRunSnapshot[] | undefined {
+  const rollup = commit?.statusCheckRollup;
+  if (!rollup) {
+    return undefined;
+  }
+  const headSha = commit?.oid ?? "";
+  const nodes = rollup.contexts?.nodes ?? [];
+  const checkRuns: GitHubCheckRunSnapshot[] = [];
+
+  for (const node of nodes) {
+    if (!node) {
+      continue;
+    }
+    if (node.__typename === "StatusContext") {
+      const name = node.context;
+      if (!name) {
+        continue;
+      }
+      checkRuns.push({
+        id: node.id ?? `status:${name}`,
+        name,
+        head_sha: headSha,
+        status: "completed",
+        conclusion: toStatusContextConclusion(node.state),
+        completed_at: node.createdAt ?? undefined,
+        details_url: node.targetUrl ?? undefined,
+      });
+      continue;
+    }
+
+    // CheckRun (default for the GraphQL union when __typename is absent).
+    const name = node.name;
+    if (!name) {
+      continue;
+    }
+    checkRuns.push({
+      id: node.id ?? `check:${name}`,
+      name,
+      app_slug: node.checkSuite?.app?.slug ?? undefined,
+      head_sha: headSha,
+      status: toCheckRunStatus(node.status),
+      conclusion: toCheckRunConclusion(node.conclusion),
+      started_at: node.startedAt ?? undefined,
+      completed_at: node.completedAt ?? undefined,
+      details_url: node.detailsUrl ?? undefined,
+    });
+  }
+
+  return checkRuns;
+}
+
+const checkRunStatuses = new Set<GitHubCheckRunSnapshot["status"]>([
+  "queued",
+  "in_progress",
+  "completed",
+  "waiting",
+  "requested",
+  "pending",
+]);
+
+function toCheckRunStatus(value: string | undefined): GitHubCheckRunSnapshot["status"] {
+  const normalized = value?.toLowerCase() as GitHubCheckRunSnapshot["status"];
+  return normalized && checkRunStatuses.has(normalized) ? normalized : "completed";
+}
+
+const checkRunConclusions = new Set<NonNullable<GitHubCheckRunSnapshot["conclusion"]>>([
+  "action_required",
+  "cancelled",
+  "failure",
+  "neutral",
+  "success",
+  "skipped",
+  "stale",
+  "timed_out",
+]);
+
+function toCheckRunConclusion(
+  value: string | null | undefined
+): GitHubCheckRunSnapshot["conclusion"] {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.toLowerCase() as NonNullable<
+    GitHubCheckRunSnapshot["conclusion"]
+  >;
+  return checkRunConclusions.has(normalized) ? normalized : undefined;
+}
+
+function toStatusContextConclusion(
+  state: string | undefined
+): GitHubCheckRunSnapshot["conclusion"] {
+  switch (state?.toUpperCase()) {
+    case "SUCCESS":
+      return "success";
+    case "FAILURE":
+    case "ERROR":
+      return "failure";
+    default:
+      // EXPECTED / PENDING contexts have no terminal conclusion yet.
+      return undefined;
+  }
+}
+
 // Runaway guard: 40 pages of 50 covers 2000 threads, far beyond any
 // reviewable pull request.
 const maxReviewThreadPages = 40;
@@ -1046,6 +1281,8 @@ async function fetchPullRequestGraphqlFacts(
     let size: PullRequestGraphqlFacts["size"];
     let statusCheckRollup: GitHubStatusCheckRollupSnapshot | undefined;
     let reviewRequests: GitHubReviewRequestEventSnapshot[] | undefined;
+    let reviewDecision: GitHubReviewDecision | null | undefined;
+    let checkRuns: GitHubCheckRunSnapshot[] | undefined;
     let cursor: string | null = null;
 
     for (let page = 0; page < maxReviewThreadPages; page += 1) {
@@ -1069,6 +1306,12 @@ async function fetchPullRequestGraphqlFacts(
       };
       statusCheckRollup ??= toStatusCheckRollupSnapshot(
         pullRequest.commits?.nodes?.[0]?.commit?.statusCheckRollup
+      );
+      if (reviewDecision === undefined) {
+        reviewDecision = toReviewDecision(pullRequest.reviewDecision);
+      }
+      checkRuns ??= toCheckRunSnapshots(
+        pullRequest.commits?.nodes?.[0]?.commit
       );
       reviewRequests ??= toReviewRequestSnapshots(
         pullRequest.timelineItems?.nodes
@@ -1110,7 +1353,14 @@ async function fetchPullRequestGraphqlFacts(
       cursor = pageInfo.endCursor;
     }
 
-    return { size, reviewThreads, reviewRequests, statusCheckRollup };
+    return {
+      size,
+      reviewThreads,
+      reviewRequests,
+      statusCheckRollup,
+      reviewDecision,
+      checkRuns,
+    };
   } catch {
     // GraphQL facts are an enrichment; a failed call (older GHES, token
     // without GraphQL access) must not fail the whole sync. A failure on
