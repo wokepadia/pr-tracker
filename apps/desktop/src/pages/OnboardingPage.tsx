@@ -107,9 +107,15 @@ export function OnboardingPage() {
     },
   })
 
+  // Returning reviewers who already finished onboarding should never see the
+  // intro carousel again. They only land here when the Stronghold token went
+  // missing, so jump straight to the setup form and ask for just the key.
+  const onboardingCompleted = Boolean(onboardingQuery.data?.completedAt)
+
   useEffect(() => {
     const state = onboardingQuery.data
-    if (state?.introSkippedAt && !state.completedAt) {
+    if (!state) return
+    if (state.completedAt || state.introSkippedAt) {
       setStep("setup")
     }
   }, [onboardingQuery.data])
@@ -139,11 +145,18 @@ export function OnboardingPage() {
   const Icon = currentSlide.icon
   const isFinalSlide = slideIndex === slides.length - 1
 
+  // Hold the intro carousel until onboarding state resolves so returning
+  // reviewers never flash slide 1 of 4 before the redirect to setup.
+  if (onboardingQuery.isLoading && step === "slides") {
+    return <OnboardingShell>{null}</OnboardingShell>
+  }
+
   if (step === "setup") {
     return (
       <OnboardingShell
+        title={onboardingCompleted ? "Reconnect GitHub" : "First run setup"}
         action={
-          onboardingQuery.data?.completedAt ? (
+          onboardingCompleted ? (
             <Button asChild className="rounded-md" variant="outline">
               <Link to="/settings">Back to settings</Link>
             </Button>
@@ -158,15 +171,19 @@ export function OnboardingPage() {
               </div>
               <div>
                 <div className="text-sm font-medium text-muted-foreground">
-                  Local GitHub access
+                  {onboardingCompleted
+                    ? "Token re-entry"
+                    : "Local GitHub access"}
                 </div>
                 <h1 className="mt-1 text-2xl font-semibold tracking-normal">
-                  Connect the repositories you review
+                  {onboardingCompleted
+                    ? "Re-enter your GitHub token"
+                    : "Connect the repositories you review"}
                 </h1>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                  The desktop app saves the token in a local Tauri Stronghold
-                  vault and does not return it after saving. Repository settings
-                  are stored in local app config.
+                  {onboardingCompleted
+                    ? "Your saved token is missing from the local Tauri Stronghold vault, so the app lost GitHub access. Your repositories and username are still configured — paste a new read-only token to resume syncing."
+                    : "The desktop app saves the token in a local Tauri Stronghold vault and does not return it after saving. Repository settings are stored in local app config."}
                 </p>
               </div>
             </div>
@@ -339,15 +356,17 @@ function OnboardingErrorNotice({
 function OnboardingShell({
   action,
   children,
+  title = "First run setup",
 }: {
   action?: ReactNode
   children: ReactNode
+  title?: string
 }) {
   return (
     <div className="min-h-[calc(100vh-48px)] bg-background">
       <div className="flex h-12 items-center border-b border-border px-6">
         <div className="mr-auto text-sm font-medium text-foreground">
-          First run setup
+          {title}
         </div>
         {action}
       </div>
