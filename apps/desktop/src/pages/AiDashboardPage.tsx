@@ -35,6 +35,7 @@ import {
 import { useGithubSync } from "@/app/use-github-sync"
 import { useBoardScopedItems } from "@/app/use-board-scoped-items"
 import { AuthorAvatar } from "@/components/AuthorAvatar"
+import { DashboardChat } from "@/components/ChatOverlay"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { PullRequestDetailModal } from "@/components/PullRequestDetailModal"
@@ -135,6 +136,7 @@ function AiDashboardBody({
   onApplyQuery: (githubSearchQuery: string) => Promise<unknown>
 }) {
   const queryClient = useQueryClient()
+  const boardFilterQuery = useBoardFilterQuery()
   const [filter, setFilter] = useState<DashboardFilter>("all")
   const [selectedId, setSelectedId] = useState("")
   const input = useMemo(
@@ -238,6 +240,8 @@ function AiDashboardBody({
           onClose={() => setSelectedId("")}
         />
       ) : null}
+
+      <DashboardChat boardFingerprint={boardFilterQuery} dashboardInput={input} />
     </>
   )
 }
