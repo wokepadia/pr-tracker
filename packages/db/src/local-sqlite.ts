@@ -21,7 +21,7 @@ import type {
   GitHubReviewThreadSnapshot
 } from "@pr-tracker/github";
 import { deterministicUuid } from "./ids";
-import { localDesktopSchemaSql } from "./local-schema";
+import { applyMigrations } from "./migrations";
 
 export const defaultLocalProfileId = "local";
 export const defaultLocalBoardId = "default-board";
@@ -218,10 +218,7 @@ export function createLocalDatabaseBackup(
 }
 
 export function initializeLocalDatabase(db: DatabaseSync): void {
-  db.exec(localDesktopSchemaSql);
-  ensureLocalBoardItemNotesColumn(db);
-  ensureLocalReviewThreadLedgerColumns(db);
-  ensureLocalPullRequestSizeColumns(db);
+  applyMigrations(db);
 }
 
 function sqliteStringLiteral(value: string): string {
@@ -1272,44 +1269,6 @@ function buildSnapshotActivity(
   return activity.sort(
     (a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt)
   );
-}
-
-function ensureLocalBoardItemNotesColumn(db: DatabaseSync): void {
-  const rows = db
-    .prepare(`pragma table_info(board_items)`)
-    .all() as Array<{ name: string }>;
-  if (rows.some((row) => row.name === "notes")) return;
-
-  db.exec(`alter table board_items add column notes text`);
-}
-
-function ensureLocalPullRequestSizeColumns(db: DatabaseSync): void {
-  const rows = db
-    .prepare(`pragma table_info(pull_requests)`)
-    .all() as Array<{ name: string }>;
-  const columnNames = new Set(rows.map((row) => row.name));
-
-  for (const column of ["additions", "deletions", "changed_files"]) {
-    if (!columnNames.has(column)) {
-      db.exec(`alter table pull_requests add column ${column} integer`);
-    }
-  }
-}
-
-function ensureLocalReviewThreadLedgerColumns(db: DatabaseSync): void {
-  const rows = db
-    .prepare(`pragma table_info(review_threads)`)
-    .all() as Array<{ name: string }>;
-  const columnNames = new Set(rows.map((row) => row.name));
-
-  if (!columnNames.has("is_outdated")) {
-    db.exec(
-      `alter table review_threads add column is_outdated integer not null default 0`
-    );
-  }
-  if (!columnNames.has("last_actor_login")) {
-    db.exec(`alter table review_threads add column last_actor_login text`);
-  }
 }
 
 function snapshotReviewTitle(state: string | undefined): string {

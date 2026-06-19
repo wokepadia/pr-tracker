@@ -82,7 +82,10 @@ import {
   type AttentionThresholds,
   type ReviewQueueItemView,
 } from "@/reviewer/view-model"
-import { localDesktopSchemaSql } from "../../../../packages/db/src/local-schema"
+import {
+  applyMigrationsAsync,
+  type AsyncMigrationDriver,
+} from "../../../../packages/db/src/migrations"
 import { createQueuedTransaction } from "./sqlite-transaction"
 
 const databaseUrl = "sqlite:pr-tracker.sqlite"
@@ -797,19 +800,28 @@ async function initializeDatabase(): Promise<SqlDatabase> {
   // property of the database file itself, so setting it once here is
   // enough: WAL lets readers proceed while another window writes.
   await db.execute("pragma journal_mode = wal")
-  // Drop the stale AI cache before the schema run so create-if-not-exists
-  // rebuilds it with the current kind constraint.
-  await dropOutdatedAiSummariesTable(db)
-  for (const statement of splitSqlStatements(localDesktopSchemaSql)) {
-    await db.execute(statement)
-  }
-  // Migrations that bring an existing database up to the current shape. Fresh
-  // databases already match the schema, so each step below is a no-op for
-  // them.
+  // Legacy cleanups that predate the migration ledger and involve drops or
+  // table rebuilds rather than forward schema changes. Both are guarded, so
+  // they are no-ops on a fresh database.
   await migrateLegacyBoardItems(db)
-  await ensureReviewThreadLedgerColumns(db)
-  await ensurePullRequestSizeColumns(db)
+  // Drop the stale AI cache so the base-schema migration rebuilds it with the
+  // current kind constraint; dropping its ledger row forces that re-run.
+  await dropOutdatedAiSummariesTable(db)
+  // The shared, versioned migration ledger brings the schema to the current
+  // shape. The same migration list runs on the node:sqlite path in tests.
+  await applyMigrationsAsync(asyncMigrationDriver(db))
   return db
+}
+
+function asyncMigrationDriver(db: SqlDatabase): AsyncMigrationDriver {
+  return {
+    async exec(sql) {
+      await db.execute(sql)
+    },
+    query(sql) {
+      return db.select(sql)
+    },
+  }
 }
 
 /**
@@ -825,6 +837,16 @@ async function dropOutdatedAiSummariesTable(db: SqlDatabase): Promise<void> {
   const createSql = rows[0]?.sql
   if (createSql && !createSql.includes("'pr-brief'")) {
     await db.execute(`drop table ai_summaries`)
+    // Force the base-schema migration to re-run so its create-if-not-exists
+    // rebuilds the dropped cache table with the current kind constraint. Every
+    // other table in that migration already exists, so the replay only
+    // recreates ai_summaries.
+    await db.execute(
+      `create table if not exists schema_migrations (id text primary key, applied_at text not null default current_timestamp)`
+    )
+    await db.execute(
+      `delete from schema_migrations where id = '0001-base-schema'`
+    )
   }
 }
 
@@ -3501,35 +3523,6 @@ function cleanOptionalText(value: string | undefined): string | null {
   return value.replace(/\r\n?/g, "\n")
 }
 
-async function ensurePullRequestSizeColumns(db: SqlDatabase): Promise<void> {
-  const rows = await db.select<Array<{ name: string }>>(
-    `pragma table_info(pull_requests)`
-  )
-  const columnNames = new Set(rows.map((row) => row.name))
-
-  for (const column of ["additions", "deletions", "changed_files"]) {
-    if (!columnNames.has(column)) {
-      await db.execute(`alter table pull_requests add column ${column} integer`)
-    }
-  }
-}
-
-async function ensureReviewThreadLedgerColumns(db: SqlDatabase): Promise<void> {
-  const rows = await db.select<Array<{ name: string }>>(
-    `pragma table_info(review_threads)`
-  )
-  const columnNames = new Set(rows.map((row) => row.name))
-
-  if (!columnNames.has("is_outdated")) {
-    await db.execute(
-      `alter table review_threads add column is_outdated integer not null default 0`
-    )
-  }
-  if (!columnNames.has("last_actor_login")) {
-    await db.execute(`alter table review_threads add column last_actor_login text`)
-  }
-}
-
 function localGithubSettingsFingerprint(credentials: LocalGithubCredentials): string {
   return JSON.stringify({
     ...localGithubSettingsScopeFingerprint(credentials),
@@ -3584,13 +3577,6 @@ function pullRequestKey(
 
 function livePullRequestId(repository: string, number: number): string {
   return `github:${repository.replace("/", "~")}:${number}`
-}
-
-function splitSqlStatements(sql: string): string[] {
-  return sql
-    .split(";")
-    .map((statement) => statement.trim())
-    .filter((statement) => statement.length > 0)
 }
 
 function deterministicUuid(input: string): string {
