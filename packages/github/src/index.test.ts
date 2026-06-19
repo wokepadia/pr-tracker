@@ -72,6 +72,19 @@ describe("GitHub token pull request source", () => {
                     additions: 120,
                     deletions: 30,
                     changedFiles: 7,
+                    timelineItems: {
+                      nodes: [
+                        {
+                          createdAt: "2026-05-30T10:00:00.000Z",
+                          requestedReviewer: { login: "viewer" }
+                        },
+                        {
+                          createdAt: "2026-06-01T07:00:00.000Z",
+                          requestedReviewer: { login: "viewer" }
+                        },
+                        { createdAt: "2026-05-29T10:00:00.000Z" }
+                      ]
+                    },
                     reviewThreads: {
                       nodes: [
                         {
@@ -161,6 +174,9 @@ describe("GitHub token pull request source", () => {
         changed_files: 7
       }
     });
+    expect(snapshots[0]?.review_requests).toEqual([
+      { reviewer_login: "viewer", requested_at: "2026-06-01T07:00:00.000Z" }
+    ]);
     expect(snapshots[0]?.review_threads).toEqual([
       {
         id: "RT_thread_1",

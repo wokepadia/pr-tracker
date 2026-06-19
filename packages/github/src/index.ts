@@ -76,6 +76,13 @@ export interface GitHubPullRequestSnapshot {
   };
   reviews?: GitHubReviewSnapshot[];
   /**
+   * Review requests with the time GitHub recorded each one, read from the
+   * pull request timeline via GraphQL. Undefined means the timeline fetch
+   * was unavailable. The REST `requested_reviewers` field carries no
+   * timestamp, so this is the only source of a real request time.
+   */
+  review_requests?: GitHubReviewRequestEventSnapshot[];
+  /**
    * Review threads fetched via GraphQL. Undefined means the thread fetch
    * was unavailable (not an empty thread list), so consumers must not
    * treat it as "no threads".
@@ -106,6 +113,11 @@ export interface GitHubReviewSnapshot {
   submitted_at?: string;
   commit_id?: string;
   user?: { login?: string; avatar_url?: string };
+}
+
+export interface GitHubReviewRequestEventSnapshot {
+  reviewer_login: string;
+  requested_at: string;
 }
 
 export interface GitHubReviewThreadSnapshot {
@@ -428,6 +440,7 @@ async function listConfiguredRepositoryPullRequests(
             merged: pullRequest.merged ?? Boolean(pullRequest.merged_at)
           },
           reviews: stripReviewBodies(reviews),
+          review_requests: graphqlFacts.reviewRequests,
           review_threads: graphqlFacts.reviewThreads,
           issue_comments: issueComments,
           status_check_rollup: graphqlFacts.statusCheckRollup
@@ -762,6 +775,7 @@ async function getTokenPullRequest(
         merged: response.data.merged ?? Boolean(response.data.merged_at)
       },
       reviews: options.stripReviewBodies ? stripReviewBodies(reviews) : reviews,
+      review_requests: graphqlFacts.reviewRequests,
       review_threads: graphqlFacts.reviewThreads,
       issue_comments: issueComments,
       status_check_rollup: graphqlFacts.statusCheckRollup
@@ -864,6 +878,16 @@ const reviewThreadsGraphqlQuery = `
             }
           }
         }
+        timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], last: 100) {
+          nodes {
+            ... on ReviewRequestedEvent {
+              createdAt
+              requestedReviewer {
+                ... on User { login }
+              }
+            }
+          }
+        }
         reviewThreads(first: 50, after: $cursor) {
           pageInfo {
             hasNextPage
@@ -911,6 +935,12 @@ interface GitHubReviewThreadsGraphqlResponse {
             };
           } | null>;
         };
+        timelineItems?: {
+          nodes?: Array<{
+            createdAt?: string;
+            requestedReviewer?: { login?: string } | null;
+          } | null>;
+        };
         reviewThreads?: {
           pageInfo?: {
             hasNextPage?: boolean;
@@ -944,12 +974,41 @@ interface GitHubReviewThreadsGraphqlResponse {
 
 interface PullRequestGraphqlFacts {
   reviewThreads?: GitHubReviewThreadSnapshot[];
+  reviewRequests?: GitHubReviewRequestEventSnapshot[];
   size?: {
     additions?: number;
     deletions?: number;
     changed_files?: number;
   };
   statusCheckRollup?: GitHubStatusCheckRollupSnapshot;
+}
+
+/**
+ * Collapse the timeline's review-request events to the latest request per
+ * reviewer. GitHub records one event each time a reviewer is (re-)requested;
+ * the most recent is the one that matters for "have you responded since".
+ */
+function toReviewRequestSnapshots(
+  nodes:
+    | Array<{ createdAt?: string; requestedReviewer?: { login?: string } | null } | null>
+    | undefined
+): GitHubReviewRequestEventSnapshot[] {
+  const latestByLogin = new Map<string, string>();
+  for (const node of nodes ?? []) {
+    const login = node?.requestedReviewer?.login;
+    const requestedAt = node?.createdAt;
+    if (!login || !requestedAt) {
+      continue;
+    }
+    const existing = latestByLogin.get(login);
+    if (!existing || Date.parse(requestedAt) > Date.parse(existing)) {
+      latestByLogin.set(login, requestedAt);
+    }
+  }
+  return [...latestByLogin].map(([reviewer_login, requested_at]) => ({
+    reviewer_login,
+    requested_at
+  }));
 }
 
 function toStatusCheckRollupSnapshot(
@@ -986,6 +1045,7 @@ async function fetchPullRequestGraphqlFacts(
     const reviewThreads: GitHubReviewThreadSnapshot[] = [];
     let size: PullRequestGraphqlFacts["size"];
     let statusCheckRollup: GitHubStatusCheckRollupSnapshot | undefined;
+    let reviewRequests: GitHubReviewRequestEventSnapshot[] | undefined;
     let cursor: string | null = null;
 
     for (let page = 0; page < maxReviewThreadPages; page += 1) {
@@ -1009,6 +1069,9 @@ async function fetchPullRequestGraphqlFacts(
       };
       statusCheckRollup ??= toStatusCheckRollupSnapshot(
         pullRequest.commits?.nodes?.[0]?.commit?.statusCheckRollup
+      );
+      reviewRequests ??= toReviewRequestSnapshots(
+        pullRequest.timelineItems?.nodes
       );
 
       const nodes = pullRequest.reviewThreads?.nodes ?? [];
@@ -1047,7 +1110,7 @@ async function fetchPullRequestGraphqlFacts(
       cursor = pageInfo.endCursor;
     }
 
-    return { size, reviewThreads, statusCheckRollup };
+    return { size, reviewThreads, reviewRequests, statusCheckRollup };
   } catch {
     // GraphQL facts are an enrichment; a failed call (older GHES, token
     // without GraphQL access) must not fail the whole sync. A failure on

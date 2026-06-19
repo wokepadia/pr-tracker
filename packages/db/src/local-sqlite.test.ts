@@ -44,7 +44,8 @@ describe("local SQLite storage", () => {
           pull_request_id: "pr_1",
           reviewer_kind: "user",
           login: "viewer",
-          team_slug: null
+          team_slug: null,
+          requested_at: "2026-06-01T11:30:00.000Z"
         }
       ]);
       expect(listLocalReviewEventRows(local.db, "pr_2")).toMatchObject([

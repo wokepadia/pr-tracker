@@ -7,9 +7,11 @@ import {
   sampleLastSeenAtByPullRequestId,
   samplePullRequests,
   type PullRequestActivity,
+  type PullRequestComment,
   type PullRequestItem,
   type PullRequestLabel,
   type ReviewDecisionEvent,
+  type ReviewRequestEvent,
   type ReviewThread
 } from "@pr-tracker/core";
 import type {
@@ -63,6 +65,7 @@ export interface LocalReviewRequestRow {
   reviewer_kind: "user" | "team";
   login: string | null;
   team_slug: string | null;
+  requested_at: string | null;
 }
 
 export interface LocalPullRequestLabelRow {
@@ -469,7 +472,8 @@ export function listLocalReviewRequestRows(
           rr.pull_request_id,
           rr.reviewer_kind,
           account.login,
-          team.slug as team_slug
+          team.slug as team_slug,
+          rr.requested_at
         from pull_request_review_requests rr
         left join github_accounts account on account.id = rr.account_id
         left join github_teams team on team.id = rr.team_id
@@ -992,12 +996,63 @@ function snapshotToPullRequestItem(snapshot: GitHubPullRequestSnapshot): PullReq
     requestedReviewerIds: (pullRequest.requested_reviewers ?? [])
       .map((reviewer) => reviewer.login)
       .filter((login): login is string => Boolean(login)),
+    reviewRequests: mapSnapshotReviewRequests(snapshot),
     reviews: reviews.flatMap(mapSnapshotReview),
     threads: (snapshot.review_threads ?? []).map((thread) =>
       mapSnapshotReviewThread(thread, updatedAt)
     ),
+    comments: mapSnapshotComments(snapshot),
     activity: buildSnapshotActivity({ ...snapshot, reviews })
   };
+}
+
+/**
+ * Pair each currently requested reviewer with the timeline's request time.
+ * Reviewers without a known time are omitted so the classifier treats the
+ * outstanding request as unanswered instead of inventing a request time.
+ */
+function mapSnapshotReviewRequests(
+  snapshot: GitHubPullRequestSnapshot
+): ReviewRequestEvent[] {
+  const requestedAtByLogin = new Map(
+    (snapshot.review_requests ?? []).map((request) => [
+      request.reviewer_login.toLowerCase(),
+      request.requested_at
+    ])
+  );
+  return (snapshot.pull_request.requested_reviewers ?? []).flatMap((reviewer) => {
+    const login = reviewer.login;
+    if (!login) return [];
+    const requestedAt = requestedAtByLogin.get(login.toLowerCase());
+    return requestedAt ? [{ reviewerId: login, requestedAt }] : [];
+  });
+}
+
+/** Flatten conversation and inline comments into comment primitives used to
+ * detect whether the viewer has responded to a review request. */
+function mapSnapshotComments(
+  snapshot: GitHubPullRequestSnapshot
+): PullRequestComment[] {
+  const comments: PullRequestComment[] = [];
+  for (const comment of snapshot.issue_comments ?? []) {
+    if (!comment.id || !comment.created_at) continue;
+    comments.push({
+      id: comment.id,
+      authorId: comment.author?.login ?? "unknown",
+      createdAt: comment.created_at
+    });
+  }
+  for (const thread of snapshot.review_threads ?? []) {
+    for (const comment of thread.comments ?? []) {
+      if (!comment.id || !comment.created_at) continue;
+      comments.push({
+        id: comment.id,
+        authorId: comment.author?.login ?? "unknown",
+        createdAt: comment.created_at
+      });
+    }
+  }
+  return comments;
 }
 
 function mapSnapshotLabel(
@@ -1501,6 +1556,12 @@ function replaceLocalReviewRequests(
     pullRequest.id
   );
 
+  const requestedAtByReviewer = new Map(
+    (pullRequest.reviewRequests ?? []).map((request) => [
+      request.reviewerId.toLowerCase(),
+      request.requestedAt
+    ])
+  );
   for (const reviewerId of pullRequest.requestedReviewerIds) {
     const accountId = upsertGithubAccount(db, {
       login: reviewerId,
@@ -1525,7 +1586,7 @@ function replaceLocalReviewRequests(
       pullRequest.id,
       "user",
       accountId,
-      null,
+      requestedAtByReviewer.get(reviewerId.toLowerCase()) ?? null,
       now
     );
   }

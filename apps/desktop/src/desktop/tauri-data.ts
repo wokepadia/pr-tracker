@@ -1,9 +1,11 @@
 import type {
   Actor,
   PullRequestActivity,
+  PullRequestComment,
   PullRequestItem,
   PullRequestLabel,
   ReviewDecisionEvent,
+  ReviewRequestEvent,
   ReviewThread,
 } from "@pr-tracker/core"
 import {
@@ -1621,6 +1623,12 @@ async function replaceReviewRequests(
     pullRequest.id,
   ])
 
+  const requestedAtByReviewer = new Map(
+    (pullRequest.reviewRequests ?? []).map((request) => [
+      request.reviewerId.toLowerCase(),
+      request.requestedAt,
+    ])
+  )
   for (const reviewerId of pullRequest.requestedReviewerIds) {
     const accountId = await upsertGithubAccount(db, {
       login: reviewerId,
@@ -1639,7 +1647,7 @@ async function replaceReviewRequests(
         pullRequest.id,
         "user",
         accountId,
-        null,
+        requestedAtByReviewer.get(reviewerId.toLowerCase()) ?? null,
         now,
       ]
     )
@@ -2005,6 +2013,10 @@ async function toPullRequestItem(
     listReviewThreadRows(db, row.id),
     listActivityEventRows(db, row.id),
   ])
+  const [issueComments, reviewComments] = await Promise.all([
+    listIssueCommentRows(db, row.id),
+    listReviewCommentRows(db, row.id),
+  ])
   const [labels, assignees] = await Promise.all([
     listPullRequestLabelRows(db, row.id),
     listPullRequestAssigneeRows(db, row.id),
@@ -2047,6 +2059,23 @@ async function toPullRequestItem(
     requestedReviewerIds: reviewRequests.flatMap((request) =>
       request.login ? [request.login] : []
     ),
+    reviewRequests: reviewRequests.flatMap((request) =>
+      request.login && request.requested_at
+        ? [{ reviewerId: request.login, requestedAt: request.requested_at }]
+        : []
+    ),
+    comments: [
+      ...issueComments.map((comment) => ({
+        id: comment.id,
+        authorId: comment.author_login,
+        createdAt: comment.created_at_github,
+      })),
+      ...reviewComments.map((comment) => ({
+        id: comment.id,
+        authorId: comment.author_login,
+        createdAt: comment.created_at_github,
+      })),
+    ] satisfies PullRequestComment[],
     reviews: reviews.map((review) => ({
       id: review.id,
       reviewerId: review.reviewer_login,
@@ -2123,6 +2152,7 @@ async function listReviewRequestRows(db: SqlDatabase, pullRequestId: string) {
       reviewer_kind: "user" | "team"
       login: string | null
       team_slug: string | null
+      requested_at: string | null
     }>
   >(
     `
@@ -2130,7 +2160,8 @@ async function listReviewRequestRows(db: SqlDatabase, pullRequestId: string) {
         rr.pull_request_id,
         rr.reviewer_kind,
         account.login,
-        team.slug as team_slug
+        team.slug as team_slug,
+        rr.requested_at
       from pull_request_review_requests rr
       left join github_accounts account on account.id = rr.account_id
       left join github_teams team on team.id = rr.team_id
@@ -3151,12 +3182,36 @@ function snapshotToPullRequestItem(
     requestedReviewerIds: (pullRequest.requested_reviewers ?? [])
       .map((reviewer) => reviewer.login)
       .filter((login): login is string => Boolean(login)),
+    reviewRequests: mapSnapshotReviewRequests(snapshot),
     reviews: reviews.flatMap(mapSnapshotReview),
     threads: (snapshot.review_threads ?? []).map((thread) =>
       mapSnapshotReviewThread(thread, updatedAt)
     ),
     activity: buildSnapshotActivity({ ...snapshot, reviews }),
   }
+}
+
+/**
+ * Pair each currently requested reviewer with the time GitHub recorded the
+ * request, taken from the timeline. Reviewers without a known request time
+ * (older data, or a timeline fetch that failed) are omitted so the classifier
+ * treats the outstanding request as unanswered rather than inventing a time.
+ */
+function mapSnapshotReviewRequests(
+  snapshot: GitHubPullRequestSnapshot
+): ReviewRequestEvent[] {
+  const requestedAtByLogin = new Map(
+    (snapshot.review_requests ?? []).map((request) => [
+      request.reviewer_login.toLowerCase(),
+      request.requested_at,
+    ])
+  )
+  return (snapshot.pull_request.requested_reviewers ?? []).flatMap((reviewer) => {
+    const login = reviewer.login
+    if (!login) return []
+    const requestedAt = requestedAtByLogin.get(login.toLowerCase())
+    return requestedAt ? [{ reviewerId: login, requestedAt }] : []
+  })
 }
 
 function mapSnapshotLabel(
