@@ -6,7 +6,6 @@ describe("onboarding route gate", () => {
     expect(
       shouldRedirectToOnboarding({
         pathname: "/",
-        onboardingComplete: false,
         tokenConfigured: false,
         isLoading: false,
       })
@@ -17,27 +16,17 @@ describe("onboarding route gate", () => {
     expect(
       shouldRedirectToOnboarding({
         pathname: "/",
-        onboardingComplete: false,
         tokenConfigured: false,
         isLoading: true,
       })
     ).toBe(false)
   })
 
-  it("allows configured or completed users into the app", () => {
+  it("only lets users with a configured token into the app", () => {
     expect(
       shouldRedirectToOnboarding({
         pathname: "/",
-        onboardingComplete: false,
         tokenConfigured: true,
-        isLoading: false,
-      })
-    ).toBe(false)
-    expect(
-      shouldRedirectToOnboarding({
-        pathname: "/",
-        onboardingComplete: true,
-        tokenConfigured: false,
         isLoading: false,
       })
     ).toBe(false)
@@ -47,7 +36,6 @@ describe("onboarding route gate", () => {
     expect(
       shouldRedirectToOnboarding({
         pathname: "/onboarding",
-        onboardingComplete: false,
         tokenConfigured: false,
         isLoading: false,
       })
@@ -55,7 +43,6 @@ describe("onboarding route gate", () => {
     expect(
       shouldRedirectToOnboarding({
         pathname: "/settings",
-        onboardingComplete: false,
         tokenConfigured: false,
         isLoading: false,
       })

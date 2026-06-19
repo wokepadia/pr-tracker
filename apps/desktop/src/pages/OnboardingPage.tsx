@@ -16,7 +16,6 @@ import {
   GitPullRequest,
   KeyRound,
   Layers,
-  Loader2,
   RotateCcw,
   ShieldCheck,
   type LucideIcon,
@@ -203,20 +202,6 @@ export function OnboardingPage() {
               settings={settingsQuery.data}
               submitLabel="Save and sync"
               successMessage="GitHub settings saved. Opening the reviewer inbox."
-              secondaryAction={
-                <Button
-                  className="rounded-md"
-                  disabled={saveOnboardingMutation.isPending}
-                  type="button"
-                  variant="outline"
-                  onClick={() => void completeOnboarding()}
-                >
-                  {saveOnboardingMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : null}
-                  Skip for now
-                </Button>
-              }
               onSaved={() => completeOnboarding()}
             />
           </Card>

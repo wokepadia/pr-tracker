@@ -2,7 +2,6 @@ import {
   useEffect,
   useState,
   type FormEvent,
-  type ReactNode,
 } from "react"
 import {
   useMutation,
@@ -25,7 +24,6 @@ interface GithubSettingsFormProps {
   settings?: GithubSettingsStatus
   submitLabel?: string
   successMessage?: string
-  secondaryAction?: ReactNode
   advancedInDisclosure?: boolean
   onSaved?: (settings: GithubSettingsStatus) => void | Promise<void>
 }
@@ -34,7 +32,6 @@ export function GithubSettingsForm({
   settings,
   submitLabel = "Save settings",
   successMessage = "GitHub settings saved. The inbox will now use live GitHub data.",
-  secondaryAction,
   advancedInDisclosure = false,
   onSaved,
 }: GithubSettingsFormProps) {
@@ -189,8 +186,7 @@ export function GithubSettingsForm({
         </div>
       ) : null}
 
-      <div className="flex items-center justify-between gap-3 pt-2">
-        <div>{secondaryAction}</div>
+      <div className="flex items-center justify-end gap-3 pt-2">
         <Button
           className="rounded-md"
           disabled={saveMutation.isPending}

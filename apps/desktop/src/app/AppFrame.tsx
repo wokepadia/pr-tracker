@@ -36,13 +36,11 @@ export function AppFrame() {
   const gateError = onboardingQuery.error ?? settingsQuery.error
   const showGateError =
     Boolean(gateError) && pathname !== "/settings" && pathname !== "/onboarding"
-  const onboardingComplete = Boolean(onboardingQuery.data?.completedAt)
   const tokenConfigured = Boolean(settingsQuery.data?.tokenConfigured)
 
   useEffect(() => {
     const shouldRedirect = shouldRedirectToOnboarding({
       pathname,
-      onboardingComplete,
       tokenConfigured,
       isLoading: onboardingQuery.isLoading || settingsQuery.isLoading,
     })
@@ -51,7 +49,6 @@ export function AppFrame() {
     void navigate({ to: "/onboarding" })
   }, [
     navigate,
-    onboardingComplete,
     onboardingQuery.isLoading,
     pathname,
     settingsQuery.isLoading,
