@@ -418,6 +418,10 @@ export function getGithubClosedLookbackDays(
 const defaultMaxOpenPullRequests = 200;
 const defaultMaxClosedPullRequests = 20;
 
+// Per-PR hydration concurrency. Shared across all repositories so the pool
+// stays saturated instead of draining and refilling at every repo boundary.
+const pullRequestHydrationConcurrency = 8;
+
 async function listConfiguredRepositoryPullRequests(
   octokit: RequestingOctokit,
   repositories: string[],
@@ -427,7 +431,6 @@ async function listConfiguredRepositoryPullRequests(
     maxPullRequests?: number;
   }
 ): Promise<GitHubPullRequestSnapshot[]> {
-  const snapshots: GitHubPullRequestSnapshot[] = [];
   const maxOpenPullRequests =
     options.maxPullRequests ?? defaultMaxOpenPullRequests;
   const maxClosedPullRequests =
@@ -435,6 +438,19 @@ async function listConfiguredRepositoryPullRequests(
   const closedUpdatedSince = new Date(
     Date.now() - (options.closedLookbackDays ?? 30) * 24 * 60 * 60 * 1000
   ).toISOString();
+
+  // First gather the (cheap) per-repo list calls into a single flat work list,
+  // then hydrate every pull request through one shared pool. Hydrating per repo
+  // would drain and refill the concurrency slots at each repo boundary; a
+  // flattened pool keeps all slots saturated end to end. Repos are walked in
+  // order and PRs kept in list order, so the flat list — and the order-
+  // preserving pool — yields deterministic, repo-then-PR ordered snapshots.
+  const workItems: {
+    repository: string;
+    owner: string;
+    name: string;
+    pullRequest: GitHubPullRequestFromApi;
+  }[] = [];
 
   for (const repository of repositories) {
     const [owner, name] = repository.split("/");
@@ -465,41 +481,41 @@ async function listConfiguredRepositoryPullRequests(
       ...recentlyClosedPullRequests
     ]);
 
-    const hydratedPullRequests = await mapConcurrent(
-      pullRequests,
-      8,
-      async (pullRequest) => {
-        const [reviews, graphqlFacts, issueComments] = await Promise.all([
-          listPullRequestReviews(octokit, owner, name, pullRequest.number),
-          fetchPullRequestGraphqlFacts(octokit, owner, name, pullRequest.number),
-          listIssueComments(octokit, owner, name, pullRequest.number)
-        ]);
-
-        return {
-          repository: {
-            full_name: repository,
-            html_url: `https://github.com/${repository}`,
-            owner: { login: owner }
-          },
-          pull_request: {
-            ...withGraphqlSizeFallback(pullRequest, graphqlFacts.size),
-            merged: pullRequest.merged ?? Boolean(pullRequest.merged_at)
-          },
-          reviews: stripReviewBodies(reviews),
-          review_requests: graphqlFacts.reviewRequests,
-          review_threads: graphqlFacts.reviewThreads,
-          issue_comments: issueComments,
-          status_check_rollup: graphqlFacts.statusCheckRollup,
-          review_decision: graphqlFacts.reviewDecision,
-          check_runs: graphqlFacts.checkRuns
-        };
-      }
-    );
-
-    snapshots.push(...hydratedPullRequests);
+    for (const pullRequest of pullRequests) {
+      workItems.push({ repository, owner, name, pullRequest });
+    }
   }
 
-  return snapshots;
+  return mapConcurrent(
+    workItems,
+    pullRequestHydrationConcurrency,
+    async ({ repository, owner, name, pullRequest }) => {
+      const [reviews, graphqlFacts, issueComments] = await Promise.all([
+        listPullRequestReviews(octokit, owner, name, pullRequest.number),
+        fetchPullRequestGraphqlFacts(octokit, owner, name, pullRequest.number),
+        listIssueComments(octokit, owner, name, pullRequest.number)
+      ]);
+
+      return {
+        repository: {
+          full_name: repository,
+          html_url: `https://github.com/${repository}`,
+          owner: { login: owner }
+        },
+        pull_request: {
+          ...withGraphqlSizeFallback(pullRequest, graphqlFacts.size),
+          merged: pullRequest.merged ?? Boolean(pullRequest.merged_at)
+        },
+        reviews: stripReviewBodies(reviews),
+        review_requests: graphqlFacts.reviewRequests,
+        review_threads: graphqlFacts.reviewThreads,
+        issue_comments: issueComments,
+        status_check_rollup: graphqlFacts.statusCheckRollup,
+        review_decision: graphqlFacts.reviewDecision,
+        check_runs: graphqlFacts.checkRuns
+      };
+    }
+  );
 }
 
 async function listSearchedPullRequests(
@@ -707,18 +723,32 @@ async function listRepoPullRequests(
   }
 }
 
+// Sliding-window worker pool: keep at most `concurrency` mappers in flight
+// and, the instant any one settles, start the next pending item. This avoids
+// the head-of-line blocking of a batched chunker, where the slowest item in a
+// slice stalls the rest. Results are written back by input index, so the
+// returned array preserves input order. A rejected mapper rejects the whole
+// promise, matching Promise.all.
 async function mapConcurrent<TInput, TOutput>(
   items: TInput[],
   concurrency: number,
   mapper: (item: TInput) => Promise<TOutput>
 ): Promise<TOutput[]> {
-  const results: TOutput[] = [];
+  const results: TOutput[] = new Array<TOutput>(items.length);
+  let nextIndex = 0;
 
-  for (let index = 0; index < items.length; index += concurrency) {
-    results.push(
-      ...(await Promise.all(items.slice(index, index + concurrency).map(mapper)))
-    );
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      // index < items.length holds, so the element is present.
+      const item = items[index]!;
+      results[index] = await mapper(item);
+    }
   }
+
+  const workerCount = Math.min(concurrency, items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
   return results;
 }
