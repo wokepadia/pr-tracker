@@ -413,6 +413,21 @@ create table if not exists ai_summaries (
   check (kind in ('pr-brief', 'ai-dashboard'))
 );
 
+-- Per-card AI dashboard summaries, one row per board pull request. The
+-- fingerprint is a hash of the exact card input, so an unchanged card is
+-- skipped on the next generation instead of being re-sent to the model. The
+-- machine_summary is an uncapped, factual record of the card reused as context
+-- when the card has not changed. Only AI mode touches this table. (No
+-- semicolons in this comment: the schema runner splits statements on them.)
+create table if not exists ai_dashboard_cards (
+  pull_request_id text primary key,
+  fingerprint text not null,
+  model text not null,
+  user_card_json text not null,
+  machine_summary text not null,
+  generated_at text not null default current_timestamp
+);
+
 -- Persisted chat conversations for the dashboard chat overlay. A thread is
 -- scoped to the board filter it was started under (board_fingerprint) so
 -- reopening the overlay restores the matching conversation. Messages are the

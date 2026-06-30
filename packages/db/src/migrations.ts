@@ -148,6 +148,26 @@ export const migrations: Migration[] = [
       },
     ],
   },
+  {
+    // Per-card AI dashboard summaries, enabling incremental regeneration: only
+    // cards whose fingerprint changed are re-sent to the model.
+    id: "0007-ai-dashboard-cards",
+    ops: [
+      {
+        kind: "exec",
+        sql: `
+          create table if not exists ai_dashboard_cards (
+            pull_request_id text primary key,
+            fingerprint text not null,
+            model text not null,
+            user_card_json text not null,
+            machine_summary text not null,
+            generated_at text not null default current_timestamp
+          )
+        `,
+      },
+    ],
+  },
 ];
 
 /**

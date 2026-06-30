@@ -41,6 +41,7 @@ describe("schema migrations", () => {
         "board_items",
         "board_filter_memberships",
         "ai_summaries",
+        "ai_dashboard_cards",
         "chat_threads",
         "chat_messages",
         "schema_migrations",
