@@ -801,6 +801,65 @@ describe("GitHub token pull request source", () => {
     expect(snapshots[0]?.reviews?.[0]?.body).toBeUndefined();
   });
 
+  it("skips fetching searched pull requests unchanged since the last sync", async () => {
+    const calls: Array<{ route: string; parameters?: Record<string, unknown> }> = [];
+    const source = createGithubTokenPullRequestSource({
+      token: "token",
+      repositories: ["acme/web"],
+      request: async <T = unknown>(
+        route: string,
+        parameters?: Record<string, unknown>
+      ) => {
+        calls.push({ route, parameters });
+
+        if (route === "GET /search/issues") {
+          return {
+            data: {
+              items: [
+                {
+                  number: 42,
+                  repository_url: "https://api.github.com/repos/acme/web",
+                  updated_at: "2026-06-01T09:00:00.000Z",
+                  pull_request: {
+                    url: "https://api.github.com/repos/acme/web/pulls/42"
+                  }
+                }
+              ]
+            } as T
+          };
+        }
+
+        throw new Error(`Unexpected route: ${route}`);
+      }
+    });
+
+    if (!source.listPullRequests) {
+      throw new Error("Expected token source to support listPullRequests.");
+    }
+
+    // The stored version is at least as new as the search result, so the pull
+    // request is unchanged and must not be re-fetched.
+    const knownPullRequestVersions = new Map<string, string>([
+      ["acme/web#42", "2026-06-01T09:00:00.000Z"]
+    ]);
+    const snapshots = await source.listPullRequests({
+      searchQuery: "is:open assignee:@me",
+      knownPullRequestVersions
+    });
+
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]?.unchanged).toBe(true);
+    expect(snapshots[0]?.repository.full_name).toBe("acme/web");
+    expect(snapshots[0]?.pull_request.number).toBe(42);
+    // Only the search call was made; no per-PR detail or GraphQL hydration.
+    expect(
+      calls.some(
+        (call) => call.route === "GET /repos/{owner}/{repo}/pulls/{pull_number}"
+      )
+    ).toBe(false);
+    expect(calls.some((call) => call.route === "POST /graphql")).toBe(false);
+  });
+
   it("lists changed files with patches across pages", async () => {
     const calls: Array<{ route: string; parameters?: Record<string, unknown> }> = [];
     const firstPage = Array.from({ length: 100 }, (_value, index) => ({

@@ -313,6 +313,7 @@ interface GitHubIssueCommentFromApi {
 interface GitHubIssueSearchResultFromApi {
   number: number;
   repository_url?: string;
+  updated_at?: string;
   pull_request?: {
     url?: string;
     html_url?: string;
@@ -362,7 +363,8 @@ export function createGithubTokenPullRequestSource(input: {
       const searchQuery = cleanGithubSearchQuery(options?.searchQuery);
       if (searchQuery) {
         return listSearchedPullRequests(octokit, input.repositories, searchQuery, {
-          maxPullRequests: input.maxPullRequests
+          maxPullRequests: input.maxPullRequests,
+          knownPullRequestVersions: options?.knownPullRequestVersions
         });
       }
 
@@ -377,7 +379,8 @@ export function createGithubTokenPullRequestSource(input: {
       const searchQuery = cleanGithubSearchQuery(options?.searchQuery);
       if (searchQuery) {
         return listSearchedPullRequests(octokit, input.repositories, searchQuery, {
-          maxPullRequests: input.maxPullRequests
+          maxPullRequests: input.maxPullRequests,
+          knownPullRequestVersions: options?.knownPullRequestVersions
         });
       }
 
@@ -574,6 +577,7 @@ async function listSearchedPullRequests(
   searchQuery: string,
   options: {
     maxPullRequests?: number;
+    knownPullRequestVersions?: Map<string, string>;
   }
 ): Promise<GitHubPullRequestSnapshot[]> {
   const maxPullRequests = options.maxPullRequests ?? 20;
@@ -582,9 +586,41 @@ async function listSearchedPullRequests(
   const lookups = dedupePullRequestLookups(
     searchResults.flatMap(searchResultToPullRequestLookup)
   );
-  const snapshots = await mapConcurrent(lookups, 8, (lookup) =>
-    getTokenPullRequest(octokit, lookup, { stripReviewBodies: true })
-  );
+  // The search result already carries each pull request's updated_at, so a
+  // pull request that has not changed since the last sync can skip its whole
+  // per-PR fetch (detail + GraphQL) the same way the configured-repo listing
+  // does, instead of re-fetching all matches on every sync.
+  const searchUpdatedAt = new Map<string, string>();
+  for (const item of searchResults) {
+    const repository = repositoryFromSearchResult(item);
+    if (repository && item.updated_at) {
+      searchUpdatedAt.set(`${repository}#${item.number}`, item.updated_at);
+    }
+  }
+
+  const snapshots = await mapConcurrent(lookups, 8, (lookup) => {
+    const key = `${lookup.repository}#${lookup.number}`;
+    const knownVersion = options.knownPullRequestVersions?.get(key);
+    const updatedAt = searchUpdatedAt.get(key);
+    if (
+      knownVersion &&
+      updatedAt &&
+      Date.parse(updatedAt) <= Date.parse(knownVersion)
+    ) {
+      const [owner] = lookup.repository.split("/");
+      return Promise.resolve<GitHubPullRequestSnapshot>({
+        repository: {
+          full_name: lookup.repository,
+          html_url: `https://github.com/${lookup.repository}`,
+          owner: { login: owner ?? "" }
+        },
+        pull_request: { number: lookup.number, updated_at: updatedAt },
+        unchanged: true
+      });
+    }
+
+    return getTokenPullRequest(octokit, lookup, { stripReviewBodies: true });
+  });
 
   return snapshots.filter(
     (snapshot): snapshot is GitHubPullRequestSnapshot => Boolean(snapshot)

@@ -51,13 +51,11 @@ export async function syncPullRequestsToLocalSqlite(
   };
 
   try {
-    // The configured-repo listing can skip hydrating pull requests that are
-    // unchanged since the last sync. Build the stored version + id maps once
-    // (search has no steady-state store to compare against, so skip it there).
+    // Both the configured-repo and search listings can skip hydrating pull
+    // requests that are unchanged since the last sync, so build the stored
+    // version + id maps once and pass them through either path.
     const { knownPullRequestVersions, knownPullRequestIds } =
-      options.searchQuery
-        ? { knownPullRequestVersions: undefined, knownPullRequestIds: new Map<string, string>() }
-        : loadKnownPullRequestVersions(db);
+      loadKnownPullRequestVersions(db);
 
     const snapshots = await listPullRequestSnapshots(source, {
       searchQuery: options.searchQuery,
