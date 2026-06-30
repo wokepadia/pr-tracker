@@ -534,11 +534,17 @@ async function listConfiguredRepositoryPullRequests(
         };
       }
 
-      const [reviews, graphqlFacts, issueComments] = await Promise.all([
-        listPullRequestReviews(octokit, owner, name, pullRequest.number),
-        fetchPullRequestGraphqlFacts(octokit, owner, name, pullRequest.number),
-        listIssueComments(octokit, owner, name, pullRequest.number)
-      ]);
+      // Reviews and issue comments now ride along on the GraphQL facts call,
+      // so the common case is one request instead of three. The facts call
+      // already strips review bodies at the source on its own, but we run the
+      // existing strip here too so a >100-review REST fallback list is also
+      // body-free.
+      const graphqlFacts = await fetchPullRequestGraphqlFacts(
+        octokit,
+        owner,
+        name,
+        pullRequest.number
+      );
 
       return {
         repository: {
@@ -550,10 +556,10 @@ async function listConfiguredRepositoryPullRequests(
           ...withGraphqlSizeFallback(pullRequest, graphqlFacts.size),
           merged: pullRequest.merged ?? Boolean(pullRequest.merged_at)
         },
-        reviews: stripReviewBodies(reviews),
+        reviews: stripReviewBodies(graphqlFacts.reviews ?? []),
         review_requests: graphqlFacts.reviewRequests,
         review_threads: graphqlFacts.reviewThreads,
-        issue_comments: issueComments,
+        issue_comments: graphqlFacts.issueComments,
         status_check_rollup: graphqlFacts.statusCheckRollup,
         review_decision: graphqlFacts.reviewDecision,
         check_runs: graphqlFacts.checkRuns
@@ -827,27 +833,16 @@ async function listIssueComments(
       );
 
       comments.push(
-        ...response.data.flatMap((comment) => {
-          const id = comment.node_id ?? String(comment.id);
-          const body = comment.body?.trim();
-          const createdAt = comment.created_at;
-          if (!id || !body || !createdAt) {
-            return [];
-          }
-
-          return [
-            {
-              id,
-              author: comment.user?.login
-                ? { login: comment.user.login }
-                : undefined,
-              body,
-              created_at: createdAt,
-              updated_at: comment.updated_at,
-              url: comment.html_url
-            }
-          ];
-        })
+        ...response.data.flatMap((comment) =>
+          mapIssueCommentSnapshot({
+            id: comment.node_id ?? String(comment.id),
+            login: comment.user?.login,
+            body: comment.body,
+            created_at: comment.created_at,
+            updated_at: comment.updated_at,
+            url: comment.html_url
+          })
+        )
       );
 
       if (response.data.length < 100) {
@@ -859,6 +854,102 @@ async function listIssueComments(
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Maps a raw issue-comment record (from either REST or GraphQL) to the
+ * persisted snapshot shape, applying the same skip rule both sources share:
+ * a comment with a missing id/created_at, or a body that trims to empty, is
+ * dropped. Returns a single-element array on success or an empty array when
+ * skipped, so callers can `flatMap` it.
+ */
+function mapIssueCommentSnapshot(input: {
+  id: string;
+  login: string | undefined;
+  body: string | null | undefined;
+  created_at: string | undefined;
+  updated_at?: string | null;
+  url?: string | null;
+}): GitHubIssueCommentSnapshot[] {
+  const id = input.id;
+  const body = input.body?.trim();
+  const createdAt = input.created_at;
+  if (!id || !body || !createdAt) {
+    return [];
+  }
+
+  return [
+    {
+      id,
+      author: input.login ? { login: input.login } : undefined,
+      body,
+      created_at: createdAt,
+      updated_at: input.updated_at,
+      url: input.url
+    }
+  ];
+}
+
+/**
+ * Maps the first-page GraphQL review nodes into the same body-less shape the
+ * REST reviews endpoint produces. The GraphQL `state` enum matches REST's
+ * uppercase values (APPROVED / CHANGES_REQUESTED / COMMENTED / DISMISSED), so
+ * it is passed through unchanged. Bodies are never selected.
+ */
+function graphqlReviewsToSnapshots(
+  nodes:
+    | Array<{
+        databaseId?: number;
+        id?: string;
+        state?: string;
+        submittedAt?: string;
+        author?: { login?: string } | null;
+        commit?: { oid?: string } | null;
+      } | null>
+    | undefined
+): GitHubReviewFromApi[] {
+  return (nodes ?? [])
+    .filter((node): node is NonNullable<typeof node> => Boolean(node))
+    .map((node) => ({
+      id: node.databaseId as number,
+      node_id: node.id,
+      state: node.state,
+      submitted_at: node.submittedAt,
+      commit_id: node.commit?.oid,
+      user: node.author?.login ? { login: node.author.login } : undefined
+    }));
+}
+
+/**
+ * Maps the first-page GraphQL issue-comment nodes (the pull request's
+ * `comments` connection) into the persisted snapshot shape, reusing the same
+ * filtering rule as the REST helper.
+ */
+function graphqlIssueCommentsToSnapshots(
+  nodes:
+    | Array<{
+        databaseId?: number;
+        id?: string;
+        author?: { login?: string } | null;
+        body?: string;
+        createdAt?: string;
+        updatedAt?: string | null;
+        url?: string | null;
+      } | null>
+    | undefined
+): GitHubIssueCommentSnapshot[] {
+  return (nodes ?? [])
+    .filter((node): node is NonNullable<typeof node> => Boolean(node))
+    .flatMap((node) =>
+      mapIssueCommentSnapshot({
+        id: node.id ?? String(node.databaseId),
+        login: node.author?.login,
+        body: node.body,
+        created_at: node.createdAt,
+        updated_at: node.updatedAt ?? undefined,
+        url: node.url
+      })
+    );
 }
 
 async function getTokenPullRequest(
@@ -880,11 +971,16 @@ async function getTokenPullRequest(
         pull_number: lookup.number
       }
     );
-    const [reviews, graphqlFacts, issueComments] = await Promise.all([
-      listPullRequestReviews(octokit, owner, repo, response.data.number),
-      fetchPullRequestGraphqlFacts(octokit, owner, repo, response.data.number),
-      listIssueComments(octokit, owner, repo, response.data.number)
-    ]);
+    // The detail call above supplies the full PR object; reviews and issue
+    // comments now ride along on the GraphQL facts call instead of separate
+    // REST requests.
+    const graphqlFacts = await fetchPullRequestGraphqlFacts(
+      octokit,
+      owner,
+      repo,
+      response.data.number
+    );
+    const reviews = graphqlFacts.reviews ?? [];
 
     return {
       repository: {
@@ -899,7 +995,7 @@ async function getTokenPullRequest(
       reviews: options.stripReviewBodies ? stripReviewBodies(reviews) : reviews,
       review_requests: graphqlFacts.reviewRequests,
       review_threads: graphqlFacts.reviewThreads,
-      issue_comments: issueComments,
+      issue_comments: graphqlFacts.issueComments,
       status_check_rollup: graphqlFacts.statusCheckRollup,
       review_decision: graphqlFacts.reviewDecision,
       check_runs: graphqlFacts.checkRuns
@@ -1034,6 +1130,31 @@ const reviewThreadsGraphqlQuery = `
             }
           }
         }
+        reviews(first: 100) {
+          totalCount
+          pageInfo { hasNextPage }
+          nodes {
+            databaseId
+            id
+            state
+            submittedAt
+            author { login }
+            commit { oid }
+          }
+        }
+        comments(first: 100) {
+          totalCount
+          pageInfo { hasNextPage }
+          nodes {
+            databaseId
+            id
+            author { login }
+            body
+            createdAt
+            updatedAt
+            url
+          }
+        }
         reviewThreads(first: 50, after: $cursor) {
           pageInfo {
             hasNextPage
@@ -1090,6 +1211,31 @@ interface GitHubReviewThreadsGraphqlResponse {
           nodes?: Array<{
             createdAt?: string;
             requestedReviewer?: { login?: string } | null;
+          } | null>;
+        };
+        reviews?: {
+          totalCount?: number;
+          pageInfo?: { hasNextPage?: boolean };
+          nodes?: Array<{
+            databaseId?: number;
+            id?: string;
+            state?: string;
+            submittedAt?: string;
+            author?: { login?: string } | null;
+            commit?: { oid?: string } | null;
+          } | null>;
+        };
+        comments?: {
+          totalCount?: number;
+          pageInfo?: { hasNextPage?: boolean };
+          nodes?: Array<{
+            databaseId?: number;
+            id?: string;
+            author?: { login?: string } | null;
+            body?: string;
+            createdAt?: string;
+            updatedAt?: string | null;
+            url?: string | null;
           } | null>;
         };
         reviewThreads?: {
@@ -1150,6 +1296,18 @@ interface PullRequestGraphqlFacts {
   statusCheckRollup?: GitHubStatusCheckRollupSnapshot;
   reviewDecision?: GitHubReviewDecision | null;
   checkRuns?: GitHubCheckRunSnapshot[];
+  /**
+   * Reviews read from the first GraphQL page (bodies omitted at the source).
+   * Undefined when the GraphQL call failed entirely so the caller can fall
+   * back to the REST helper or preserve "unknown" semantics.
+   */
+  reviews?: GitHubReviewFromApi[];
+  /**
+   * Issue-level conversation comments read from the first GraphQL page,
+   * filtered identically to the REST helper. Undefined when the GraphQL call
+   * failed entirely.
+   */
+  issueComments?: GitHubIssueCommentSnapshot[];
 }
 
 /**
@@ -1357,6 +1515,13 @@ async function fetchPullRequestGraphqlFacts(
     let reviewRequests: GitHubReviewRequestEventSnapshot[] | undefined;
     let reviewDecision: GitHubReviewDecision | null | undefined;
     let checkRuns: GitHubCheckRunSnapshot[] | undefined;
+    // Reviews and issue comments live on the first page only; they are not
+    // re-paginated by the reviewThreads cursor loop. A `false` fallback flag
+    // means GraphQL returned the complete first page.
+    let reviews: GitHubReviewFromApi[] | undefined;
+    let reviewsNeedFallback = false;
+    let issueComments: GitHubIssueCommentSnapshot[] | undefined;
+    let issueCommentsNeedFallback = false;
     let cursor: string | null = null;
 
     for (let page = 0; page < maxReviewThreadPages; page += 1) {
@@ -1390,6 +1555,22 @@ async function fetchPullRequestGraphqlFacts(
       reviewRequests ??= toReviewRequestSnapshots(
         pullRequest.timelineItems?.nodes
       );
+
+      if (page === 0) {
+        // Reviews/comments are not re-paginated each loop, so read them once
+        // from the first page. When more than 100 exist, flag for the REST
+        // fallback rather than persisting a truncated list.
+        reviews = graphqlReviewsToSnapshots(pullRequest.reviews?.nodes);
+        reviewsNeedFallback = Boolean(
+          pullRequest.reviews?.pageInfo?.hasNextPage
+        );
+        issueComments = graphqlIssueCommentsToSnapshots(
+          pullRequest.comments?.nodes
+        );
+        issueCommentsNeedFallback = Boolean(
+          pullRequest.comments?.pageInfo?.hasNextPage
+        );
+      }
 
       const nodes = pullRequest.reviewThreads?.nodes ?? [];
       reviewThreads.push(
@@ -1427,6 +1608,16 @@ async function fetchPullRequestGraphqlFacts(
       cursor = pageInfo.endCursor;
     }
 
+    // Correctness fallback: a pull request with more than 100 reviews/comments
+    // (rare) overflows the single GraphQL page, so fetch the complete list via
+    // the existing REST helper and let it win.
+    if (reviewsNeedFallback) {
+      reviews = await listPullRequestReviews(octokit, owner, repo, pullNumber);
+    }
+    if (issueCommentsNeedFallback) {
+      issueComments = await listIssueComments(octokit, owner, repo, pullNumber);
+    }
+
     return {
       size,
       reviewThreads,
@@ -1434,6 +1625,8 @@ async function fetchPullRequestGraphqlFacts(
       statusCheckRollup,
       reviewDecision,
       checkRuns,
+      reviews,
+      issueComments,
     };
   } catch {
     // GraphQL facts are an enrichment; a failed call (older GHES, token

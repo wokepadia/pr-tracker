@@ -59,10 +59,6 @@ describe("GitHub token pull request source", () => {
           return { data: [] as T };
         }
 
-        if (route === "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews") {
-          return { data: [] as T };
-        }
-
         if (route === "POST /graphql") {
           return {
             data: {
@@ -72,6 +68,35 @@ describe("GitHub token pull request source", () => {
                     additions: 120,
                     deletions: 30,
                     changedFiles: 7,
+                    reviews: {
+                      totalCount: 1,
+                      pageInfo: { hasNextPage: false },
+                      nodes: [
+                        {
+                          databaseId: 9001,
+                          id: "PRR_node_9001",
+                          state: "APPROVED",
+                          submittedAt: "2026-06-01T09:10:00.000Z",
+                          author: { login: "reviewer" },
+                          commit: { oid: "head-sha" }
+                        }
+                      ]
+                    },
+                    comments: {
+                      totalCount: 1,
+                      pageInfo: { hasNextPage: false },
+                      nodes: [
+                        {
+                          databaseId: 1001,
+                          id: "IC_kw_1001",
+                          author: { login: "author" },
+                          body: "Top-level context for the reviewer.",
+                          createdAt: "2026-06-01T08:45:00.000Z",
+                          updatedAt: "2026-06-01T08:46:00.000Z",
+                          url: "https://github.com/acme/web/pull/42#issuecomment-1001"
+                        }
+                      ]
+                    },
                     timelineItems: {
                       nodes: [
                         {
@@ -124,22 +149,6 @@ describe("GitHub token pull request source", () => {
                 }
               }
             } as T
-          };
-        }
-
-        if (route === "GET /repos/{owner}/{repo}/issues/{issue_number}/comments") {
-          return {
-            data: [
-              {
-                id: 1001,
-                node_id: "IC_kw_1001",
-                body: "Top-level context for the reviewer.",
-                html_url: "https://github.com/acme/web/pull/42#issuecomment-1001",
-                created_at: "2026-06-01T08:45:00.000Z",
-                updated_at: "2026-06-01T08:46:00.000Z",
-                user: { login: "author" }
-              }
-            ] as T
           };
         }
 
@@ -218,10 +227,31 @@ describe("GitHub token pull request source", () => {
         url: "https://github.com/acme/web/pull/42#issuecomment-1001"
       }
     ]);
+    // Reviews are now sourced from the same GraphQL response with their bodies
+    // stripped, in the REST review shape.
+    expect(snapshots[0]?.reviews).toEqual([
+      {
+        id: 9001,
+        node_id: "PRR_node_9001",
+        state: "APPROVED",
+        body: undefined,
+        submitted_at: "2026-06-01T09:10:00.000Z",
+        commit_id: "head-sha",
+        user: { login: "reviewer" }
+      }
+    ]);
     const graphqlCall = calls.find((call) => call.route === "POST /graphql");
     expect(graphqlCall?.parameters).toMatchObject({
       variables: { owner: "acme", name: "web", number: 42 }
     });
+    // The common case (<=100 reviews/comments) is a single GraphQL request: the
+    // separate REST review and issue-comment endpoints are no longer called.
+    expect(calls.map((call) => call.route)).not.toContain(
+      "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews"
+    );
+    expect(calls.map((call) => call.route)).not.toContain(
+      "GET /repos/{owner}/{repo}/issues/{issue_number}/comments"
+    );
     expect(calls.map((call) => call.route)).not.toContain(
       "GET /repos/{owner}/{repo}/pulls/{pull_number}/files"
     );
@@ -712,17 +742,39 @@ describe("GitHub token pull request source", () => {
           };
         }
 
-        if (route === "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews") {
+        if (route === "POST /graphql") {
           return {
-            data: [
-              {
-                id: 1,
-                state: "APPROVED",
-                body: "large review text",
-                submitted_at: "2026-06-01T09:00:00.000Z",
-                user: { login: "reviewer" }
+            data: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    reviews: {
+                      totalCount: 1,
+                      pageInfo: { hasNextPage: false },
+                      nodes: [
+                        {
+                          databaseId: 1,
+                          id: "PRR_node_1",
+                          state: "APPROVED",
+                          submittedAt: "2026-06-01T09:00:00.000Z",
+                          author: { login: "reviewer" },
+                          commit: { oid: "head-sha" }
+                        }
+                      ]
+                    },
+                    comments: {
+                      totalCount: 0,
+                      pageInfo: { hasNextPage: false },
+                      nodes: []
+                    },
+                    reviewThreads: {
+                      pageInfo: { hasNextPage: false, endCursor: null },
+                      nodes: []
+                    }
+                  }
+                }
               }
-            ] as T
+            } as T
           };
         }
 
@@ -937,6 +989,159 @@ describe("GitHub token pull request source", () => {
           call.parameters?.pull_number === 1 || call.parameters?.issue_number === 1
       )
     ).toBe(false);
+  });
+
+  it("falls back to the REST helpers when reviews or comments overflow the GraphQL page", async () => {
+    const calls: Array<{ route: string; parameters?: Record<string, unknown> }> = [];
+    const source = createGithubTokenPullRequestSource({
+      token: "token",
+      repositories: ["acme/web"],
+      request: async <T = unknown>(
+        route: string,
+        parameters?: Record<string, unknown>
+      ) => {
+        calls.push({ route, parameters });
+
+        if (route === "GET /repos/{owner}/{repo}/pulls") {
+          if (parameters?.state === "open") {
+            return {
+              data: [
+                {
+                  id: 1,
+                  number: 42,
+                  title: "Very chatty pull request",
+                  state: "open",
+                  updated_at: "2026-06-01T09:00:00.000Z",
+                  user: { login: "author" }
+                }
+              ] as T
+            };
+          }
+
+          return { data: [] as T };
+        }
+
+        if (route === "POST /graphql") {
+          return {
+            data: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    // hasNextPage true means the first page is truncated, so
+                    // these in-band nodes must be discarded in favor of the
+                    // complete REST list below.
+                    reviews: {
+                      totalCount: 150,
+                      pageInfo: { hasNextPage: true },
+                      nodes: [
+                        {
+                          databaseId: 1,
+                          id: "PRR_graphql_only",
+                          state: "COMMENTED",
+                          submittedAt: "2026-06-01T08:00:00.000Z",
+                          author: { login: "reviewer" }
+                        }
+                      ]
+                    },
+                    comments: {
+                      totalCount: 120,
+                      pageInfo: { hasNextPage: true },
+                      nodes: [
+                        {
+                          databaseId: 5,
+                          id: "IC_graphql_only",
+                          author: { login: "author" },
+                          body: "graphql-only comment",
+                          createdAt: "2026-06-01T08:00:00.000Z",
+                          updatedAt: null,
+                          url: "https://github.com/acme/web/pull/42#graphql"
+                        }
+                      ]
+                    },
+                    reviewThreads: {
+                      pageInfo: { hasNextPage: false, endCursor: null },
+                      nodes: []
+                    }
+                  }
+                }
+              }
+            } as T
+          };
+        }
+
+        if (route === "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews") {
+          return {
+            data: [
+              {
+                id: 7001,
+                node_id: "PRR_rest_7001",
+                state: "APPROVED",
+                body: "rest review body",
+                submitted_at: "2026-06-01T09:00:00.000Z",
+                commit_id: "rest-sha",
+                user: { login: "rest-reviewer" }
+              }
+            ] as T
+          };
+        }
+
+        if (route === "GET /repos/{owner}/{repo}/issues/{issue_number}/comments") {
+          return {
+            data: [
+              {
+                id: 8001,
+                node_id: "IC_rest_8001",
+                body: "rest comment body",
+                html_url: "https://github.com/acme/web/pull/42#rest",
+                created_at: "2026-06-01T09:30:00.000Z",
+                updated_at: "2026-06-01T09:31:00.000Z",
+                user: { login: "author" }
+              }
+            ] as T
+          };
+        }
+
+        throw new Error(`Unexpected route: ${route}`);
+      }
+    });
+
+    if (!source.listOpenPullRequests) {
+      throw new Error("Expected token source to support listOpenPullRequests.");
+    }
+
+    const snapshots = await source.listOpenPullRequests();
+
+    // The REST fallbacks fired and their complete lists won over the truncated
+    // GraphQL nodes.
+    expect(calls.map((call) => call.route)).toContain(
+      "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews"
+    );
+    expect(calls.map((call) => call.route)).toContain(
+      "GET /repos/{owner}/{repo}/issues/{issue_number}/comments"
+    );
+    expect(snapshots[0]?.reviews).toEqual([
+      {
+        id: 7001,
+        node_id: "PRR_rest_7001",
+        state: "APPROVED",
+        // Bodies are stripped on the configured-repo path even for the
+        // fallback list.
+        body: undefined,
+        submitted_at: "2026-06-01T09:00:00.000Z",
+        commit_id: "rest-sha",
+        user: { login: "rest-reviewer" }
+      }
+    ]);
+    expect(snapshots[0]?.issue_comments).toEqual([
+      {
+        id: "IC_rest_8001",
+        author: { login: "author" },
+        body: "rest comment body",
+        created_at: "2026-06-01T09:30:00.000Z",
+        updated_at: "2026-06-01T09:31:00.000Z",
+        url: "https://github.com/acme/web/pull/42#rest"
+      }
+    ]);
   });
 
   it("returns undefined changed files for repositories outside the allow list", async () => {
