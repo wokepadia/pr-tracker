@@ -4,6 +4,7 @@ import type {
   GitHubPullRequestSnapshot,
   GitHubPullRequestSource
 } from "@pr-tracker/github";
+import { mapConcurrent } from "@pr-tracker/github";
 import { upsertLocalPullRequestSnapshot } from "./local-sqlite";
 
 interface KnownOpenPullRequest {
@@ -116,6 +117,7 @@ async function listKnownOpenPullRequestSnapshots(
     return [];
   }
 
+  const getPullRequest = source.getPullRequest;
   const listedPullRequestKeys = new Set(
     listedSnapshots
       .map((snapshot) =>
@@ -123,36 +125,37 @@ async function listKnownOpenPullRequestSnapshots(
       )
       .filter((key) => key !== undefined)
   );
-  const snapshots: GitHubPullRequestSnapshot[] = [];
 
-  for (const pullRequest of listKnownOpenPullRequests(db)) {
-    const key = pullRequestKey(pullRequest.repository, pullRequest.number);
-    if (!key || listedPullRequestKeys.has(key)) {
-      continue;
+  const pullRequestsToRefresh = listKnownOpenPullRequests(db).filter(
+    (pullRequest) => {
+      const key = pullRequestKey(pullRequest.repository, pullRequest.number);
+      return key !== undefined && !listedPullRequestKeys.has(key);
     }
+  );
 
-    const snapshot = await source.getPullRequest({
-      repository: pullRequest.repository,
-      number: pullRequest.number
-    }).catch((error: unknown) => {
-      if (isTransientGithubDetailRefreshError(error)) {
-        console.warn(
-          `Skipping refresh for known pull request ${pullRequest.repository}#${pullRequest.number}:`,
-          error
-        );
-        return undefined;
-      }
+  const refreshedSnapshots = await mapConcurrent(
+    pullRequestsToRefresh,
+    8,
+    (pullRequest) =>
+      getPullRequest({
+        repository: pullRequest.repository,
+        number: pullRequest.number
+      }).catch((error: unknown) => {
+        if (isTransientGithubDetailRefreshError(error)) {
+          console.warn(
+            `Skipping refresh for known pull request ${pullRequest.repository}#${pullRequest.number}:`,
+            error
+          );
+          return undefined;
+        }
 
-      throw error;
-    });
+        throw error;
+      })
+  );
 
-    if (snapshot) {
-      snapshots.push(snapshot);
-      listedPullRequestKeys.add(key);
-    }
-  }
-
-  return snapshots;
+  return refreshedSnapshots.filter(
+    (snapshot): snapshot is GitHubPullRequestSnapshot => snapshot !== undefined
+  );
 }
 
 function listKnownOpenPullRequests(db: DatabaseSync): KnownOpenPullRequest[] {

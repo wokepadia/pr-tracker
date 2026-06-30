@@ -11,6 +11,7 @@ import type {
 import {
   createGithubTokenPullRequestSource,
   getGithubClosedLookbackDays,
+  mapConcurrent,
   parseGithubRepositories,
   type GitHubIssueCommentSnapshot,
   type GitHubPullRequestSnapshot,
@@ -3390,7 +3391,8 @@ async function listKnownOpenPullRequestSnapshots(
   source: ReturnType<typeof createGithubTokenPullRequestSource>,
   listedSnapshots: GitHubPullRequestSnapshot[]
 ): Promise<GitHubPullRequestSnapshot[]> {
-  if (!source.getPullRequest) return []
+  const getPullRequest = source.getPullRequest
+  if (!getPullRequest) return []
 
   const listedPullRequestKeys = new Set(
     listedSnapshots
@@ -3408,12 +3410,15 @@ async function listKnownOpenPullRequestSnapshots(
       order by pr.github_updated_at desc
     `
   )
-  const snapshots: GitHubPullRequestSnapshot[] = []
-
-  for (const row of rows) {
+  // listKnownOpenPullRequests returns distinct open pull requests, so pre-
+  // filtering the listed set once is equivalent to skipping inside the loop.
+  const rowsToRefresh = rows.filter((row) => {
     const key = pullRequestKey(row.repository, row.number)
-    if (!key || listedPullRequestKeys.has(key)) continue
-    const snapshot = await source.getPullRequest({
+    return key !== undefined && !listedPullRequestKeys.has(key)
+  })
+
+  const refreshed = await mapConcurrent(rowsToRefresh, 8, (row) =>
+    getPullRequest({
       repository: row.repository,
       number: row.number,
     }).catch((error: unknown) => {
@@ -3427,12 +3432,11 @@ async function listKnownOpenPullRequestSnapshots(
 
       throw error
     })
-    if (!snapshot) continue
-    snapshots.push(snapshot)
-    listedPullRequestKeys.add(key)
-  }
+  )
 
-  return snapshots
+  return refreshed.filter(
+    (snapshot): snapshot is GitHubPullRequestSnapshot => snapshot !== undefined
+  )
 }
 
 function isTransientGithubDetailRefreshError(error: unknown): boolean {

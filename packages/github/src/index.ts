@@ -729,7 +729,7 @@ async function listRepoPullRequests(
 // slice stalls the rest. Results are written back by input index, so the
 // returned array preserves input order. A rejected mapper rejects the whole
 // promise, matching Promise.all.
-async function mapConcurrent<TInput, TOutput>(
+export async function mapConcurrent<TInput, TOutput>(
   items: TInput[],
   concurrency: number,
   mapper: (item: TInput) => Promise<TOutput>
