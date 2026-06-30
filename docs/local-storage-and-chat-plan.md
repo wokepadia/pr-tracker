@@ -65,8 +65,19 @@ linked pieces of work:
   - Both current callers force a **structured JSON-schema** response. Chat needs
     **free-form text**, so a parallel `runChatAiCompletion` is required.
 - AI generations are cached in `ai_summaries` (kinds `pr-brief`, `ai-dashboard`;
-  sentinel pull-request id `queue` for the board-wide dashboard), keyed by a
-  content hash of the exact prompt + model.
+  sentinel pull-request id `queue` for the board-wide dashboard). `pr-brief` is
+  keyed by a content hash of the exact prompt + model; the `ai-dashboard`
+  sentinel now stores only the holistic sections (`queueSummary`,
+  `sinceLastVisit`).
+- The board dashboard is regenerated **incrementally**: per-card rows live in
+  `ai_dashboard_cards` (one row per board pull request, keyed by
+  `pull_request_id`), each holding a content `fingerprint` (hash of the exact
+  per-card input + model), the user-facing card text, and an uncapped
+  `machine_summary`. On regenerate, only cards whose fingerprint changed are
+  sent to the model in full; unchanged cards are passed as their stored
+  machine summary, and their previous card text is carried over. If no card
+  changed, the AI call is skipped entirely. Dashboard staleness is the
+  per-card fingerprint comparison, not a whole-prompt hash.
 
 ### Board scope contract (mandatory for chat grounding)
 

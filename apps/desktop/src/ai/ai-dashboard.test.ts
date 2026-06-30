@@ -4,7 +4,14 @@ import type { ReviewQueueItemView } from "@/reviewer/view-model"
 import {
   buildAiDashboardInput,
   buildAiDashboardPrompt,
-  normalizeAiDashboardContent,
+  buildIncrementalAiDashboardPrompt,
+  fingerprintCard,
+  fingerprintCards,
+  mergeDashboardCards,
+  normalizeAiDashboardGeneration,
+  partitionDashboardItems,
+  type AiDashboardCard,
+  type AiDashboardPrInput,
 } from "./ai-dashboard"
 
 function makeItem(
@@ -193,10 +200,10 @@ describe("buildAiDashboardPrompt", () => {
   })
 })
 
-describe("normalizeAiDashboardContent", () => {
-  it("normalizes summaries and drops cards for unknown or duplicate ids", () => {
+describe("normalizeAiDashboardGeneration", () => {
+  it("normalizes summaries and drops cards for unknown, duplicate, or incomplete ids", () => {
     expect(
-      normalizeAiDashboardContent(
+      normalizeAiDashboardGeneration(
         {
           queueSummary: {
             body: " Two reviews need you. ",
@@ -215,22 +222,32 @@ describe("normalizeAiDashboardContent", () => {
               summary: " Open 3 days. ",
               sinceYouLooked: " Maya replied. ",
               nextAction: " Re-review. ",
+              machineSummary: " Auth refactor; one open thread on token expiry. ",
             },
             {
               pullRequestId: "pr_1",
               summary: " duplicate ",
               sinceYouLooked: " duplicate ",
               nextAction: " duplicate ",
+              machineSummary: " duplicate ",
             },
             {
               pullRequestId: "pr_invented",
               summary: " invented ",
               sinceYouLooked: " invented ",
               nextAction: " invented ",
+              machineSummary: " invented ",
+            },
+            {
+              // Missing the machine summary: dropped, not partially stored.
+              pullRequestId: "pr_2",
+              summary: " no machine summary ",
+              sinceYouLooked: " . ",
+              nextAction: " . ",
             },
           ],
         },
-        ["pr_1"]
+        ["pr_1", "pr_2"]
       )
     ).toEqual({
       queueSummary: {
@@ -250,14 +267,123 @@ describe("normalizeAiDashboardContent", () => {
           summary: "Open 3 days.",
           sinceYouLooked: "Maya replied.",
           nextAction: "Re-review.",
+          machineSummary: "Auth refactor; one open thread on token expiry.",
         },
       ],
     })
   })
 
   it("throws when required text blocks are missing", () => {
-    expect(() => normalizeAiDashboardContent({}, [])).toThrow(
+    expect(() => normalizeAiDashboardGeneration({}, [])).toThrow(
       "The model response was missing the queue summary."
     )
+  })
+})
+
+describe("incremental dashboard regeneration", () => {
+  function promptItem(
+    overrides: Partial<ReviewQueueItemView> & { id: string }
+  ): AiDashboardPrInput {
+    return buildAiDashboardInput([makeItem(overrides)]).items[0]!
+  }
+
+  it("only re-fingerprints the card whose input changed", async () => {
+    const before = promptItem({ id: "pr_a", title: "Original" })
+    const after = { ...before, title: "Edited title" }
+    const other = promptItem({ id: "pr_b" })
+
+    const model = "test-model"
+    const first = await fingerprintCards([before, other], model)
+    const second = await fingerprintCards([after, other], model)
+
+    expect(second.get("pr_a")).not.toBe(first.get("pr_a"))
+    expect(second.get("pr_b")).toBe(first.get("pr_b"))
+  })
+
+  it("treats a model switch as a change to every card", async () => {
+    const item = promptItem({ id: "pr_a" })
+    expect(await fingerprintCard(item, "model-one")).not.toBe(
+      await fingerprintCard(item, "model-two")
+    )
+  })
+
+  it("partitions changed and new cards into full, unchanged into reference", async () => {
+    const unchanged = promptItem({ id: "pr_keep" })
+    const changed = promptItem({ id: "pr_changed", title: "v2" })
+    const fresh = promptItem({ id: "pr_new" })
+    const model = "test-model"
+    const fingerprints = await fingerprintCards(
+      [unchanged, changed, fresh],
+      model
+    )
+    const stored = new Map([
+      ["pr_keep", { fingerprint: fingerprints.get("pr_keep")! }],
+      ["pr_changed", { fingerprint: "stale-hash" }],
+    ])
+
+    const { full, reference } = partitionDashboardItems(
+      [unchanged, changed, fresh],
+      fingerprints,
+      stored
+    )
+
+    expect(full.map((item) => item.id)).toEqual(["pr_changed", "pr_new"])
+    expect(reference.map((item) => item.id)).toEqual(["pr_keep"])
+  })
+
+  it("sends changed cards in full and unchanged cards as their stored summary", () => {
+    const changed = promptItem({ id: "pr_changed", title: "Add retries" })
+    const unchanged = promptItem({ id: "pr_keep", title: "Tidy logging" })
+
+    const { user } = buildIncrementalAiDashboardPrompt({
+      metrics: buildAiDashboardInput([]).metrics,
+      fullItems: [changed],
+      referenceItems: [
+        { item: unchanged, machineSummary: "Logging cleanup, approved earlier." },
+      ],
+    })
+
+    expect(user).toContain("Pull requests needing a fresh read")
+    expect(user).toContain("id pr_changed | acme/api#1 | Add retries")
+    expect(user).toContain("reason:") // full detail block
+    expect(user).toContain("Other open pull requests (context only")
+    expect(user).toContain("known summary (authoritative")
+    expect(user).toContain("Logging cleanup, approved earlier.")
+    // Only the changed card is sent in full: exactly one detail facts block.
+    expect(user.match(/facts \(grounding only/g)).toHaveLength(1)
+  })
+
+  it("merges fresh cards with carried-over cards in board order", () => {
+    const fresh: AiDashboardCard[] = [
+      {
+        pullRequestId: "pr_changed",
+        summary: "fresh summary",
+        sinceYouLooked: "fresh",
+        nextAction: "fresh",
+      },
+    ]
+    const carried = new Map<string, AiDashboardCard>([
+      [
+        "pr_keep",
+        {
+          pullRequestId: "pr_keep",
+          summary: "carried summary",
+          sinceYouLooked: "carried",
+          nextAction: "carried",
+        },
+      ],
+    ])
+
+    const merged = mergeDashboardCards(
+      ["pr_changed", "pr_keep", "pr_missing"],
+      fresh,
+      carried
+    )
+
+    expect(merged.map((card) => card.pullRequestId)).toEqual([
+      "pr_changed",
+      "pr_keep",
+    ])
+    expect(merged[1]?.summary).toBe("carried summary")
   })
 })

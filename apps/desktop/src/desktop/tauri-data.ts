@@ -71,8 +71,12 @@ import { buildChatSystemPrompt } from "@/ai/chat"
 import {
   aiDashboardSchema,
   aiDashboardSchemaName,
-  buildAiDashboardPrompt,
-  normalizeAiDashboardContent,
+  buildIncrementalAiDashboardPrompt,
+  fingerprintCards,
+  mergeDashboardCards,
+  normalizeAiDashboardGeneration,
+  partitionDashboardItems,
+  type AiDashboardCard,
   type AiDashboardContent,
   type AiDashboardInput,
 } from "@/ai/ai-dashboard"
@@ -718,30 +722,55 @@ export async function generateDesktopAiPrBrief(
 
 const aiDashboardSentinelId = "queue"
 
+/** The holistic dashboard sections, stored on the sentinel row. */
+type DashboardHolistic = Pick<
+  AiDashboardContent,
+  "queueSummary" | "sinceLastVisit"
+>
+
 export async function getDesktopAiDashboard(
   input: AiDashboardInput
 ): Promise<AiGenerated<AiDashboardContent> | null> {
   const db = await getDatabase()
-  const row = await readAiSummaryRow(db, aiDashboardSentinelId, "ai-dashboard")
-  if (!row) {
+  const sentinel = await readAiSummaryRow(db, aiDashboardSentinelId, "ai-dashboard")
+  if (!sentinel) {
     return null
   }
 
   const settings = await readLocalAiSettings(db)
   const enrichedInput = await enrichAiDashboardInputWithComments(db, input)
-  const prompt = buildAiDashboardPrompt(enrichedInput)
-  const expectedKey = await hashContent(
-    `ai-dashboard\n${settings.model}\n${prompt.user}`
-  )
+  const ids = enrichedInput.items.map((item) => item.id)
+  const rows = await readDashboardCardRows(db, ids)
+  const rowById = new Map(rows.map((row) => [row.pull_request_id, row]))
 
+  const carried = new Map(
+    rows.map((row) => [row.pull_request_id, dashboardCardFromRow(row)])
+  )
+  const cards = mergeDashboardCards(ids, [], carried)
+  if (cards.length === 0) {
+    // A sentinel with no per-card rows for the current board is a
+    // pre-incremental summary (or one whose board fully rotated). Treat it as
+    // not yet generated so the user regenerates rather than seeing a
+    // cards-less dashboard.
+    return null
+  }
+
+  const fingerprints = await fingerprintCards(enrichedInput.items, settings.model)
+  const isStale = enrichedInput.items.some((item) => {
+    const row = rowById.get(item.id)
+    return !row || row.fingerprint !== fingerprints.get(item.id)
+  })
+
+  const holistic = JSON.parse(sentinel.content_json) as DashboardHolistic
   return {
-    content: normalizeAiDashboardContent(
-      JSON.parse(row.content_json),
-      enrichedInput.items.map((item) => item.id)
-    ),
-    generatedAt: row.generated_at,
-    model: row.model,
-    isStale: expectedKey !== row.cache_key,
+    content: {
+      queueSummary: holistic.queueSummary,
+      sinceLastVisit: holistic.sinceLastVisit,
+      cards,
+    },
+    generatedAt: sentinel.generated_at,
+    model: sentinel.model,
+    isStale,
   }
 }
 
@@ -755,28 +784,126 @@ export async function generateDesktopAiDashboard(
   }
 
   const enrichedInput = await enrichAiDashboardInputWithComments(db, input)
-  const prompt = buildAiDashboardPrompt(enrichedInput)
-  const content = normalizeAiDashboardContent(
-    await runStructuredAiCompletion<AiDashboardContent>(config, {
+  const ids = enrichedInput.items.map((item) => item.id)
+  const fingerprints = await fingerprintCards(enrichedInput.items, config.model)
+  const existingRows = await readDashboardCardRows(db, ids)
+  const rowById = new Map(existingRows.map((row) => [row.pull_request_id, row]))
+  const { full, reference } = partitionDashboardItems(
+    enrichedInput.items,
+    fingerprints,
+    rowById
+  )
+
+  const generatedAt = new Date().toISOString()
+
+  // Nothing changed since the last summary: skip the AI call. Prune any rows
+  // for pull requests that have since left the board, then reconstruct the
+  // cached summary from the stored per-card rows.
+  if (full.length === 0) {
+    await deleteDashboardCardRowsExcept(db, ids)
+    const sentinel = await readAiSummaryRow(
+      db,
+      aiDashboardSentinelId,
+      "ai-dashboard"
+    )
+    if (!sentinel) {
+      // Per-card rows exist only after a generation that also wrote the
+      // sentinel, so this should be unreachable; fail loudly rather than
+      // return an empty dashboard.
+      throw new Error("The dashboard summary is missing; regenerate it.")
+    }
+    const holistic = JSON.parse(sentinel.content_json) as DashboardHolistic
+    const carried = new Map(
+      existingRows.map((row) => [row.pull_request_id, dashboardCardFromRow(row)])
+    )
+    return {
+      content: {
+        queueSummary: holistic.queueSummary,
+        sinceLastVisit: holistic.sinceLastVisit,
+        cards: mergeDashboardCards(ids, [], carried),
+      },
+      generatedAt: sentinel.generated_at,
+      model: sentinel.model,
+      isStale: false,
+    }
+  }
+
+  const prompt = buildIncrementalAiDashboardPrompt({
+    metrics: enrichedInput.metrics,
+    fullItems: full,
+    referenceItems: reference.map((item) => ({
+      item,
+      machineSummary: rowById.get(item.id)?.machine_summary ?? "",
+    })),
+  })
+  const generation = normalizeAiDashboardGeneration(
+    await runStructuredAiCompletion<unknown>(config, {
       system: prompt.system,
       user: prompt.user,
       schemaName: aiDashboardSchemaName,
       schema: aiDashboardSchema,
     }),
-    enrichedInput.items.map((item) => item.id)
+    full.map((item) => item.id)
   )
 
-  const generatedAt = new Date().toISOString()
+  // Persist a row per freshly summarized card, then prune off-board rows.
+  for (const card of generation.cards) {
+    const fingerprint = fingerprints.get(card.pullRequestId)
+    if (!fingerprint) continue
+    await writeDashboardCardRow(db, {
+      pull_request_id: card.pullRequestId,
+      fingerprint,
+      model: config.model,
+      user_card_json: JSON.stringify(stripMachineSummary(card)),
+      machine_summary: card.machineSummary,
+      generated_at: generatedAt,
+    })
+  }
+  await deleteDashboardCardRowsExcept(db, ids)
+
+  // The sentinel row holds only the holistic sections now; cards live in their
+  // own rows and are reconstructed on read. cache_key is unused for staleness.
   await writeAiSummaryRow(db, aiDashboardSentinelId, "ai-dashboard", {
-    cacheKey: await hashContent(
-      `ai-dashboard\n${config.model}\n${prompt.user}`
-    ),
+    cacheKey: "",
     model: config.model,
-    contentJson: JSON.stringify(content),
+    contentJson: JSON.stringify({
+      queueSummary: generation.queueSummary,
+      sinceLastVisit: generation.sinceLastVisit,
+    } satisfies DashboardHolistic),
     generatedAt,
   })
 
-  return { content, generatedAt, model: config.model, isStale: false }
+  const carried = new Map<string, AiDashboardCard>()
+  for (const item of reference) {
+    const row = rowById.get(item.id)
+    if (row) carried.set(item.id, dashboardCardFromRow(row))
+  }
+  const fresh = generation.cards.map(stripMachineSummary)
+
+  return {
+    content: {
+      queueSummary: generation.queueSummary,
+      sinceLastVisit: generation.sinceLastVisit,
+      cards: mergeDashboardCards(ids, fresh, carried),
+    },
+    generatedAt,
+    model: config.model,
+    isStale: false,
+  }
+}
+
+function stripMachineSummary(card: {
+  pullRequestId: string
+  summary: string
+  sinceYouLooked: string
+  nextAction: string
+}): AiDashboardCard {
+  return {
+    pullRequestId: card.pullRequestId,
+    summary: card.summary,
+    sinceYouLooked: card.sinceYouLooked,
+    nextAction: card.nextAction,
+  }
 }
 
 const maxChatHistoryMessages = 40
@@ -1270,8 +1397,18 @@ async function syncLocalGithubData(
 
   try {
     const viewerLogin = credentials.viewerLogin ?? (await source.getViewerLogin())
+    // The configured-repo listing can skip hydrating pull requests that are
+    // unchanged since the last sync. Build the stored version + id maps once
+    // (search has no steady-state store to compare against, so skip it there).
+    const { knownPullRequestVersions, knownPullRequestIds } = githubSearchQuery
+      ? {
+          knownPullRequestVersions: undefined,
+          knownPullRequestIds: new Map<string, string>(),
+        }
+      : await loadKnownPullRequestVersions(db)
     const snapshots = await listPullRequestSnapshots(source, {
       searchQuery: githubSearchQuery,
+      knownPullRequestVersions,
     })
     const snapshotsToIngest = githubSearchQuery
       ? snapshots
@@ -1292,6 +1429,24 @@ async function syncLocalGithubData(
       await ensureDefaultBoard(db, now)
 
       for (const snapshot of snapshotsToIngest) {
+        // An unchanged snapshot carries only identity fields and must not be
+        // upserted — upsert DELETE+INSERTs related rows, which would wipe the
+        // existing reviews/threads/comments. Keep the existing row, record its
+        // id so reconciliation/board membership treat it as seen, and count it
+        // as ignored.
+        if (snapshot.unchanged) {
+          const key = pullRequestKey(
+            snapshot.repository.full_name,
+            snapshot.pull_request.number
+          )
+          const existingId = key ? knownPullRequestIds.get(key) : undefined
+          if (existingId) {
+            pullRequestIds.push(existingId)
+          }
+          result.ignoredPullRequests += 1
+          continue
+        }
+
         const upsertResult = await upsertLocalPullRequestSnapshot(db, snapshot, {
           viewerLogin,
         })
@@ -3065,6 +3220,88 @@ async function writeAiSummaryRow(
   )
 }
 
+interface DashboardCardRow {
+  pull_request_id: string
+  fingerprint: string
+  model: string
+  user_card_json: string
+  machine_summary: string
+  generated_at: string
+}
+
+/** Parses the stored user-facing card, discarding the machine summary. */
+function dashboardCardFromRow(row: DashboardCardRow): AiDashboardCard {
+  const parsed = JSON.parse(row.user_card_json) as Partial<AiDashboardCard>
+  return {
+    pullRequestId: row.pull_request_id,
+    summary: parsed.summary ?? "",
+    sinceYouLooked: parsed.sinceYouLooked ?? "",
+    nextAction: parsed.nextAction ?? "",
+  }
+}
+
+async function readDashboardCardRows(
+  db: SqlDatabase,
+  ids: string[]
+): Promise<DashboardCardRow[]> {
+  if (ids.length === 0) return []
+  const placeholders = ids.map((_id, index) => `$${index + 1}`).join(", ")
+  return db.select<DashboardCardRow[]>(
+    `
+      select pull_request_id, fingerprint, model, user_card_json,
+             machine_summary, generated_at
+      from ai_dashboard_cards
+      where pull_request_id in (${placeholders})
+    `,
+    ids
+  )
+}
+
+async function writeDashboardCardRow(
+  db: SqlDatabase,
+  row: DashboardCardRow
+): Promise<void> {
+  await db.execute(
+    `
+      insert into ai_dashboard_cards
+        (pull_request_id, fingerprint, model, user_card_json,
+         machine_summary, generated_at)
+      values ($1, $2, $3, $4, $5, $6)
+      on conflict(pull_request_id)
+      do update set
+        fingerprint = excluded.fingerprint,
+        model = excluded.model,
+        user_card_json = excluded.user_card_json,
+        machine_summary = excluded.machine_summary,
+        generated_at = excluded.generated_at
+    `,
+    [
+      row.pull_request_id,
+      row.fingerprint,
+      row.model,
+      row.user_card_json,
+      row.machine_summary,
+      row.generated_at,
+    ]
+  )
+}
+
+/** Drops per-card rows for pull requests no longer on the board. */
+async function deleteDashboardCardRowsExcept(
+  db: SqlDatabase,
+  ids: string[]
+): Promise<void> {
+  if (ids.length === 0) {
+    await db.execute(`delete from ai_dashboard_cards`)
+    return
+  }
+  const placeholders = ids.map((_id, index) => `$${index + 1}`).join(", ")
+  await db.execute(
+    `delete from ai_dashboard_cards where pull_request_id not in (${placeholders})`,
+    ids
+  )
+}
+
 /**
  * Builds the board-scoped view-model item for one pull request, the source of
  * the turn facts (whose move, waiting age, reason, checks, reviewers) the PR
@@ -3448,7 +3685,10 @@ function isTransientGithubDetailRefreshError(error: unknown): boolean {
 
 async function listPullRequestSnapshots(
   source: ReturnType<typeof createGithubTokenPullRequestSource>,
-  options: { searchQuery?: string }
+  options: {
+    searchQuery?: string
+    knownPullRequestVersions?: Map<string, string>
+  }
 ): Promise<GitHubPullRequestSnapshot[]> {
   if (source.listPullRequests) {
     return source.listPullRequests(options)
@@ -3459,6 +3699,46 @@ async function listPullRequestSnapshots(
   }
 
   throw new Error("GitHub pull request source does not provide a list method.")
+}
+
+// Read every stored pull request's identity, version, and local id so the
+// listing can skip hydrating unchanged pull requests and the ingester can map
+// a skipped (unchanged) snapshot back to its existing row id.
+async function loadKnownPullRequestVersions(db: SqlDatabase): Promise<{
+  knownPullRequestVersions: Map<string, string>
+  knownPullRequestIds: Map<string, string>
+}> {
+  const rows = await db.select<
+    Array<{
+      repository: string
+      number: number
+      id: string
+      github_updated_at: string | null
+    }>
+  >(
+    `
+      select
+        repo.full_name as repository,
+        pr.number,
+        pr.id,
+        pr.github_updated_at
+      from pull_requests pr
+      join github_repositories repo on repo.id = pr.repository_id
+    `
+  )
+
+  const knownPullRequestVersions = new Map<string, string>()
+  const knownPullRequestIds = new Map<string, string>()
+  for (const row of rows) {
+    const key = pullRequestKey(row.repository, row.number)
+    if (!key) continue
+    knownPullRequestIds.set(key, row.id)
+    if (row.github_updated_at) {
+      knownPullRequestVersions.set(key, row.github_updated_at)
+    }
+  }
+
+  return { knownPullRequestVersions, knownPullRequestIds }
 }
 
 function snapshotToPullRequestItem(
