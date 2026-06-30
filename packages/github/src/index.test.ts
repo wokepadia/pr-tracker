@@ -813,6 +813,132 @@ describe("GitHub token pull request source", () => {
     ).toEqual([1, 2]);
   });
 
+  it("skips hydration for pull requests unchanged since the last sync", async () => {
+    const calls: Array<{ route: string; parameters?: Record<string, unknown> }> = [];
+    const source = createGithubTokenPullRequestSource({
+      token: "token",
+      repositories: ["acme/web"],
+      request: async <T = unknown>(
+        route: string,
+        parameters?: Record<string, unknown>
+      ) => {
+        calls.push({ route, parameters });
+
+        if (route === "GET /repos/{owner}/{repo}/pulls") {
+          if (parameters?.state === "open") {
+            return {
+              data: [
+                {
+                  id: 1,
+                  number: 1,
+                  title: "Unchanged since last sync",
+                  state: "open",
+                  // Same as the stored version below, so this PR is skipped.
+                  updated_at: "2026-06-01T09:00:00.000Z",
+                  user: { login: "author" }
+                },
+                {
+                  id: 2,
+                  number: 2,
+                  title: "Updated since last sync",
+                  state: "open",
+                  // Newer than the stored version, so this PR is hydrated.
+                  updated_at: "2026-06-02T09:00:00.000Z",
+                  user: { login: "author" }
+                }
+              ] as T
+            };
+          }
+
+          return { data: [] as T };
+        }
+
+        if (route === "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews") {
+          return { data: [] as T };
+        }
+
+        if (route === "POST /graphql") {
+          return {
+            data: {
+              data: {
+                repository: {
+                  pullRequest: {
+                    additions: 1,
+                    deletions: 0,
+                    changedFiles: 1,
+                    timelineItems: { nodes: [] },
+                    reviewThreads: { nodes: [] }
+                  }
+                }
+              }
+            } as T
+          };
+        }
+
+        if (route === "GET /repos/{owner}/{repo}/issues/{issue_number}/comments") {
+          return { data: [] as T };
+        }
+
+        throw new Error(`Unexpected route: ${route}`);
+      }
+    });
+
+    if (!source.listPullRequests) {
+      throw new Error("Expected token source to support listPullRequests.");
+    }
+
+    const knownPullRequestVersions = new Map<string, string>([
+      ["acme/web#1", "2026-06-01T09:00:00.000Z"],
+      ["acme/web#2", "2026-06-01T09:00:00.000Z"]
+    ]);
+    const snapshots = await source.listPullRequests({ knownPullRequestVersions });
+
+    expect(snapshots).toHaveLength(2);
+
+    const unchanged = snapshots.find(
+      (snapshot) => snapshot.pull_request.number === 1
+    );
+    expect(unchanged?.unchanged).toBe(true);
+    // The unchanged snapshot carries identity fields but no hydrated data, so
+    // upsert leaves the existing row's reviews/threads/comments untouched.
+    expect(unchanged?.reviews).toBeUndefined();
+    expect(unchanged?.review_threads).toBeUndefined();
+    expect(unchanged?.issue_comments).toBeUndefined();
+    expect(unchanged?.pull_request.merged).toBe(false);
+
+    const hydrated = snapshots.find(
+      (snapshot) => snapshot.pull_request.number === 2
+    );
+    expect(hydrated?.unchanged).toBeUndefined();
+    expect(hydrated?.reviews).toBeDefined();
+
+    // No per-PR hydration request was made for the unchanged PR #1, while PR #2
+    // received its reviews + GraphQL + issue-comment requests.
+    const hydrationRoutes = new Set([
+      "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews",
+      "POST /graphql",
+      "GET /repos/{owner}/{repo}/issues/{issue_number}/comments"
+    ]);
+    const hydrationCalls = calls.filter((call) => hydrationRoutes.has(call.route));
+    expect(
+      hydrationCalls.every(
+        (call) =>
+          call.parameters?.pull_number === 2 ||
+          call.parameters?.issue_number === 2 ||
+          (call.route === "POST /graphql" &&
+            (call.parameters as { variables?: { number?: number } })?.variables
+              ?.number === 2)
+      )
+    ).toBe(true);
+    // PR #1 specifically must not have hit any hydration route.
+    expect(
+      calls.some(
+        (call) =>
+          call.parameters?.pull_number === 1 || call.parameters?.issue_number === 1
+      )
+    ).toBe(false);
+  });
+
   it("returns undefined changed files for repositories outside the allow list", async () => {
     const source = createGithubTokenPullRequestSource({
       token: "token",

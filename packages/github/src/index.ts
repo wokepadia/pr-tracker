@@ -114,6 +114,13 @@ export interface GitHubPullRequestSnapshot {
    * via GraphQL. Undefined means the rollup contexts were unavailable.
    */
   check_runs?: GitHubCheckRunSnapshot[];
+  /**
+   * Set when the listing skipped hydration because the pull request is
+   * unchanged since the last sync. Such a snapshot carries only list-derived
+   * identity fields and MUST NOT be upserted — the ingester leaves the
+   * existing row intact.
+   */
+  unchanged?: true;
 }
 
 export type GitHubReviewDecision =
@@ -206,6 +213,13 @@ export interface GitHubPullRequestFileSnapshot {
 
 export interface GitHubPullRequestListOptions {
   searchQuery?: string;
+  /**
+   * Map of `${repository}#${number}` -> the stored github updated_at ISO
+   * string. A listed pull request whose updated_at is not newer than its
+   * stored value is returned WITHOUT hydration (see `unchanged`), saving the
+   * per-PR review/GraphQL/comment requests.
+   */
+  knownPullRequestVersions?: Map<string, string>;
 }
 
 interface GitHubPullRequestLookupSource {
@@ -355,7 +369,8 @@ export function createGithubTokenPullRequestSource(input: {
       return listConfiguredRepositoryPullRequests(octokit, input.repositories, {
         includeRecentClosed: true,
         closedLookbackDays: input.closedLookbackDays,
-        maxPullRequests: input.maxPullRequests
+        maxPullRequests: input.maxPullRequests,
+        knownPullRequestVersions: options?.knownPullRequestVersions
       });
     },
     async listOpenPullRequests(options) {
@@ -369,7 +384,8 @@ export function createGithubTokenPullRequestSource(input: {
       return listConfiguredRepositoryPullRequests(octokit, input.repositories, {
         includeRecentClosed: false,
         closedLookbackDays: input.closedLookbackDays,
-        maxPullRequests: input.maxPullRequests
+        maxPullRequests: input.maxPullRequests,
+        knownPullRequestVersions: options?.knownPullRequestVersions
       });
     },
     async getPullRequest(lookup) {
@@ -429,6 +445,7 @@ async function listConfiguredRepositoryPullRequests(
     includeRecentClosed: boolean;
     closedLookbackDays?: number;
     maxPullRequests?: number;
+    knownPullRequestVersions?: Map<string, string>;
   }
 ): Promise<GitHubPullRequestSnapshot[]> {
   const maxOpenPullRequests =
@@ -490,6 +507,33 @@ async function listConfiguredRepositoryPullRequests(
     workItems,
     pullRequestHydrationConcurrency,
     async ({ repository, owner, name, pullRequest }) => {
+      // Skip hydration for a pull request that has not changed since the last
+      // sync: the cheap list call already returned its updated_at, so when it
+      // is not newer than the stored version we return an identity-only,
+      // `unchanged`-marked snapshot and make zero per-PR network calls. The
+      // ingester leaves the existing local row (reviews/threads/comments)
+      // untouched for these.
+      const key = `${repository}#${pullRequest.number}`;
+      const knownVersion = options.knownPullRequestVersions?.get(key);
+      if (
+        knownVersion &&
+        pullRequest.updated_at &&
+        Date.parse(pullRequest.updated_at) <= Date.parse(knownVersion)
+      ) {
+        return {
+          repository: {
+            full_name: repository,
+            html_url: `https://github.com/${repository}`,
+            owner: { login: owner }
+          },
+          pull_request: {
+            ...pullRequest,
+            merged: pullRequest.merged ?? Boolean(pullRequest.merged_at)
+          },
+          unchanged: true
+        };
+      }
+
       const [reviews, graphqlFacts, issueComments] = await Promise.all([
         listPullRequestReviews(octokit, owner, name, pullRequest.number),
         fetchPullRequestGraphqlFacts(octokit, owner, name, pullRequest.number),

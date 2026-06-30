@@ -343,6 +343,61 @@ describe("pull request ingestion round trip", () => {
     }
   });
 
+  it("leaves the existing row intact for an unchanged pull request", async () => {
+    const local = openLocalDatabase({ path: ":memory:" });
+    try {
+      // First sync hydrates the PR with reviews + threads.
+      await syncPullRequestsToLocalSqlite(
+        local.db,
+        singleSnapshotSource(fullSnapshot),
+        { viewerLogin: "viewer" }
+      );
+      expect(listLocalReviewEventRows(local.db, pullRequestId)).toHaveLength(1);
+      expect(listLocalReviewThreadRows(local.db, pullRequestId)).toHaveLength(1);
+
+      // Second sync returns the same PR as unchanged: identity fields only,
+      // no reviews/threads. The driver must skip the upsert so it cannot wipe
+      // the existing related rows.
+      const unchangedSource: GitHubPullRequestSource = {
+        async listPullRequests() {
+          return [
+            {
+              repository: fullSnapshot.repository,
+              pull_request: {
+                number: fullSnapshot.pull_request.number,
+                updated_at: fullSnapshot.pull_request.updated_at,
+              },
+              unchanged: true,
+            },
+          ];
+        },
+      };
+      const result = await syncPullRequestsToLocalSqlite(
+        local.db,
+        unchangedSource,
+        { viewerLogin: "viewer" }
+      );
+
+      expect(result).toMatchObject({
+        scannedPullRequests: 1,
+        ingestedPullRequests: 0,
+        ignoredPullRequests: 1,
+        pullRequestIds: [pullRequestId],
+      });
+
+      // The stored reviews and threads survive untouched.
+      expect(listLocalReviewEventRows(local.db, pullRequestId)).toMatchObject([
+        { id: "PRR_full_9001", reviewer_login: "viewer" },
+      ]);
+      expect(listLocalReviewThreadRows(local.db, pullRequestId)).toMatchObject([
+        { id: "RT_full_1" },
+      ]);
+      expect(listLocalIssueCommentRows(local.db, pullRequestId)).toHaveLength(1);
+    } finally {
+      local.close();
+    }
+  });
+
   it("records a merged pull request's merge facts", async () => {
     const local = openLocalDatabase({ path: ":memory:" });
     try {

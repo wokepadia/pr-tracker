@@ -12,6 +12,13 @@ interface KnownOpenPullRequest {
   number: number;
 }
 
+interface KnownPullRequestVersionRow {
+  repository: string;
+  number: number;
+  id: string;
+  github_updated_at: string | null;
+}
+
 export interface LocalGitHubPullRequestSyncResult {
   scannedPullRequests: number;
   ingestedPullRequests: number;
@@ -44,8 +51,17 @@ export async function syncPullRequestsToLocalSqlite(
   };
 
   try {
+    // The configured-repo listing can skip hydrating pull requests that are
+    // unchanged since the last sync. Build the stored version + id maps once
+    // (search has no steady-state store to compare against, so skip it there).
+    const { knownPullRequestVersions, knownPullRequestIds } =
+      options.searchQuery
+        ? { knownPullRequestVersions: undefined, knownPullRequestIds: new Map<string, string>() }
+        : loadKnownPullRequestVersions(db);
+
     const snapshots = await listPullRequestSnapshots(source, {
-      searchQuery: options.searchQuery
+      searchQuery: options.searchQuery,
+      knownPullRequestVersions
     });
     const reconciledSnapshots = options.searchQuery
       ? []
@@ -54,6 +70,23 @@ export async function syncPullRequestsToLocalSqlite(
     result.scannedPullRequests = snapshotsToIngest.length;
 
     for (const snapshot of snapshotsToIngest) {
+      // An unchanged snapshot carries only identity fields and must not be
+      // upserted — upsert DELETE+INSERTs related rows, which would wipe the
+      // existing reviews/threads/comments. Keep the existing row, record its
+      // id so reconciliation treats it as seen, and count it as ignored.
+      if (snapshot.unchanged) {
+        const key = pullRequestKey(
+          snapshot.repository.full_name,
+          snapshot.pull_request.number
+        );
+        const existingId = key ? knownPullRequestIds.get(key) : undefined;
+        if (existingId) {
+          result.pullRequestIds.push(existingId);
+        }
+        result.ignoredPullRequests += 1;
+        continue;
+      }
+
       const upsertResult = upsertLocalPullRequestSnapshot(db, snapshot, {
         profileId: options.profileId,
         viewerLogin: options.viewerLogin
@@ -95,17 +128,63 @@ export async function syncPullRequestsToLocalSqlite(
 
 async function listPullRequestSnapshots(
   source: GitHubPullRequestSource,
-  options: { searchQuery?: string } = {}
+  options: {
+    searchQuery?: string;
+    knownPullRequestVersions?: Map<string, string>;
+  } = {}
 ): Promise<GitHubPullRequestSnapshot[]> {
   if (source.listPullRequests) {
-    return source.listPullRequests({ searchQuery: options.searchQuery });
+    return source.listPullRequests({
+      searchQuery: options.searchQuery,
+      knownPullRequestVersions: options.knownPullRequestVersions
+    });
   }
 
   if (source.listOpenPullRequests) {
-    return source.listOpenPullRequests({ searchQuery: options.searchQuery });
+    return source.listOpenPullRequests({
+      searchQuery: options.searchQuery,
+      knownPullRequestVersions: options.knownPullRequestVersions
+    });
   }
 
   throw new Error("GitHub pull request source does not provide a list method.");
+}
+
+// Read every stored pull request's identity, version, and local id so the
+// listing can skip hydrating unchanged pull requests and the ingester can map
+// a skipped (unchanged) snapshot back to its existing row id.
+function loadKnownPullRequestVersions(db: DatabaseSync): {
+  knownPullRequestVersions: Map<string, string>;
+  knownPullRequestIds: Map<string, string>;
+} {
+  const rows = db
+    .prepare(
+      `
+        select
+          repo.full_name as repository,
+          pr.number,
+          pr.id,
+          pr.github_updated_at
+        from pull_requests pr
+        join github_repositories repo on repo.id = pr.repository_id
+      `
+    )
+    .all() as unknown as KnownPullRequestVersionRow[];
+
+  const knownPullRequestVersions = new Map<string, string>();
+  const knownPullRequestIds = new Map<string, string>();
+  for (const row of rows) {
+    const key = pullRequestKey(row.repository, row.number);
+    if (!key) {
+      continue;
+    }
+    knownPullRequestIds.set(key, row.id);
+    if (row.github_updated_at) {
+      knownPullRequestVersions.set(key, row.github_updated_at);
+    }
+  }
+
+  return { knownPullRequestVersions, knownPullRequestIds };
 }
 
 async function listKnownOpenPullRequestSnapshots(
